@@ -25,9 +25,14 @@
 //   listen('chat-stream-thought', payload => { request_id, delta })
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex, OnceLock,
+};
 use tauri::{AppHandle, Emitter};
+use tokio::sync::oneshot;
 
 use crate::commands::chat::MessageWire;
 use crate::commands::chat_attachment::ChatAttachmentWire;
@@ -149,21 +154,110 @@ fn emit_done(app: &AppHandle, request_id: &str, error: Option<String>) {
     );
 }
 
-/// Reset the Coding engine session — called when the user switches workspace
-/// (a fresh cwd needs a fresh `opencode` process; ADR-003 §8.5 v32's
-/// confirm-before-switch UI calls this after the user confirms).
+#[derive(Debug, Deserialize)]
+pub struct CodingCancelArgs {
+    pub request_id: String,
+}
+
+struct ActiveCancellation {
+    token: u64,
+    sender: oneshot::Sender<()>,
+}
+
+fn coding_cancellations() -> &'static Mutex<HashMap<String, ActiveCancellation>> {
+    static CANCELLATIONS: OnceLock<Mutex<HashMap<String, ActiveCancellation>>> = OnceLock::new();
+    CANCELLATIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn coding_epoch() -> &'static AtomicU64 {
+    static EPOCH: AtomicU64 = AtomicU64::new(0);
+    &EPOCH
+}
+
+fn next_coding_task_token() -> u64 {
+    static NEXT_TOKEN: AtomicU64 = AtomicU64::new(1);
+    NEXT_TOKEN.fetch_add(1, Ordering::Relaxed)
+}
+
+fn is_current_coding_epoch(epoch: u64) -> bool {
+    coding_epoch().load(Ordering::Acquire) == epoch
+}
+
+fn cancel_all_coding_turns() {
+    let pending = std::mem::take(
+        &mut *coding_cancellations()
+            .lock()
+            .expect("coding cancellation registry lock"),
+    );
+    for (_, active) in pending {
+        let _ = active.sender.send(());
+    }
+}
+
+fn remove_cancellation_if_owned(request_id: &str, token: u64) {
+    let mut cancellations = coding_cancellations()
+        .lock()
+        .expect("coding cancellation registry lock");
+    if cancellations
+        .get(request_id)
+        .is_some_and(|active| active.token == token)
+    {
+        cancellations.remove(request_id);
+    }
+}
+
+/// Reset the Coding engine session after cancelling every active prompt. The
+/// prompt owner drains ACP's terminal response before this reset can acquire
+/// the client lock, so the next workspace never inherits stale stream output.
+/// (ADR-005 irisy §8.3 v32)
 #[tauri::command]
 pub async fn coding_reset_engine() -> Result<(), String> {
+    coding_epoch().fetch_add(1, Ordering::AcqRel);
+    cancel_all_coding_turns();
     *crate::shell::acp_client::coding_singleton().lock().await = None;
+    Ok(())
+}
+
+/// Cancel one UI-owned Coding prompt without killing the persistent OpenCode
+/// session. The ACP client sends `session/cancel` and drains the original
+/// prompt response before a later turn may reuse the stream.
+/// (ADR-005 irisy §8.3 v32)
+#[tauri::command]
+pub async fn coding_cancel_stream(args: CodingCancelArgs) -> Result<(), String> {
+    if let Some(active) = coding_cancellations()
+        .lock()
+        .expect("coding cancellation registry lock")
+        .remove(&args.request_id)
+    {
+        let _ = active.sender.send(());
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn coding_chat_stream(args: CodingChatStreamArgs, app: AppHandle) -> Result<(), String> {
     let request_id = args.request_id.clone();
+    let token = next_coding_task_token();
+    let epoch = coding_epoch().load(Ordering::Acquire);
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    if let Some(previous) = coding_cancellations()
+        .lock()
+        .expect("coding cancellation registry lock")
+        .insert(
+            request_id.clone(),
+            ActiveCancellation {
+                token,
+                sender: cancel_tx,
+            },
+        )
+    {
+        let _ = previous.sender.send(());
+    }
     let app_clone = app.clone();
     tokio::spawn(async move {
-        if let Err(e) = run_turn(&app_clone, &request_id, args).await {
+        let result = run_turn(&app_clone, &request_id, args, &mut cancel_rx, epoch).await;
+        remove_cancellation_if_owned(&request_id, token);
+        if let Err(e) = result {
             emit_done(&app_clone, &request_id, Some(e));
         }
     });
@@ -272,11 +366,22 @@ mod tests {
     #[test]
     fn brief_never_tells_opencode_to_put_secrets_in_the_manifest() {
         assert!(CODING_CAPABILITY_BRIEF.contains("kind: \"secret\""));
-        assert!(CODING_CAPABILITY_BRIEF.to_lowercase().contains("never in the manifest"));
+        assert!(CODING_CAPABILITY_BRIEF
+            .to_lowercase()
+            .contains("never in the manifest"));
     }
 }
 
-async fn run_turn(app: &AppHandle, request_id: &str, args: CodingChatStreamArgs) -> Result<(), String> {
+async fn run_turn(
+    app: &AppHandle,
+    request_id: &str,
+    args: CodingChatStreamArgs,
+    cancellation: &mut oneshot::Receiver<()>,
+    epoch: u64,
+) -> Result<(), String> {
+    if !is_current_coding_epoch(epoch) {
+        return Ok(());
+    }
     let workspace = PathBuf::from(&args.workspace);
     if !workspace.is_dir() {
         return Err(format!("workspace does not exist: {}", args.workspace));
@@ -301,6 +406,10 @@ async fn run_turn(app: &AppHandle, request_id: &str, args: CodingChatStreamArgs)
     let attachments = crate::commands::chat_attachment::read_all(args.attachments, "coding_chat");
 
     let mut guard = crate::shell::acp_client::coding_singleton().lock().await;
+    if !is_current_coding_epoch(epoch) {
+        drop(guard);
+        return Ok(());
+    }
     // A workspace switch needs a fresh process rooted at the new cwd — the
     // PWA calls `coding_reset_engine` before sending a turn in a different
     // workspace, but guard here too in case a stale client from a prior
@@ -309,7 +418,9 @@ async fn run_turn(app: &AppHandle, request_id: &str, args: CodingChatStreamArgs)
     let _ = stale_cwd;
     if guard.is_none() {
         let env = BTreeMap::new();
-        match crate::shell::acp_client::AcpClient::start_in("opencode", &env, Some(&workspace)).await {
+        match crate::shell::acp_client::AcpClient::start_in("opencode", &env, Some(&workspace))
+            .await
+        {
             Ok(c) => *guard = Some(c),
             Err(e) => return Err(format!("opencode ACP start failed: {e}")),
         }
@@ -318,60 +429,72 @@ async fn run_turn(app: &AppHandle, request_id: &str, args: CodingChatStreamArgs)
     let rid = request_id.to_string();
     let app2 = app.clone();
     let result = client
-        .prompt(&turns, Some(CODING_CAPABILITY_BRIEF), &attachments, |e: crate::shell::acp_client::AcpEvent| {
-            use crate::shell::acp_client::AcpEvent;
-            match e {
-                AcpEvent::Text(t) => {
-                    let _ = app2.emit(
-                        "chat-stream-delta",
-                        StreamDelta {
-                            request_id: rid.clone(),
-                            delta: t,
-                            done: false,
-                            error: None,
-                        },
-                    );
+        .prompt_cancellable(
+            &turns,
+            Some(CODING_CAPABILITY_BRIEF),
+            &attachments,
+            |e: crate::shell::acp_client::AcpEvent| {
+                use crate::shell::acp_client::AcpEvent;
+                match e {
+                    AcpEvent::Text(t) => {
+                        let _ = app2.emit(
+                            "chat-stream-delta",
+                            StreamDelta {
+                                request_id: rid.clone(),
+                                delta: t,
+                                done: false,
+                                error: None,
+                            },
+                        );
+                    }
+                    AcpEvent::Thought(t) => {
+                        let _ = app2.emit(
+                            "chat-stream-thought",
+                            ThoughtStep {
+                                request_id: rid.clone(),
+                                delta: t,
+                            },
+                        );
+                    }
+                    AcpEvent::ToolCall { id, title, input } => {
+                        let _ = app2.emit(
+                            "chat-stream-tool",
+                            ToolStep {
+                                request_id: rid.clone(),
+                                tool_call_id: id,
+                                phase: "call".to_string(),
+                                title,
+                                status: None,
+                                input: Some(input),
+                                output: None,
+                            },
+                        );
+                    }
+                    AcpEvent::ToolResult { id, status, output } => {
+                        let _ = app2.emit(
+                            "chat-stream-tool",
+                            ToolStep {
+                                request_id: rid.clone(),
+                                tool_call_id: id,
+                                phase: "result".to_string(),
+                                title: String::new(),
+                                status: Some(status),
+                                input: None,
+                                output: Some(output),
+                            },
+                        );
+                    }
                 }
-                AcpEvent::Thought(t) => {
-                    let _ = app2.emit(
-                        "chat-stream-thought",
-                        ThoughtStep {
-                            request_id: rid.clone(),
-                            delta: t,
-                        },
-                    );
-                }
-                AcpEvent::ToolCall { id, title, input } => {
-                    let _ = app2.emit(
-                        "chat-stream-tool",
-                        ToolStep {
-                            request_id: rid.clone(),
-                            tool_call_id: id,
-                            phase: "call".to_string(),
-                            title,
-                            status: None,
-                            input: Some(input),
-                            output: None,
-                        },
-                    );
-                }
-                AcpEvent::ToolResult { id, status, output } => {
-                    let _ = app2.emit(
-                        "chat-stream-tool",
-                        ToolStep {
-                            request_id: rid.clone(),
-                            tool_call_id: id,
-                            phase: "result".to_string(),
-                            title: String::new(),
-                            status: Some(status),
-                            input: None,
-                            output: Some(output),
-                        },
-                    );
-                }
-            }
-        })
+            },
+            cancellation,
+        )
         .await;
+
+    if !is_current_coding_epoch(epoch) {
+        *guard = None;
+        drop(guard);
+        return Ok(());
+    }
 
     match result {
         Ok(_) => {
@@ -380,11 +503,11 @@ async fn run_turn(app: &AppHandle, request_id: &str, args: CodingChatStreamArgs)
             Ok(())
         }
         Err(e) => {
-            // Same continuity discipline as Irisy's engine (ADR-005 §8.3): only
-            // drop the session if the process is genuinely dead, never on a
-            // transient turn error.
-            let alive = guard.as_mut().map(|c| c.is_alive()).unwrap_or(false);
-            if !alive {
+            // Keep the session only after its ACP stream is quiescent. A live
+            // process whose timed-out turn did not reach a terminal response
+            // cannot safely serve a later Coding request. (ADR-005 irisy §8.3 v32)
+            let reusable = guard.as_mut().map(|c| c.is_reusable()).unwrap_or(false);
+            if !reusable {
                 *guard = None;
             }
             drop(guard);

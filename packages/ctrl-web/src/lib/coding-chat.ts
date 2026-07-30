@@ -102,13 +102,34 @@ export async function* streamCodingChat(
     unlistenTool();
     unlistenThought();
   };
-  const onAbort = (): void => wake();
+  let cancellationRequested = false;
+  let backendStarted = false;
+  let backendCancellationSent = false;
+  const cancelBackendTurn = (): void => {
+    if (!backendStarted || backendCancellationSent) return;
+    backendCancellationSent = true;
+    // Browser abort only stops local iteration. Tell the ACP owner to cancel
+    // and drain this exact prompt before another Coding turn can reuse stdout.
+    // (ADR-005 irisy §8.3 v32)
+    void invoke<void>('coding_cancel_stream', {
+      args: { request_id: requestId },
+    }).catch(() => undefined);
+  };
+  const onAbort = (): void => {
+    if (cancellationRequested) return;
+    cancellationRequested = true;
+    cancelBackendTurn();
+    wake();
+  };
   signal?.addEventListener('abort', onAbort);
+  if (signal?.aborted) onAbort();
 
   try {
     await invoke('coding_chat_stream', {
       args: { request_id: requestId, workspace, messages, attachments: attachments ?? [] },
     });
+    backendStarted = true;
+    if (cancellationRequested) cancelBackendTurn();
     while (true) {
       if (signal?.aborted) {
         yield { delta: '', done: true, error: 'aborted' };

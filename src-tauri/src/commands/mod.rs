@@ -36,9 +36,9 @@ pub mod notes_ui_scan;
 // ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): image
 // generation surface. Currently fal.ai-only; multi-provider routing for
 // image.generate lands when the second image provider is wired.
+pub mod code_space;
 pub mod image;
 pub mod screenshot;
-pub mod code_space;
 // Human-triggered external Coding Launcher Effect. OpenCode remains a
 // user-owned BYO-CLI process; CTRL only opens the projected workspace.
 // (ADR-001 spine §4 v13; ADR-003 frontend §8.5 v27;
@@ -47,9 +47,9 @@ pub mod coding_attachment_picker;
 pub mod coding_chat;
 pub mod coding_launcher;
 pub mod config;
+pub mod diagnostics;
 pub mod draft;
 pub mod draft_run;
-pub mod diagnostics;
 pub mod gate;
 // ADR-002 substrate § vault v1 §8.6 v5 (2026-06-01) — vault-side git via git CLI
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
@@ -74,11 +74,11 @@ pub mod review;
 // 2026-06-19 (decision 0007 §per-provider-models): opencode-style live
 // /models fetch — provider's own endpoint is the source of truth, not
 // the catalog's static defaultModel.
+pub mod event_stream;
 pub mod provider_models;
 pub mod provider_templates;
 pub mod skills;
 pub mod storage;
-pub mod event_stream;
 pub mod system;
 pub mod updater;
 pub mod vault;
@@ -275,6 +275,7 @@ macro_rules! pwa_invoke_handler {
             // engine uses, in a separate singleton rooted at the selected
             // workspace.
             $crate::commands::coding_chat::coding_chat_stream,
+            $crate::commands::coding_chat::coding_cancel_stream,
             $crate::commands::coding_chat::coding_reset_engine,
             // Unified first-party diagnostics controls. Capture/export preview
             // remain Tauri-only; Gate exposes the read-only subset.

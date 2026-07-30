@@ -567,21 +567,18 @@ async fn forward_to_provider(
                         return Ok(());
                     }
                     Err(e) => {
-                        // ADR-005 irisy §8.3 (v7): do NOT nuke a LIVE engine session
-                        // on a transient error — that was an amnesia mechanism (§8.2).
-                        // Continuity is the ENGINE's: keep the session so its whole
-                        // conversation context survives for the next turn; reset only
-                        // when the engine process is genuinely DEAD (next turn then
-                        // restarts + re-primes). Either way this turn falls through to
-                        // the provider router so the user still gets an answer.
-                        let dead = guard.as_mut().map(|c| !c.is_alive()).unwrap_or(true);
-                        if dead {
+                        // Keep a live engine only after its ACP stream is reusable.
+                        // A timed-out turn that could not drain its terminal response is
+                        // not safe for the next UI request even if the process survives.
+                        // (ADR-005 irisy §8.3 v32)
+                        let reusable = guard.as_mut().map(|c| c.is_reusable()).unwrap_or(false);
+                        if !reusable {
                             *guard = None;
                         }
                         drop(guard);
                         eprintln!(
-                            "[acp] hermes prompt failed (engine {}), using provider router: {e}",
-                            if dead { "dead \u{2014} reset" } else { "alive \u{2014} session kept" }
+                            "[acp] hermes prompt failed (session {}), using provider router: {e}",
+                            if reusable { "quiesced \u{2014} session kept" } else { "not reusable \u{2014} reset" }
                         );
                     }
                 }

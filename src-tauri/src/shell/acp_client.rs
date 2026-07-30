@@ -36,6 +36,9 @@ use tokio::sync::Mutex;
 
 /// Per-line read budget — covers uvx cold start + first-token model latency.
 const READ_TIMEOUT: Duration = Duration::from_secs(180);
+/// Time allowed for ACP to acknowledge a timed-out prompt after `session/cancel`.
+/// This is a recovery boundary, not a second prompt latency budget.
+const CANCEL_DRAIN_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub struct AcpClient {
     child: Child,
@@ -43,6 +46,11 @@ pub struct AcpClient {
     reader: BufReader<ChildStdout>,
     session_id: String,
     next_id: i64,
+    /// False after a timed-out turn cannot be drained to its terminal response.
+    /// A live process alone is not safe to reuse because its next notification
+    /// could otherwise be attributed to a later UI request.
+    /// (ADR-005 irisy §8.3 v32)
+    reusable: bool,
     /// Whether the CTRL capability preamble has been sent this session (§1.8.2).
     primed: bool,
     /// Which Irisy engine this client drives — `hermes` | `codex` | `claude-code`
@@ -135,7 +143,11 @@ const MAX_TEXT_RESOURCE_CHARS: usize = 100_000;
 /// NOT advertised degrades to a plain text notice — never a silent drop and
 /// never an attempt to send a block type the engine didn't opt into (which it
 /// may reject the whole turn over).
-fn build_prompt_blocks(text: &str, attachments: &[Attachment], caps: PromptCapsSnapshot) -> Vec<Value> {
+fn build_prompt_blocks(
+    text: &str,
+    attachments: &[Attachment],
+    caps: PromptCapsSnapshot,
+) -> Vec<Value> {
     let mut blocks = vec![json!({ "type": "text", "text": text })];
     for att in attachments {
         let unsupported_notice = || {
@@ -168,7 +180,12 @@ fn build_prompt_blocks(text: &str, attachments: &[Attachment], caps: PromptCapsS
                     unsupported_notice()
                 } else {
                     let (body, truncated) = if text.chars().count() > MAX_TEXT_RESOURCE_CHARS {
-                        (text.chars().take(MAX_TEXT_RESOURCE_CHARS).collect::<String>(), true)
+                        (
+                            text.chars()
+                                .take(MAX_TEXT_RESOURCE_CHARS)
+                                .collect::<String>(),
+                            true,
+                        )
                     } else {
                         (text.clone(), false)
                     };
@@ -291,7 +308,12 @@ fn parse_session_update(u: &Value) -> Option<AcpEvent> {
             })
         }
         acp_v1::SessionUpdate::ToolCallUpdate(tcu) => {
-            let status = tcu.fields.status.as_ref().map(status_str).unwrap_or_default();
+            let status = tcu
+                .fields
+                .status
+                .as_ref()
+                .map(status_str)
+                .unwrap_or_default();
             let output = tcu
                 .fields
                 .content
@@ -522,7 +544,10 @@ pub fn diagnostics_snapshot() -> AcpDiagnosticsSnapshot {
     let engine = Some(client.engine_id.clone());
     let state = if client.is_alive() {
         let state = current_diagnostics_state();
-        if matches!(state, AcpDiagnosticsState::Idle | AcpDiagnosticsState::Failed) {
+        if matches!(
+            state,
+            AcpDiagnosticsState::Idle | AcpDiagnosticsState::Failed
+        ) {
             set_diagnostics_state(AcpDiagnosticsState::Ready);
             AcpDiagnosticsState::Ready
         } else {
@@ -674,8 +699,8 @@ fn engine_argv(engine: &str) -> Result<Vec<String>> {
     use crate::shell::agent_installer::{read_manifest, AgentName, HERMES_PYTHON};
     match engine {
         "" | "hermes" => {
-            let manifest = read_manifest(&AgentName::Hermes)
-                .ok_or_else(|| anyhow!("hermes not installed"))?;
+            let manifest =
+                read_manifest(&AgentName::Hermes).ok_or_else(|| anyhow!("hermes not installed"))?;
             let mut argv = manifest.entry_cmd.clone();
             if argv.is_empty() {
                 return Err(anyhow!("hermes manifest.entry_cmd empty"));
@@ -693,7 +718,9 @@ fn engine_argv(engine: &str) -> Result<Vec<String>> {
             // client SDK (streamable-http API, `_MCP_NEW_HTTP`). Verified end-to-end
             // 2026-06-28: without it register returns 0 tools; with it all 24 load.
             if argv[0].ends_with("uvx")
-                && !argv.windows(2).any(|w| w[0] == "--with" && w[1].starts_with("mcp"))
+                && !argv
+                    .windows(2)
+                    .any(|w| w[0] == "--with" && w[1].starts_with("mcp"))
             {
                 argv.splice(1..1, ["--with".to_string(), "mcp>=1.24".to_string()]);
             }
@@ -742,6 +769,26 @@ fn resolve_engine_binary(engine: &str) -> Option<PathBuf> {
         }
     }
     crate::kernel::provider::path_resolver::resolve_binary_path(agent.bin_name())
+}
+
+fn parse_json_rpc_line(line: &str) -> Option<Value> {
+    let line = line.trim();
+    line.starts_with('{')
+        .then(|| serde_json::from_str(line).ok())
+        .flatten()
+}
+
+fn is_response_for(message: &Value, id: i64) -> bool {
+    message.get("id").and_then(|value| value.as_i64()) == Some(id)
+        && (message.get("result").is_some() || message.get("error").is_some())
+}
+
+fn cancel_notification(session_id: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "method": "session/cancel",
+        "params": { "sessionId": session_id }
+    })
 }
 
 impl AcpClient {
@@ -860,6 +907,7 @@ impl AcpClient {
             reader: BufReader::new(stdout),
             session_id: String::new(),
             next_id: 0,
+            reusable: true,
             primed: false,
             engine_id: engine.to_string(),
             // Filled in below once `initialize` responds.
@@ -896,8 +944,16 @@ impl AcpClient {
         if let Some(methods) = init.get("authMethods").and_then(|m| m.as_array()) {
             let method_id = methods
                 .iter()
-                .find_map(|m| m.get("id").and_then(|i| i.as_str()).filter(|id| *id == "api-key"))
-                .or_else(|| methods.iter().find_map(|m| m.get("id").and_then(|i| i.as_str())));
+                .find_map(|m| {
+                    m.get("id")
+                        .and_then(|i| i.as_str())
+                        .filter(|id| *id == "api-key")
+                })
+                .or_else(|| {
+                    methods
+                        .iter()
+                        .find_map(|m| m.get("id").and_then(|i| i.as_str()))
+                });
             if let Some(mid) = method_id {
                 let mid = mid.to_string();
                 if let Err(e) = s
@@ -933,7 +989,9 @@ impl AcpClient {
         {
             Ok(v) => v,
             Err(e) if had_mcp => {
-                eprintln!("[acp] session/new with MCP passthrough failed ({e}); retrying without tools");
+                eprintln!(
+                    "[acp] session/new with MCP passthrough failed ({e}); retrying without tools"
+                );
                 s.request(
                     "session/new",
                     json!({ "cwd": cwd_str, "mcpServers": [] }),
@@ -968,15 +1026,17 @@ impl AcpClient {
         Ok(s)
     }
 
-    /// Run one prompt turn; `on_delta` receives streamed text as it arrives.
-    /// Returns the ACP stopReason.
-    /// True while the hermes-acp child is still running. On a prompt error the
-    /// caller uses this to decide whether the engine is recoverable (keep the
-    /// session — the conversation context survives in it) or genuinely dead
-    /// (reset + re-prime). ADR-005 irisy §8.3 — continuity is the ENGINE's; never
-    /// drop a live session into amnesia just because one turn errored.
+    /// True while the ACP child process is still running.
     pub fn is_alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
+    }
+
+    /// True when the child is alive and its stdout stream is safe for another
+    /// request. A prompt timeout retains the session only after the ACP-required
+    /// terminal response has been drained; otherwise callers must re-hydrate.
+    /// (ADR-005 irisy §8.3 v32)
+    pub fn is_reusable(&mut self) -> bool {
+        self.reusable && self.is_alive()
     }
 
     /// Which Irisy engine this client drives (ADR-005 §8.7). The caller compares
@@ -1006,7 +1066,41 @@ impl AcpClient {
         turns: &[(String, String)],
         system_preamble: Option<&str>,
         attachments: &[Attachment],
+        on_event: impl FnMut(AcpEvent) + Send,
+    ) -> Result<String> {
+        self.prompt_inner(turns, system_preamble, attachments, on_event, None)
+            .await
+    }
+
+    /// Run a prompt that can be cancelled by its owning UI request. Cancellation
+    /// always travels through ACP's `session/cancel` and terminal-response drain,
+    /// so a newer Coding turn cannot inherit stale output from an abandoned one.
+    /// (ADR-005 irisy §8.3 v32)
+    pub async fn prompt_cancellable(
+        &mut self,
+        turns: &[(String, String)],
+        system_preamble: Option<&str>,
+        attachments: &[Attachment],
+        on_event: impl FnMut(AcpEvent) + Send,
+        cancellation: &mut tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<String> {
+        self.prompt_inner(
+            turns,
+            system_preamble,
+            attachments,
+            on_event,
+            Some(cancellation),
+        )
+        .await
+    }
+
+    async fn prompt_inner(
+        &mut self,
+        turns: &[(String, String)],
+        system_preamble: Option<&str>,
+        attachments: &[Attachment],
         mut on_event: impl FnMut(AcpEvent) + Send,
+        cancellation: Option<&mut tokio::sync::oneshot::Receiver<()>>,
     ) -> Result<String> {
         let sid = self.session_id.clone();
         let last_user = turns
@@ -1022,10 +1116,10 @@ impl AcpClient {
         // (the durable transcript is the recovery source; the live session is
         // the working context). While the SAME session continues, only the
         // latest user message is sent (the engine already holds the history).
-        let turn_text = if self.primed {
+        let bootstrap_pending = !self.primed;
+        let turn_text = if !bootstrap_pending {
             last_user
         } else {
-            self.primed = true;
             let mut head = String::new();
             if let Some(sys) = system_preamble {
                 let sys = sys.trim();
@@ -1055,13 +1149,22 @@ impl AcpClient {
         let started = std::time::Instant::now();
         set_diagnostics_state(AcpDiagnosticsState::Busy);
         let prompt_blocks = build_prompt_blocks(&turn_text, attachments, self.prompt_caps);
-        let result = self
-            .request(
+        let result = if let Some(cancellation) = cancellation {
+            self.request_cancellable(
+                "session/prompt",
+                json!({ "sessionId": sid, "prompt": prompt_blocks }),
+                &mut on_event,
+                cancellation,
+            )
+            .await
+        } else {
+            self.request(
                 "session/prompt",
                 json!({ "sessionId": sid, "prompt": prompt_blocks }),
                 &mut on_event,
             )
-            .await;
+            .await
+        };
         let alive = self.is_alive();
         let (severity, outcome) = if result.is_ok() {
             ("info", "ok")
@@ -1088,6 +1191,14 @@ impl AcpClient {
             attributes: serde_json::json!({ "engine": self.engine_id }),
         });
         let res = result?;
+        // A drained cancellation restores stream ordering, but it does not
+        // prove the agent accepted this session's bootstrap context. Commit
+        // priming only after the first prompt finishes successfully so a
+        // later turn replays it if the bootstrap was interrupted.
+        // (ADR-005 irisy §8.3 v32)
+        if bootstrap_pending {
+            self.primed = true;
+        }
         Ok(res
             .get("stopReason")
             .and_then(|v| v.as_str())
@@ -1113,6 +1224,56 @@ impl AcpClient {
         params: Value,
         on_event: &mut (dyn FnMut(AcpEvent) + Send),
     ) -> Result<Value> {
+        self.request_with_read_timeout(method, params, on_event, READ_TIMEOUT)
+            .await
+    }
+
+    async fn request_cancellable(
+        &mut self,
+        method: &str,
+        params: Value,
+        on_event: &mut (dyn FnMut(AcpEvent) + Send),
+        cancellation: &mut tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<Value> {
+        self.request_with_read_timeout_and_cancellation(
+            method,
+            params,
+            on_event,
+            READ_TIMEOUT,
+            Some(cancellation),
+        )
+        .await
+    }
+
+    async fn request_with_read_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        on_event: &mut (dyn FnMut(AcpEvent) + Send),
+        read_timeout: Duration,
+    ) -> Result<Value> {
+        self.request_with_read_timeout_and_cancellation(
+            method,
+            params,
+            on_event,
+            read_timeout,
+            None,
+        )
+        .await
+    }
+
+    async fn request_with_read_timeout_and_cancellation(
+        &mut self,
+        method: &str,
+        params: Value,
+        on_event: &mut (dyn FnMut(AcpEvent) + Send),
+        read_timeout: Duration,
+        mut cancellation: Option<&mut tokio::sync::oneshot::Receiver<()>>,
+    ) -> Result<Value> {
+        if !self.reusable {
+            return Err(anyhow!("ACP session is not reusable"));
+        }
+
         let id = self.next_id;
         self.next_id += 1;
         self.write_msg(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
@@ -1120,32 +1281,60 @@ impl AcpClient {
 
         loop {
             let mut line = String::new();
-            let n = tokio::time::timeout(READ_TIMEOUT, self.reader.read_line(&mut line))
-                .await
-                .map_err(|_| anyhow!("hermes-acp read timed out"))??;
+            let read = tokio::time::timeout(read_timeout, self.reader.read_line(&mut line));
+            let read_result = if let Some(cancellation) = cancellation.as_deref_mut() {
+                tokio::select! {
+                    _ = cancellation => {
+                        let acp = format!("{}-acp", self.engine_id);
+                        if method != "session/prompt" || self.session_id.is_empty() {
+                            self.reusable = false;
+                            return Err(anyhow!("{acp} request cancelled"));
+                        }
+                        if let Err(cancel_error) = self.cancel_and_drain_prompt(id).await {
+                            self.reusable = false;
+                            return Err(anyhow!(
+                                "{acp} prompt cancelled; session cancellation was not confirmed: {cancel_error}"
+                            ));
+                        }
+                        return Err(anyhow!("{acp} prompt cancelled"));
+                    }
+                    result = read => result,
+                }
+            } else {
+                read.await
+            };
+            let n = match read_result {
+                Ok(result) => result?,
+                Err(_) => {
+                    let acp = format!("{}-acp", self.engine_id);
+                    if method != "session/prompt" || self.session_id.is_empty() {
+                        self.reusable = false;
+                        return Err(anyhow!("{acp} read timed out"));
+                    }
+                    if let Err(cancel_error) = self.cancel_and_drain_prompt(id).await {
+                        self.reusable = false;
+                        return Err(anyhow!(
+                            "{acp} read timed out; session cancellation was not confirmed: {cancel_error}"
+                        ));
+                    }
+                    return Err(anyhow!("{acp} read timed out"));
+                }
+            };
             if n == 0 {
-                return Err(anyhow!("hermes-acp closed stdout"));
+                self.reusable = false;
+                return Err(anyhow!("{}-acp closed stdout", self.engine_id));
             }
-            let line = line.trim();
-            if !line.starts_with('{') {
+            let Some(v) = parse_json_rpc_line(&line) else {
                 continue;
-            }
-            let v: Value = match serde_json::from_str(line) {
-                Ok(v) => v,
-                Err(_) => continue,
             };
 
-            // Response to our request?
-            if v.get("id").and_then(|i| i.as_i64()) == Some(id)
-                && (v.get("result").is_some() || v.get("error").is_some())
-            {
+            if is_response_for(&v, id) {
                 if let Some(err) = v.get("error") {
                     return Err(anyhow!("ACP error: {err}"));
                 }
                 return Ok(v.get("result").cloned().unwrap_or(Value::Null));
             }
 
-            // session/update notification → map to an AcpEvent (ADR-005 §8.6).
             if v.get("method").and_then(|m| m.as_str()) == Some("session/update") {
                 if let Some(u) = v.get("params").and_then(|p| p.get("update")) {
                     if let Some(ev) = parse_session_update(u) {
@@ -1155,22 +1344,64 @@ impl AcpClient {
                 continue;
             }
 
-            // Agent → client request (id + method) → minimal reply.
-            if let (Some(req_id), Some(req_method)) = (
-                v.get("id").and_then(|i| i.as_i64()),
-                v.get("method").and_then(|m| m.as_str()),
-            ) {
-                let result = if req_method == "session/request_permission" {
-                    select_allow_outcome(&v)
-                } else if req_method == "fs/read_text_file" {
-                    json!({ "content": "" })
-                } else {
-                    Value::Null
-                };
-                self.write_msg(&json!({ "jsonrpc": "2.0", "id": req_id, "result": result }))
-                    .await?;
-            }
+            self.reply_to_agent_request(&v).await?;
         }
+    }
+
+    /// Cancel a timed-out prompt and consume the original prompt's terminal
+    /// response before this client accepts another request. ACP requires
+    /// `session/cancel` to be a notification scoped by `sessionId`, followed by
+    /// pending updates and a final response to the original prompt. Updates are
+    /// deliberately discarded here: their UI callback belongs to the timed-out
+    /// turn, never the next one. (ADR-005 irisy §8.3 v32)
+    async fn cancel_and_drain_prompt(&mut self, prompt_id: i64) -> Result<()> {
+        self.write_msg(&cancel_notification(&self.session_id))
+            .await?;
+
+        let deadline = tokio::time::Instant::now() + CANCEL_DRAIN_TIMEOUT;
+        loop {
+            let remaining = deadline
+                .checked_duration_since(tokio::time::Instant::now())
+                .ok_or_else(|| anyhow!("ACP cancellation drain timed out"))?;
+            let mut line = String::new();
+            let n = tokio::time::timeout(remaining, self.reader.read_line(&mut line))
+                .await
+                .map_err(|_| anyhow!("ACP cancellation drain timed out"))??;
+            if n == 0 {
+                return Err(anyhow!("ACP closed stdout during cancellation drain"));
+            }
+            let Some(v) = parse_json_rpc_line(&line) else {
+                continue;
+            };
+            if is_response_for(&v, prompt_id) {
+                return Ok(());
+            }
+            // ACP requires pending session/update notifications before the
+            // prompt response. They establish the stream boundary but must not
+            // be emitted through the expired request's callback.
+            if v.get("method").and_then(|m| m.as_str()) == Some("session/update") {
+                continue;
+            }
+            self.reply_to_agent_request(&v).await?;
+        }
+    }
+
+    async fn reply_to_agent_request(&mut self, v: &Value) -> Result<()> {
+        if let (Some(req_id), Some(req_method)) = (
+            v.get("id").and_then(|i| i.as_i64()),
+            v.get("method").and_then(|m| m.as_str()),
+        ) {
+            let result = if req_method == "session/request_permission" {
+                select_allow_outcome(v)
+            } else if req_method == "fs/read_text_file" {
+                json!({ "content": "" })
+            } else {
+                Value::Null
+            };
+            self.write_msg(&json!({ "jsonrpc": "2.0", "id": req_id, "result": result }))
+                .await?;
+        }
+        Ok(())
     }
 }
 
@@ -1180,6 +1411,199 @@ mod tests {
 
     fn perm_req(options: Value) -> Value {
         json!({ "params": { "options": options } })
+    }
+
+    #[tokio::test]
+    async fn timeout_drains_late_updates_before_reusing_the_session() {
+        let mut child = tokio::process::Command::new("sh")
+            .args([
+                "-c",
+                r#"while IFS= read -r line; do
+case "$line" in
+  *'"method":"session/prompt"'*) sleep 1 ;;
+  *'"method":"session/cancel"'*)
+    printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"late"}}}}'
+    printf '%s\n' '{"jsonrpc":"2.0","id":0,"result":{"stopReason":"cancelled"}}'
+    ;;
+  *'"method":"session/list"'*)
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"sessions":[]}}'
+    exit 0
+    ;;
+esac
+done"#,
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("start ACP fixture");
+        let stdin = child.stdin.take().expect("fixture stdin");
+        let stdout = child.stdout.take().expect("fixture stdout");
+        let mut client = AcpClient {
+            child,
+            stdin,
+            reader: BufReader::new(stdout),
+            session_id: "session-42".to_string(),
+            next_id: 0,
+            reusable: true,
+            primed: false,
+            engine_id: "fixture".to_string(),
+            prompt_caps: PromptCapsSnapshot::default(),
+        };
+        let mut events = Vec::new();
+        let timed_out = client
+            .request_with_read_timeout(
+                "session/prompt",
+                json!({}),
+                &mut |event| events.push(event),
+                std::time::Duration::from_millis(10),
+            )
+            .await;
+        assert!(timed_out
+            .unwrap_err()
+            .to_string()
+            .contains("read timed out"));
+        assert!(
+            events.is_empty(),
+            "late update leaked through the expired callback"
+        );
+        assert!(
+            client.is_reusable(),
+            "terminal prompt response must restore reuse"
+        );
+
+        let response = client
+            .request_with_read_timeout(
+                "session/list",
+                json!({}),
+                &mut |_| {},
+                std::time::Duration::from_millis(50),
+            )
+            .await
+            .expect("next request uses the drained session");
+        assert_eq!(response, json!({ "sessions": [] }));
+    }
+
+    #[tokio::test]
+    async fn unconfirmed_cancellation_marks_the_session_unusable() {
+        let mut child = tokio::process::Command::new("sh")
+            .args([
+                "-c",
+                r#"while IFS= read -r line; do
+case "$line" in
+  *'"method":"session/prompt"'*) sleep 1 ;;
+  *'"method":"session/cancel"'*) exit 0 ;;
+esac
+done"#,
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("start ACP fixture");
+        let stdin = child.stdin.take().expect("fixture stdin");
+        let stdout = child.stdout.take().expect("fixture stdout");
+        let mut client = AcpClient {
+            child,
+            stdin,
+            reader: BufReader::new(stdout),
+            session_id: "session-42".to_string(),
+            next_id: 0,
+            reusable: true,
+            primed: false,
+            engine_id: "fixture".to_string(),
+            prompt_caps: PromptCapsSnapshot::default(),
+        };
+        let result = client
+            .request_with_read_timeout(
+                "session/prompt",
+                json!({}),
+                &mut |_| {},
+                std::time::Duration::from_millis(10),
+            )
+            .await;
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("session cancellation was not confirmed"));
+        assert!(
+            !client.reusable,
+            "unconfirmed cancellation must prevent reuse"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_bootstrap_is_not_marked_primed() {
+        let mut child = tokio::process::Command::new("sh")
+            .args([
+                "-c",
+                r#"while IFS= read -r line; do
+case "$line" in
+  *'"method":"session/prompt"'*) : ;;
+  *'"method":"session/cancel"'*)
+    printf '%s\n' '{"jsonrpc":"2.0","id":0,"result":{"stopReason":"cancelled"}}'
+    ;;
+esac
+done"#,
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("start ACP fixture");
+        let stdin = child.stdin.take().expect("fixture stdin");
+        let stdout = child.stdout.take().expect("fixture stdout");
+        let mut client = AcpClient {
+            child,
+            stdin,
+            reader: BufReader::new(stdout),
+            session_id: "session-42".to_string(),
+            next_id: 0,
+            reusable: true,
+            primed: false,
+            engine_id: "fixture".to_string(),
+            prompt_caps: PromptCapsSnapshot::default(),
+        };
+        let turns = vec![("user".to_string(), "first turn".to_string())];
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
+        cancel_tx.send(()).expect("cancel bootstrap turn");
+
+        let error = client
+            .prompt_cancellable(&turns, Some("test preamble"), &[], |_| {}, &mut cancel_rx)
+            .await
+            .expect_err("bootstrap prompt is cancelled");
+        assert!(error.to_string().contains("prompt cancelled"));
+        assert!(client.is_reusable(), "terminal cancellation response keeps ordering safe");
+        assert!(
+            !client.primed,
+            "an interrupted bootstrap must be replayed before the session is reused"
+        );
+    }
+
+    #[test]
+    fn timeout_cancellation_uses_the_acp_session_notification() {
+        assert_eq!(
+            cancel_notification("session-42"),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "session/cancel",
+                "params": { "sessionId": "session-42" }
+            })
+        );
+    }
+
+    #[test]
+    fn terminal_response_is_matched_to_the_timed_out_prompt_only() {
+        assert!(is_response_for(
+            &json!({ "id": 7, "result": { "stopReason": "cancelled" } }),
+            7
+        ));
+        assert!(is_response_for(
+            &json!({ "id": 7, "error": { "code": -32000 } }),
+            7
+        ));
+        assert!(!is_response_for(&json!({ "id": 8, "result": {} }), 7));
+        assert!(!is_response_for(
+            &json!({ "method": "session/update", "params": {} }),
+            7
+        ));
     }
 
     // ADR-001 spine §4 v16: opencode speaks ACP NATIVELY via its own `acp`
@@ -1235,7 +1659,14 @@ mod tests {
             mime_type: "image/png".to_string(),
             content: AttachmentContent::ImageBase64("Zm9v".to_string()),
         };
-        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: true, embedded_context: false });
+        let blocks = build_prompt_blocks(
+            "hi",
+            &[att],
+            PromptCapsSnapshot {
+                image: true,
+                embedded_context: false,
+            },
+        );
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[1]["type"], "image");
         assert_eq!(blocks[1]["data"], "Zm9v");
@@ -1264,7 +1695,14 @@ mod tests {
             mime_type: "text/markdown".to_string(),
             content: AttachmentContent::Text("# competitor notes".to_string()),
         };
-        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: false, embedded_context: true });
+        let blocks = build_prompt_blocks(
+            "hi",
+            &[att],
+            PromptCapsSnapshot {
+                image: false,
+                embedded_context: true,
+            },
+        );
         assert_eq!(blocks[1]["type"], "resource");
         assert_eq!(blocks[1]["resource"]["text"], "# competitor notes");
         assert_eq!(blocks[1]["resource"]["uri"], "notes.md");
@@ -1290,7 +1728,14 @@ mod tests {
             mime_type: "text/plain".to_string(),
             content: AttachmentContent::Text(big),
         };
-        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: false, embedded_context: true });
+        let blocks = build_prompt_blocks(
+            "hi",
+            &[att],
+            PromptCapsSnapshot {
+                image: false,
+                embedded_context: true,
+            },
+        );
         let text = blocks[1]["resource"]["text"].as_str().unwrap();
         assert!(text.len() < MAX_TEXT_RESOURCE_CHARS + 500);
         assert!(text.contains("truncated"));
@@ -1304,9 +1749,19 @@ mod tests {
             mime_type: "image/png".to_string(),
             content: AttachmentContent::ImageBase64(huge_base64),
         };
-        let blocks = build_prompt_blocks("hi", &[att], PromptCapsSnapshot { image: true, embedded_context: false });
+        let blocks = build_prompt_blocks(
+            "hi",
+            &[att],
+            PromptCapsSnapshot {
+                image: true,
+                embedded_context: false,
+            },
+        );
         assert_eq!(blocks[1]["type"], "text");
-        assert!(blocks[1]["text"].as_str().unwrap().contains("exceeds the inline size limit"));
+        assert!(blocks[1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("exceeds the inline size limit"));
     }
 
     #[test]
@@ -1426,7 +1881,9 @@ mod tests {
 
         let thought = json!({ "sessionUpdate": "agent_thought_chunk",
             "content": { "type": "text", "text": "thinking" } });
-        assert!(matches!(parse_session_update(&thought), Some(AcpEvent::Thought(t)) if t == "thinking"));
+        assert!(
+            matches!(parse_session_update(&thought), Some(AcpEvent::Thought(t)) if t == "thinking")
+        );
 
         // usage_update / available_commands_update are not surfaced yet.
         let usage = json!({ "sessionUpdate": "usage_update", "tokens": 42 });
@@ -1501,7 +1958,10 @@ mod tests {
             .await
             .expect("start opencode acp");
         let mut answer = String::new();
-        let turns = vec![("user".to_string(), "Say hello in exactly 3 words.".to_string())];
+        let turns = vec![(
+            "user".to_string(),
+            "Say hello in exactly 3 words.".to_string(),
+        )];
         let stop = client
             .prompt(&turns, None, &[], |e| {
                 if let AcpEvent::Text(t) = e {
