@@ -570,7 +570,7 @@ async fn forward_to_provider(
                         // Keep a live engine only after its ACP stream is reusable.
                         // A timed-out turn that could not drain its terminal response is
                         // not safe for the next UI request even if the process survives.
-                        // (ADR-005 irisy §8.3 v32)
+                        // (ADR-005 irisy §8.3 v7)
                         let reusable = guard.as_mut().map(|c| c.is_reusable()).unwrap_or(false);
                         if !reusable {
                             *guard = None;

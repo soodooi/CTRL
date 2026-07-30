@@ -110,7 +110,7 @@ export async function* streamCodingChat(
     backendCancellationSent = true;
     // Browser abort only stops local iteration. Tell the ACP owner to cancel
     // and drain this exact prompt before another Coding turn can reuse stdout.
-    // (ADR-005 irisy §8.3 v32)
+    // (ADR-005 irisy §8.3 v7)
     void invoke<void>('coding_cancel_stream', {
       args: { request_id: requestId },
     }).catch(() => undefined);
