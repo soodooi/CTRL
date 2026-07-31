@@ -1122,6 +1122,7 @@ impl AcpClient {
         // (the durable transcript is the recovery source; the live session is
         // the working context). While the SAME session continues, only the
         // latest user message is sent (the engine already holds the history).
+        // (ADR-005 irisy §8.3 v33)
         let bootstrap_pending = !self.primed;
         let turn_text = if !bootstrap_pending {
             last_user
@@ -1288,6 +1289,9 @@ impl AcpClient {
         self.write_msg(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }))
             .await?;
 
+        // A read outcome may release the stream only after its original prompt's
+        // terminal response was drained; all other terminal failures revoke reuse.
+        // (ADR-005 irisy §8.3 v33)
         loop {
             let mut line = String::new();
             let read = tokio::time::timeout(read_timeout, self.reader.read_line(&mut line));
