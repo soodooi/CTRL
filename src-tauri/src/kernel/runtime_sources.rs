@@ -113,6 +113,8 @@ mod tests {
             ],
             ..Default::default()
         };
+        // The query must preserve configuration, runtime, and capability facts
+        // without collapsing them into an inferred ready state. (ADR-002 substrate § provider v71)
         let out = run_query(&provider_fields(), &provider_rows(), &req, now()).unwrap();
         assert_eq!(out.match_count, 1);
         assert_eq!(out.rows[0]["id"], "ollama");

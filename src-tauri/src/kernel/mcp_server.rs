@@ -2757,6 +2757,8 @@ impl KernelMcpRouter {
                     .and_then(|value| value.as_str().map(str::to_string))
                     .unwrap_or_default();
                 r.insert("runtime_status".into(), runtime_status);
+                // Verification and role bindings remain separate provider facts
+                // in the shared query surface. (ADR-002 substrate § provider v71)
                 r.insert("verified".into(), if e.verified { "x".into() } else { String::new() });
                 r.insert("active_roles".into(), e.active_roles.join(", "));
                 r.insert("capabilities".into(), e.capabilities.join(", "));
