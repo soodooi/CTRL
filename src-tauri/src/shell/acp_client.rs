@@ -771,6 +771,9 @@ fn resolve_engine_binary(engine: &str) -> Option<PathBuf> {
     crate::kernel::provider::path_resolver::resolve_binary_path(agent.bin_name())
 }
 
+// Keep response identity and cancellation framing separate from request dispatch so
+// the original prompt remains the only stream owner through its terminal response.
+// (ADR-005 irisy §8.3 v33)
 fn parse_json_rpc_line(line: &str) -> Option<Value> {
     let line = line.trim();
     line.starts_with('{')
@@ -1094,6 +1097,9 @@ impl AcpClient {
         .await
     }
 
+    // A bootstrap interrupted before a terminal response must remain replayable
+    // from the durable transcript; only a completed first prompt establishes it.
+    // (ADR-005 irisy §8.3 v33)
     async fn prompt_inner(
         &mut self,
         turns: &[(String, String)],
@@ -1228,6 +1234,9 @@ impl AcpClient {
             .await
     }
 
+    // Keep cancellation, timeout, and EOF on one state machine: reuse is safe
+    // only after the original prompt's terminal response was drained.
+    // (ADR-005 irisy §8.3 v33)
     async fn request_cancellable(
         &mut self,
         method: &str,
@@ -1386,6 +1395,9 @@ impl AcpClient {
         }
     }
 
+    // Agent requests still need replies while draining so the original prompt can
+    // reach its terminal response without leaking output to a later owner.
+    // (ADR-005 irisy §8.3 v33)
     async fn reply_to_agent_request(&mut self, v: &Value) -> Result<()> {
         if let (Some(req_id), Some(req_method)) = (
             v.get("id").and_then(|i| i.as_i64()),
@@ -1570,7 +1582,10 @@ done"#,
             .await
             .expect_err("bootstrap prompt is cancelled");
         assert!(error.to_string().contains("prompt cancelled"));
-        assert!(client.is_reusable(), "terminal cancellation response keeps ordering safe");
+        assert!(
+            client.is_reusable(),
+            "terminal cancellation response keeps ordering safe"
+        );
         assert!(
             !client.primed,
             "an interrupted bootstrap must be replayed before the session is reused"
