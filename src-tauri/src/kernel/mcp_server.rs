@@ -2832,9 +2832,9 @@ impl KernelMcpRouter {
             let body = serde_json::to_string(&hits).map_err(map_serde_err)?;
             return Ok(CallToolResult::success(vec![Content::text(body)]));
         }
-        // E13 (ADR-002 §1.9 v46): attach ~context_length chars around the first
-        // case-insensitive match so the AI can judge relevance without a second
-        // read per hit (LRA /search/simple/ contextLength parity).
+        // Attach context around the first case-insensitive match so the AI can
+        // judge relevance without a second read per hit (LRA /search/simple/
+        // contextLength parity). (ADR-002 substrate §1.9 v46)
         let radius = args.context_length.unwrap_or(100);
         let needle = args.query.to_lowercase();
         let rich: Vec<serde_json::Value> = hits

@@ -90,6 +90,8 @@ mod tests {
             // Runtime and configuration remain independently queryable.
             // (ADR-002 substrate § provider v71)
             r.insert("runtime_status".into(), runtime.into());
+            // Advertised capabilities remain independent of verification evidence
+            // and role binding. (ADR-002 substrate § provider v71)
             r.insert("capabilities".into(), caps.into());
             r
         };

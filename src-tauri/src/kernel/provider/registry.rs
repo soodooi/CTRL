@@ -965,6 +965,9 @@ impl ProviderRegistry {
                 "provider {provider_id} configuration changed during verification"
             )));
         }
+        // Record exact verification evidence separately from the selected role so
+        // routing admits only the configuration that passed this production trial.
+        // (ADR-002 substrate § provider v71)
         {
             self.verifications.write().unwrap().insert(
                 provider_id.to_string(),
