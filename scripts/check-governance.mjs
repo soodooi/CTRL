@@ -19,7 +19,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 
 const args = process.argv.slice(2);
@@ -323,13 +324,94 @@ function substantive(lines) {
   });
 }
 
+function sourceAtRevision(revision, file) {
+  if (!revision) return '';
+  try {
+    return execFileSync('git', ['show', `${revision}:${file}`], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return '';
+  }
+}
+
+function rustfmtSource(source, file) {
+  try {
+    return execFileSync('rustfmt', ['--edition', '2021', '--emit', 'stdout'], {
+      input: source,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    const detail = error.stderr?.toString().trim() || error.message;
+    throw new Error(`[BLOCKED] rustfmt could not normalize ${file}: ${detail}`);
+  }
+}
+
+function normalizedRustDiff(file, before, after) {
+  const directory = mkdtempSync(join(tmpdir(), 'ctrl-governance-rustfmt-'));
+  const beforePath = join(directory, 'before.rs');
+  const afterPath = join(directory, 'after.rs');
+  try {
+    writeFileSync(beforePath, rustfmtSource(before, file));
+    writeFileSync(afterPath, rustfmtSource(after, file));
+    let diff = '';
+    try {
+      diff = execFileSync('git', ['diff', '--no-index', '--unified=0', '--no-ext-diff', beforePath, afterPath], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      if (error.status !== 1) throw error;
+      diff = error.stdout.toString();
+    }
+    return diff.replace(
+      /^diff --git [^\n]+\n(?:index [^\n]+\n)?--- [^\n]+\n\+\+\+ [^\n]+/m,
+      `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}`,
+    );
+  } finally {
+    rmSync(directory, { force: true, recursive: true });
+  }
+}
+
+function citationContent(file, head) {
+  if (worktree) {
+    try {
+      return existsSync(file) ? readFileSync(file, 'utf8') : '';
+    } catch {
+      return '';
+    }
+  }
+  return sourceAtRevision(head, file);
+}
+
+function normalizeRustCitationFiles(rawFiles, base, head) {
+  const normalizedFiles = new Map(rawFiles);
+  const normalizedContent = new Map();
+  for (const file of rawFiles.keys()) {
+    if (extname(file) !== '.rs' || !ARCHITECTURE_PATHS.some((pattern) => pattern.test(file))) continue;
+    const before = sourceAtRevision(base, file);
+    const after = citationContent(file, head);
+    normalizedFiles.set(file, parseChangedLines(normalizedRustDiff(file, before, after)).get(file) ?? []);
+    normalizedContent.set(file, rustfmtSource(after, file).split('\n'));
+  }
+  return { files: normalizedFiles, content: normalizedContent };
+}
+
 const releaseMode = Boolean(releaseProvenanceBase);
 let secretFiles;
 let citationFiles;
+let citationBase;
 if (releaseMode) {
   const provenanceCommit = resolveCommit(releaseProvenanceBase, 'release provenance base');
   const epochCommit = resolveCommit(citationActivationCommit, 'citation activation commit');
-  const citationBase = (() => {
+  citationBase = (() => {
     try {
       git(['merge-base', '--is-ancestor', epochCommit, provenanceCommit], { quiet: true });
       return provenanceCommit;
@@ -340,11 +422,12 @@ if (releaseMode) {
   secretFiles = parseChangedLines(diffText(provenanceCommit, 'secret'));
   citationFiles = parseChangedLines(diffText(citationBase, 'citation'));
 } else {
+  citationBase = worktree ? 'HEAD' : resolveBase(requestedHead, requestedBase);
   const combinedFiles = parseChangedLines(diffText(requestedBase, 'combined'));
   secretFiles = combinedFiles;
   citationFiles = combinedFiles;
 }
-const changedFiles = new Set([...secretFiles.keys(), ...citationFiles.keys()]);
+
 const secretFindings = [];
 const adrFindings = [];
 
@@ -364,6 +447,29 @@ for (const [file, lines] of secretFiles) {
   }
 }
 
+function reportSecretFindings() {
+  if (!secretFindings.length) return;
+  console.error(`[BLOCKED] ${secretFindings.length} possible hardcoded secret(s) in added lines:`);
+  for (const finding of secretFindings.slice(0, 20)) {
+    console.error(`  ${finding.file}:${finding.line} [${finding.kind}] ${finding.text.trim().slice(0, 120)}`);
+  }
+}
+
+// Rustfmt removes non-semantic layout drift before citation analysis only; the
+// full raw provenance delta remains the secret-scanning authority and is
+// reported before any formatter failure blocks the check.
+// (ADR-004 cap §2 v12)
+let normalizedCitation;
+try {
+  normalizedCitation = normalizeRustCitationFiles(citationFiles, citationBase, requestedHead);
+} catch (error) {
+  reportSecretFindings();
+  console.error(error.message);
+  process.exit(2);
+}
+citationFiles = normalizedCitation.files;
+const changedFiles = new Set([...secretFiles.keys(), ...citationFiles.keys()]);
+
 for (const [file, lines] of citationFiles) {
   if (LOCKFILE.test(file)) continue;
   if (!SOURCE_EXTENSIONS.has(extname(file))) continue;
@@ -375,8 +481,9 @@ for (const [file, lines] of citationFiles) {
     byHunk.get(changedLine.hunk).push(changedLine);
   }
 
-  let contentLines = [];
-  if (existsSync(file)) {
+  const normalizedContentLines = normalizedCitation.content.get(file);
+  let contentLines = normalizedContentLines ?? [];
+  if (!normalizedContentLines && existsSync(file)) {
     try {
       contentLines = readFileSync(file, 'utf8').split('\n');
     } catch {}
@@ -398,7 +505,7 @@ for (const [file, lines] of citationFiles) {
     // a fallback only when the current window contains no valid citation; this
     // lets a malformed legacy citation be corrected instead of poisoning its
     // valid replacement forever.
-    // (ADR-004 cap § Release governance baselines v7)
+    // (ADR-004 cap §2 v12)
     const currentCitationText = contentLines.slice(start, end).join('\n');
     const currentResolution = citationResolution(currentCitationText);
     const changedCitationText = hunkLines.map(({ text }) => text).join('\n');
@@ -419,12 +526,7 @@ for (const [file, lines] of citationFiles) {
   }
 }
 
-if (secretFindings.length) {
-  console.error(`[BLOCKED] ${secretFindings.length} possible hardcoded secret(s) in added lines:`);
-  for (const finding of secretFindings.slice(0, 20)) {
-    console.error(`  ${finding.file}:${finding.line} [${finding.kind}] ${finding.text.trim().slice(0, 120)}`);
-  }
-}
+reportSecretFindings();
 if (adrFindings.length) {
   console.error(`[BLOCKED] ${adrFindings.length} architecture-critical file(s) have substantive hunks without a nearby, resolvable ADR citation:`);
   for (const finding of adrFindings) {

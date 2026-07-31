@@ -2,9 +2,9 @@
 adr_id: 005
 module: irisy
 title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context) + §9 mission + knowledge system (数字员工 operator)
-version: 32
+version: 34
 status: accepted
-last_updated: 2026-07-27
+last_updated: 2026-07-28
 deciders: [bao, zeus, hephaestus]
 sections:
   - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
@@ -15,6 +15,8 @@ sections:
   - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
   - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
 changelog:
+  - v34 2026-07-28: **§8.3.1 scope correction — ACP cancellation is a caller-owned opt-in, not a claimed Irisy UI feature.** Only a surface that registers an active request owner and invokes `prompt_cancellable` may send `session/cancel` and drain the original response. Coding is the current such surface. Irisy does not yet expose an ACP cancellation command; its reset discards the singleton and must not be represented as safe cancellation or reuse. Any future Irisy Stop control must adopt the same owner/cancel/drain contract before it is enabled.
+  - v33 2026-07-28: **§8.3 amendment — ACP prompt cancellation is request-owned and stdout-safe.** A UI stop sends `session/cancel` only for the active ACP session, then the owning client drains the terminal response for that original prompt while it exclusively owns the stream; late thought/message/tool updates are discarded and never reach a later UI turn. A client is reusable only after that terminal response is drained and the child remains alive. Cancellation-write, drain, EOF, or timeout failure marks it non-reusable; the caller drops the singleton and creates a fresh session re-hydrated only from the durable local transcript. A clean cancel does not kill the live engine. Coding's independent ACP client follows the same rule; reset/workspace replacement first cancels active owners and waits for their drain. This preserves engine-owned loop/context while preventing stale stdout attribution.
   - v32 2026-07-27: **§8.7 the RIGHT-region Irisy surface gains Kiro-parity Session and Attachments modules, closing v31's "not wired to any Irisy UI" gap for attachments and adding multi-session tabs (bao "Irisy的页面，清修改成跟kiro一样...session，model，attachments等等模块都要"; explicitly out of scope this round: token/credit usage stats and checkpoint/restore).** Before this amendment `IrisyChat.tsx` persisted exactly ONE conversation per mode under a single localStorage key — there was no way to hold multiple parallel conversations the way Kiro's screenshot shows (a row of session tabs across the top). New `lib/irisy-sessions.ts` (zustand + persist, same convention as `workspace-store.ts`) replaces that with a LIST of sessions the user creates/switches/closes/renames, rendered by a new `SessionTabs.tsx` tab bar mounted just below `ChatHeaderControls`; a one-time `migrateLegacySingleSession` folds an upgrading user's existing single conversation into the first new session rather than dropping it. Session tabs auto-title from the first user message (`deriveSessionLabel`, truncated) exactly as Kiro's own tabs do, and stay user-renamable via double-click. Attachments (v31's gap): `IrisyChat`'s composer now shares the SAME native-drop mechanism Coding uses — the underlying Tauri drag-drop hook was extracted to `lib/native-file-drop.ts` (`coding-drop.ts` becomes a thin re-export so `CodingScene.tsx` needed no change) — and the disk-reading/ContentBlock-classification logic (`ChatAttachmentWire`/`read_from_disk`, formerly private to `coding_chat.rs`) moved to a new shared `commands/chat_attachment.rs` both `coding_chat.rs` and `irisy_chat.rs` now call, so `irisy_chat_stream`'s ACP path (only the ACP path — the provider-router fallback has no attachment support) resolves a dropped file into an `Image`/`EmbeddedResource` ContentBlock via the SAME `AcpClient::prompt` capability negotiation Coding already exercises (ADR-002 substrate §1.8.6 v75). Model module: the existing `AgentSelector` (unchanged logic) moves from a row above the composer to a bottom toolbar row below it, matching Kiro's bottom bar position — position/styling only, no new engine-selection behavior. Deliberately NOT built, per bao's explicit scope cut: Kiro's credit/token usage counter (no CTRL-side token metering exists to back it — a real number, not a placeholder, or nothing) and the checkpoint/restore timeline (a distinct, separately-scoped message-snapshot-rollback feature). Coding mode (`forceMode==='coding'`) keeps its dormant legacy single-conversation code path untouched — CodingScene.tsx already owns Coding's own workspace-keyed conversations, so this redesign only touches the Personal ("assistant") surface. Verified: `cargo test --lib` 523/523 (chat_attachment.rs's disk-reading tests relocated + a new `read_all` test); `vitest run` 243/243 (22 new: `irisy-sessions.test.ts` covering create/close-fallback-ordering/rename/label-derivation/legacy-migration); `npm run typecheck` clean. Pairs ADR-003 frontend §8.6 v36 (SessionTabs/AgentSelector placement) and ADR-002 substrate §1.8.6 v75 (the attachment capability this consumes).
   - v31 2026-07-27: **§8.7 the shared `AcpClient` gains capability-negotiated multi-modal attachments (ADR-002 substrate §1.8.6 v75), available to Irisy's right-region engine but NOT wired to any Irisy UI by this amendment.** This turn only touched the protocol layer both engines drive; Irisy's own drag-drop semantic (attaching data to feed an *installed* feature pack, distinct from Coding's authoring-reference-material use) remains unscoped and unbuilt — recorded here so the capability's availability doesn't get mistaken for it being wired. Pairs ADR-001 spine §4 v18 (the Coding side that DOES consume it this turn).
   - v30 2026-07-27: **§8.7 left-region Coding drives opencode over ACP instead of an embedded PTY (v29, same session) — the LEFT/RIGHT shape is unchanged, only the mechanism inside LEFT changes (pairs ADR-001 §4 v16, ADR-003 §8.5 v32).** v29's embedded PTY hit a real, reproducible rendering failure on the actual machine (a black terminal area despite a confirmed-alive `opencode` process) — root-caused via a direct capability probe against the installed binary rather than patched again: `opencode acp` speaks genuine Agent Client Protocol, the SAME protocol CTRL already drives Irisy's own engine (hermes/codex/claude-code) with over `shell/acp_client.rs`. Coding now reuses that exact machinery through a second, independent `AcpClient` singleton (`coding_singleton()`) rooted at the selected workspace, so switching Irisy's engine can never evict a live Coding session and vice versa. The LEFT work area renders the engine's structured events (answer/reasoning/tool-call/tool-result) as native React — no PTY, no xterm, no terminal emulation anywhere in the Coding module — while the RIGHT Irisy column remains completely untouched: no fold, no collapse, no narrowing, exactly as v29 already established and v28/v27 before it. The v27/v28/v29 external-launch mechanism is retained as a secondary "Open externally instead" action, not deleted.
@@ -536,6 +538,29 @@ and never `vault_write` — the brain also failed to act, compounding the sympto
   once per session); a re-hydration re-primes it.
 - **Continuity is the ENGINE's responsibility, not CTRL's per-turn reconstruction**
   — consistent with ADR-001/002 (the engine owns the loop).
+
+### §8.3.1 ACP cancellation contract for opted-in callers (v33; clarified v34)
+
+ACP cancellation is owned by the request caller. A surface that exposes Stop
+registers its active request owner, sends `session/cancel` only for that
+client's active `sessionId`, retains exclusive ownership of stdout, and drains
+the terminal response for the original request before another request may
+consume the stream. Any late thought, message, or tool update observed during
+that drain establishes the terminal boundary but is discarded rather than
+delivered to the expired callback or a later UI turn.
+
+A client is reusable only when its child remains alive **and** that original
+terminal response was drained. Failure to write cancellation, drain before the
+bounded recovery deadline, observe terminal EOF, or match the original response
+marks the client non-reusable; callers discard the singleton and re-create it
+from the durable local transcript. A confirmed cancellation does not kill a
+healthy engine.
+
+Coding's independent ACP client implements this contract. Irisy currently does
+not expose an ACP cancellation command; its reset discards the singleton and is
+not safe session reuse. A future Irisy Stop control must register the active
+request owner and use this same cancellation/drain boundary before it is
+advertised.
 
 ### §8.4 Durable transcript (vault-is-truth backstop)
 

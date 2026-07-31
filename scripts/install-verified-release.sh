@@ -10,7 +10,7 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "usage: $0 <version>"
     exit 1
 fi
-for command in gh jq minisign node shasum codesign tar; do
+for command in gh jq minisign node shasum codesign tar lsof stat; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "error: required verified-install command is unavailable: $command"
         exit 1
@@ -153,7 +153,54 @@ verify_app_identity() {
 }
 verify_app_identity "$STAGED_APP"
 
-if pgrep -f '^/Applications/CTRL\.app/Contents/MacOS/ctrl$' >/dev/null 2>&1; then
+# Derive the running process path from the current canonical bundle rather than
+# assuming a particular executable casing. (ADR-004 cap §2 v12)
+canonical_executable_path() {
+    local executable
+    [[ -d "$TARGET_APP" ]] || return 0
+    executable="$(plutil -extract CFBundleExecutable raw "$TARGET_APP/Contents/Info.plist" 2>/dev/null || true)"
+    if [[ -z "$executable" ]]; then
+        echo "error: canonical CTRL.app has no CFBundleExecutable" >&2
+        return 1
+    fi
+    printf '%s/Contents/MacOS/%s\n' "$TARGET_APP" "$executable"
+}
+
+canonical_process_pids() {
+    local expected_identity pid executable metadata process_device process_inode process_identity
+    expected_identity="$(stat -f '%d:%i' "$CANONICAL_EXECUTABLE" 2>/dev/null)" || return 1
+    [[ -n "$expected_identity" ]] || return 1
+    while IFS= read -r pid; do
+        metadata="$(lsof -a -p "$pid" -d txt -F nDi 2>/dev/null | awk '
+            /^ftxt$/ { if (inside) exit; inside = 1; next }
+            inside && /^[Di]/ { print }
+            inside && /^n/ { print; exit }
+        ')"
+        executable="$(printf '%s\n' "$metadata" | sed -n 's/^n//p')"
+        process_device="$(printf '%s\n' "$metadata" | sed -n 's/^D//p')"
+        process_inode="$(printf '%s\n' "$metadata" | sed -n 's/^i//p')"
+        if [[ "$executable" != "$CANONICAL_EXECUTABLE" || -z "$process_device" || -z "$process_inode" ]]; then
+            echo "error: could not verify canonical CTRL.app executable identity for PID $pid" >&2
+            return 1
+        fi
+        process_identity="$(printf '%d:%s' "$process_device" "$process_inode")" || return 1
+        if [[ "$process_identity" != "$expected_identity" ]]; then
+            echo "error: canonical CTRL.app executable identity changed for PID $pid" >&2
+            return 1
+        fi
+        printf '%s\n' "$pid"
+    done < <(pgrep -f 'CTRL[.]app/Contents/MacOS/' || true)
+}
+
+CANONICAL_EXECUTABLE="$(canonical_executable_path)" || exit 1
+CANONICAL_RUNNING_PIDS=""
+if [[ -n "$CANONICAL_EXECUTABLE" ]]; then
+    CANONICAL_RUNNING_PIDS="$(canonical_process_pids)" || {
+        echo "error: could not verify a candidate canonical CTRL.app process before replacement"
+        exit 1
+    }
+fi
+if [[ -n "$CANONICAL_EXECUTABLE" && -n "$CANONICAL_RUNNING_PIDS" ]]; then
     echo "error: quit the canonical CTRL.app before verified replacement"
     exit 1
 fi

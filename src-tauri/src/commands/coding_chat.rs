@@ -209,7 +209,7 @@ fn remove_cancellation_if_owned(request_id: &str, token: u64) {
 /// Reset the Coding engine session after cancelling every active prompt. The
 /// prompt owner drains ACP's terminal response before this reset can acquire
 /// the client lock, so the next workspace never inherits stale stream output.
-/// (ADR-005 irisy §8.3 v7)
+/// (ADR-005 irisy §8.3 v33)
 #[tauri::command]
 pub async fn coding_reset_engine() -> Result<(), String> {
     coding_epoch().fetch_add(1, Ordering::AcqRel);
@@ -221,7 +221,7 @@ pub async fn coding_reset_engine() -> Result<(), String> {
 /// Cancel one UI-owned Coding prompt without killing the persistent OpenCode
 /// session. The ACP client sends `session/cancel` and drains the original
 /// prompt response before a later turn may reuse the stream.
-/// (ADR-005 irisy §8.3 v7)
+/// (ADR-005 irisy §8.3 v33)
 #[tauri::command]
 pub async fn coding_cancel_stream(args: CodingCancelArgs) -> Result<(), String> {
     if let Some(active) = coding_cancellations()
@@ -505,7 +505,7 @@ async fn run_turn(
         Err(e) => {
             // Keep the session only after its ACP stream is quiescent. A live
             // process whose timed-out turn did not reach a terminal response
-            // cannot safely serve a later Coding request. (ADR-005 irisy §8.3 v7)
+            // cannot safely serve a later Coding request. (ADR-005 irisy §8.3 v33)
             let reusable = guard.as_mut().map(|c| c.is_reusable()).unwrap_or(false);
             if !reusable {
                 *guard = None;

@@ -49,7 +49,7 @@ pub struct AcpClient {
     /// False after a timed-out turn cannot be drained to its terminal response.
     /// A live process alone is not safe to reuse because its next notification
     /// could otherwise be attributed to a later UI request.
-    /// (ADR-005 irisy §8.3 v7)
+    /// (ADR-005 irisy §8.3 v33)
     reusable: bool,
     /// Whether the CTRL capability preamble has been sent this session (§1.8.2).
     primed: bool,
@@ -1034,7 +1034,7 @@ impl AcpClient {
     /// True when the child is alive and its stdout stream is safe for another
     /// request. A prompt timeout retains the session only after the ACP-required
     /// terminal response has been drained; otherwise callers must re-hydrate.
-    /// (ADR-005 irisy §8.3 v7)
+    /// (ADR-005 irisy §8.3 v33)
     pub fn is_reusable(&mut self) -> bool {
         self.reusable && self.is_alive()
     }
@@ -1075,7 +1075,7 @@ impl AcpClient {
     /// Run a prompt that can be cancelled by its owning UI request. Cancellation
     /// always travels through ACP's `session/cancel` and terminal-response drain,
     /// so a newer Coding turn cannot inherit stale output from an abandoned one.
-    /// (ADR-005 irisy §8.3 v7)
+    /// (ADR-005 irisy §8.3 v33)
     pub async fn prompt_cancellable(
         &mut self,
         turns: &[(String, String)],
@@ -1195,7 +1195,7 @@ impl AcpClient {
         // prove the agent accepted this session's bootstrap context. Commit
         // priming only after the first prompt finishes successfully so a
         // later turn replays it if the bootstrap was interrupted.
-        // (ADR-005 irisy §8.3 v7)
+        // (ADR-005 irisy §8.3 v33)
         if bootstrap_pending {
             self.primed = true;
         }
@@ -1353,7 +1353,7 @@ impl AcpClient {
     /// `session/cancel` to be a notification scoped by `sessionId`, followed by
     /// pending updates and a final response to the original prompt. Updates are
     /// deliberately discarded here: their UI callback belongs to the timed-out
-    /// turn, never the next one. (ADR-005 irisy §8.3 v7)
+    /// turn, never the next one. (ADR-005 irisy §8.3 v33)
     async fn cancel_and_drain_prompt(&mut self, prompt_id: i64) -> Result<()> {
         self.write_msg(&cancel_notification(&self.session_id))
             .await?;

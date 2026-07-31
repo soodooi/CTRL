@@ -163,7 +163,7 @@ async fn load_skill_system_prompt(skill_id: &str) -> Option<String> {
 /// shell-capable provider can cd there; assistant/cap modes need none
 /// (cap mode's SKILL.md is the prompt, loaded separately).
 fn build_mode_system_header(mode: Option<&str>, project_dir: Option<&str>) -> Option<String> {
-    // Capability truth header, EVERY mode (ADR-005 irisy § persona-shell v5 §6.2):
+    // Capability truth header, EVERY mode (ADR-005 irisy §3 v5):
     // the provider-direct path holds no tools, so a capability/identity question
     // ("can you go online?") is answered by the raw base model — which wrongly
     // denies web access ("I can't browse") and calls its own research
@@ -223,7 +223,7 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         "note", "save to", "save it to", "my notes", "knowledge base",
         "build a tool", "make a tool", "generate an image", "an image of",
         "make a video", "voiceover", "transcribe", "ocr", "web search",
-        // online-research intents (ADR-005 irisy § persona-shell v5 §6.2): the
+        // online-research intents (ADR-005 irisy §3 v5): the
         // web_search tool lives only on the agent path; a research request must
         // reach hermes or the tool-less direct path denies it can go online.
         "search the web", "search online", "go online", "research online",
@@ -233,7 +233,7 @@ fn turn_needs_agent(messages: &[ChatMessage]) -> bool {
         // the gate's mcp_pack_* tools — only hermes holds them, direct has none)
         "feature pack", "install a tool", "install the tool", "use a tool",
         "run an action", "run the tool", "my portfolio", "my holdings", "my stocks",
-        // market-data intents (ADR-005 irisy § persona-shell v5 §6.2, 2026-06-26):
+        // market-data intents (ADR-005 irisy §3 v5, 2026-06-26):
         // stock/quote turns read live data via the gate's http.get — only the
         // agent path holds tools; provider-direct has none and would hallucinate.
         "stock", "ticker", "watchlist", "stock price", "stock quote", "daily review",
@@ -283,7 +283,7 @@ fn cjk_query_needles() -> Vec<String> {
         &[0x8868, 0x91CC],                 // in the table
         &[0x6392, 0x5E8F],                 // sort
         &[0x5206, 0x7EC4],                 // group
-        // market-data intents (ADR-005 irisy § persona-shell v5 §6.2, 2026-06-26)
+        // market-data intents (ADR-005 irisy §3 v5, 2026-06-26)
         &[0x76EF, 0x76D8],                 // watch the market
         &[0x9009, 0x80A1],                 // pick stocks
         &[0x80A1, 0x7968],                 // stock
@@ -291,17 +291,17 @@ fn cjk_query_needles() -> Vec<String> {
         &[0x884C, 0x60C5],                 // quote / market data
         &[0x5927, 0x76D8],                 // the broad market
         &[0x590D, 0x76D8],                 // daily review / recap
-        // feature-pack management intents (ADR-005 irisy § persona-shell v5 §6.2
+        // feature-pack management intents (ADR-005 irisy §3 v5
         // routing + ADR-002 substrate § composition §7.4 mcp_pack_* tools): only
         // the agent path holds the gate's pack tools (list / install / uninstall
-        // / run). Per ADR-005 irisy § persona-shell v5 §6.2: a user asking about
+        // / run). Per ADR-005 irisy §3 v5: a user asking about
         // feature packs in plain language must reach hermes, not the tool-less
         // provider-direct path (2026-06-28: a "which feature packs are installed"
         // ask routed direct and the model guessed instead of calling mcp_pack_list).
         &[0x529F, 0x80FD, 0x5305],         // feature pack
         &[0x5378, 0x8F7D],                 // uninstall
         &[0x5B89, 0x88C5],                 // install
-        // online-research intents (ADR-005 irisy § persona-shell v5 §6.2): route
+        // online-research intents (ADR-005 irisy §3 v5): route
         // "go online / research / search the web" to hermes, which holds the
         // web_search gate tool; the direct path has none and denies it can browse.
         &[0x8054, 0x7F51],                 // go online (lian-wang)
@@ -318,7 +318,7 @@ fn cjk_query_needles() -> Vec<String> {
 
 /// Retrieve top vault matches for the latest user message and format them as a
 /// context block, so the provider-direct path shares the same knowledge base as
-/// hermes (ADR-005 irisy § persona-shell v5 §6.2). hermes searches the vault
+/// hermes (ADR-005 irisy §3 v5). hermes searches the vault
 /// live via its tools; the direct path has no tools, so we inject read-only
 /// context here. Returns None when the vault is unavailable or nothing matches.
 fn retrieve_kb_context(messages: &[ChatMessage]) -> Option<String> {
@@ -399,10 +399,11 @@ async fn forward_to_provider(
     // persona, persistent memory, skills) STREAMING over ACP. The bare provider
     // router answers as the raw vendor model with no Irisy identity (observed:
     // "I am Doubao"), so it is the FALLBACK only (offline / no hermes / hermes
-    // error, .kiro/steering/development-philosophy.md derived rule #2). A slow agent turn stays interruptible
-    // via the Stop button + never-block input (IrisyChat). Coding -> opencode.
+    // A slow agent turn never blocks input. Irisy does not yet expose an ACP
+    // cancellation command; its reset tears down the singleton rather than
+    // claiming the Coding cancel-and-drain contract. (ADR-005 irisy §8.3.1 v34)
     let coding_mode = args.mode.as_deref() == Some("coding");
-    // Routing (ADR-005 irisy § persona-shell v5 §6.2): tool/action turns ->
+    // Routing (ADR-005 irisy §3 v5): tool/action turns ->
     // hermes; pure-language turns -> provider-direct (clean + fast). Both share
     // the same persona/memory substrate (composed system prompt). `mode` can
     // force a path: "agent" always hermes, "direct" always provider.
@@ -570,7 +571,7 @@ async fn forward_to_provider(
                         // Keep a live engine only after its ACP stream is reusable.
                         // A timed-out turn that could not drain its terminal response is
                         // not safe for the next UI request even if the process survives.
-                        // (ADR-005 irisy §8.3 v7)
+                        // (ADR-005 irisy §8.3 v33)
                         let reusable = guard.as_mut().map(|c| c.is_reusable()).unwrap_or(false);
                         if !reusable {
                             *guard = None;
@@ -587,7 +588,7 @@ async fn forward_to_provider(
     }
 
     // KB retrieval for the provider-direct path so it shares the same vault as
-    // hermes (ADR-005 irisy § persona-shell v5 §6.2). Injected right before the
+    // hermes (ADR-005 irisy §3 v5). Injected right before the
     // user turn; hermes doesn't need this (it searches the vault live).
     if let Some(kb) = retrieve_kb_context(&messages) {
         let pos = messages
@@ -707,7 +708,7 @@ mod tests {
         assert!(turn_needs_agent(&user("filter by stage and sort by amount")));
         assert!(turn_needs_agent(&user("show the leads in a kanban board")));
         assert!(turn_needs_agent(&user("query my smart table for won deals")));
-        // ADR-005 irisy § persona-shell v5 §6.2 — market-data turns read live
+        // ADR-005 irisy §3 v5 — market-data turns read live
         // quotes via the gate's http.get; only the agent path holds tools.
         assert!(turn_needs_agent(&user("what's the AAPL stock price today")));
         assert!(turn_needs_agent(&user("track these tickers for me")));
@@ -720,7 +721,7 @@ mod tests {
         // daily review / recap (U+590D U+76D8) routes to the agent too.
         assert!(turn_needs_agent(&user("\u{4eca}\u{65e5}\u{590D}\u{76D8}")));
         assert!(turn_needs_agent(&user("give me a daily review")));
-        // ADR-005 irisy § persona-shell v5 §6.2 — online-research intents must
+        // ADR-005 irisy §3 v5 — online-research intents must
         // reach hermes (it holds the web_search gate tool); the direct path has
         // none and would wrongly tell the user it cannot browse the internet.
         assert!(turn_needs_agent(&user("search the web for the latest news")));

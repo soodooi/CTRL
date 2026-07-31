@@ -29,6 +29,13 @@ fi
 SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SOURCE_ROOT"
 
+for command in lsof open osascript pgrep plutil stat; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "error: required canonical-release-acceptance command is unavailable: $command"
+        exit 1
+    fi
+done
+
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
     echo "error: release source has tracked changes"
     echo "       commit the reviewed changes before preparing a release"
@@ -155,3 +162,111 @@ fi
 # (ADR-004 cap § updater v9)
 cd "$RELEASE_WORKTREE"
 bash scripts/release.sh "$VERSION"
+
+
+# Release publication is incomplete until the canonical bundle has been
+# installed, launched, and proven at its canonical executable path.
+# (ADR-004 cap §2 v12)
+CANONICAL_APP="/Applications/CTRL.app"
+CANONICAL_INFO="$CANONICAL_APP/Contents/Info.plist"
+
+canonical_executable_path() {
+    local executable
+    [[ -f "$CANONICAL_INFO" ]] || return 0
+    executable="$(plutil -extract CFBundleExecutable raw "$CANONICAL_INFO" 2>/dev/null || true)"
+    if [[ -z "$executable" ]]; then
+        echo "error: canonical CTRL.app has no CFBundleExecutable"
+        return 1
+    fi
+    printf '%s/Contents/MacOS/%s\n' "$CANONICAL_APP" "$executable"
+}
+
+canonical_process_pids() {
+    local expected_identity pid executable metadata process_device process_inode process_identity
+    expected_identity="$(stat -f '%d:%i' "$CANONICAL_EXECUTABLE" 2>/dev/null)" || return 1
+    [[ -n "$expected_identity" ]] || return 1
+    while IFS= read -r pid; do
+        metadata="$(lsof -a -p "$pid" -d txt -F nDi 2>/dev/null | awk '
+            /^ftxt$/ { if (inside) exit; inside = 1; next }
+            inside && /^[Di]/ { print }
+            inside && /^n/ { print; exit }
+        ')"
+        executable="$(printf '%s\n' "$metadata" | sed -n 's/^n//p')"
+        process_device="$(printf '%s\n' "$metadata" | sed -n 's/^D//p')"
+        process_inode="$(printf '%s\n' "$metadata" | sed -n 's/^i//p')"
+        if [[ "$executable" != "$CANONICAL_EXECUTABLE" || -z "$process_device" || -z "$process_inode" ]]; then
+            echo "error: could not verify canonical CTRL.app executable identity for PID $pid" >&2
+            return 1
+        fi
+        process_identity="$(printf '%d:%s' "$process_device" "$process_inode")" || return 1
+        if [[ "$process_identity" != "$expected_identity" ]]; then
+            echo "error: canonical CTRL.app executable identity changed for PID $pid" >&2
+            return 1
+        fi
+        printf '%s\n' "$pid"
+    done < <(pgrep -f 'CTRL[.]app/Contents/MacOS/' || true)
+}
+
+CANONICAL_EXECUTABLE="$(canonical_executable_path)" || exit 1
+CANONICAL_RUNNING_PIDS=""
+if [[ -n "$CANONICAL_EXECUTABLE" ]]; then
+    CANONICAL_RUNNING_PIDS="$(canonical_process_pids)" || {
+        echo "error: could not verify a candidate canonical CTRL.app process before replacement"
+        exit 1
+    }
+fi
+if [[ -n "$CANONICAL_EXECUTABLE" && -n "$CANONICAL_RUNNING_PIDS" ]]; then
+    osascript -e 'tell application id "app.ctrl.spike" to quit' >/dev/null 2>&1 || true
+    for _ in {1..30}; do
+        CANONICAL_RUNNING_PIDS="$(canonical_process_pids)" || {
+            echo "error: could not verify a candidate canonical CTRL.app process while waiting to quit"
+            exit 1
+        }
+        [[ -z "$CANONICAL_RUNNING_PIDS" ]] && break
+        sleep 1
+    done
+    if [[ -n "$CANONICAL_RUNNING_PIDS" ]]; then
+        echo "error: canonical CTRL.app did not quit within 30 seconds; refusing replacement"
+        exit 1
+    fi
+fi
+
+bash scripts/install-verified-release.sh "$VERSION"
+
+if [[ ! -f "$CANONICAL_INFO" ]]; then
+    echo "error: verified install did not create $CANONICAL_INFO"
+    exit 1
+fi
+INSTALLED_VERSION="$(plutil -extract CFBundleShortVersionString raw "$CANONICAL_INFO")"
+if [[ "$INSTALLED_VERSION" != "$VERSION" ]]; then
+    echo "error: canonical CTRL.app version is $INSTALLED_VERSION, expected $VERSION"
+    exit 1
+fi
+EXPECTED_ID="$(node -p "require('./src-tauri/tauri.conf.json').identifier")"
+POLICY_FINGERPRINT="$(jq -r '.activeFingerprint' scripts/macos-signing-trust.json)"
+if ! [[ "$POLICY_FINGERPRINT" =~ ^[0-9A-F]{40}$ ]]; then
+    echo "error: macOS signing policy has an invalid active fingerprint"
+    exit 1
+fi
+EXPECTED_FINGERPRINT="$(tr '[:upper:]' '[:lower:]' <<< "$POLICY_FINGERPRINT")"
+EXPECTED_REQUIREMENT="=identifier \"${EXPECTED_ID}\" and certificate root = H\"${EXPECTED_FINGERPRINT}\""
+codesign --verify --deep --strict -R "$EXPECTED_REQUIREMENT" "$CANONICAL_APP"
+CANONICAL_EXECUTABLE="$(canonical_executable_path)" || exit 1
+if [[ -z "$CANONICAL_EXECUTABLE" ]]; then
+    echo "error: canonical CTRL.app executable path is unavailable after install"
+    exit 1
+fi
+open "$CANONICAL_APP"
+for _ in {1..30}; do
+    CANONICAL_PID="$(canonical_process_pids)" || {
+        echo "error: could not verify a candidate canonical CTRL.app process after launch"
+        exit 1
+    }
+    if [[ -n "$CANONICAL_PID" && "$CANONICAL_PID" != *$'\n'* ]]; then
+        echo "canonical release acceptance passed: version=$VERSION executable=$CANONICAL_EXECUTABLE pid=$CANONICAL_PID"
+        exit 0
+    fi
+    sleep 1
+done
+echo "error: canonical CTRL.app did not launch from $CANONICAL_EXECUTABLE"
+exit 1
