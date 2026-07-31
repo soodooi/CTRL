@@ -1341,6 +1341,9 @@ impl AcpClient {
                 continue;
             };
 
+            // Only the original request's terminal response completes this turn;
+            // later notifications remain owned by that same stream boundary.
+            // (ADR-005 irisy §8.3 v33)
             if is_response_for(&v, id) {
                 if let Some(err) = v.get("error") {
                     return Err(anyhow!("ACP error: {err}"));
