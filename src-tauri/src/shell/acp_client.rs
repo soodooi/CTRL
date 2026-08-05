@@ -1417,7 +1417,7 @@ impl AcpClient {
                 Value::Null
             };
             // Drain-time replies preserve the active request owner's ACP boundary.
-            // (ADR-005 irisy §8.3 v38)
+            // (ADR-005 irisy §8.3 v33)
             self.write_msg(&json!({ "jsonrpc": "2.0", "id": req_id, "result": result }))
                 .await?;
         }
