@@ -437,6 +437,8 @@ mod tests {
         assert_eq!(report.record_source_fields, Some(1));
     }
 
+    // A local MCP-backed source remains a consumer of the shared manifest protocol.
+    // (ADR-002 substrate §7 v79)
     #[test]
     fn local_mcp_record_source_does_not_require_http_auth() {
         let report = validate_manifest(&serde_json::json!({
