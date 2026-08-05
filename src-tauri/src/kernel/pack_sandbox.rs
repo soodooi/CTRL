@@ -38,8 +38,15 @@ use std::process::Command;
 /// subtract network + non-scoped writes. `(allow default)` keeps dyld /
 /// interpreter loading working; the later `deny`/`allow` rules override
 /// it (last-match-wins in SBPL).
+/// The local child profile starts from the same deny-by-default pack sandbox,
+/// with an explicit loopback-only exception when the manifest allows it.
+/// (ADR-004 cap §1 v13; ADR-010 communication § transports v12)
 #[cfg(target_os = "macos")]
-fn seatbelt_profile(pack_dir: &Path, extra_writes: &[String]) -> String {
+fn seatbelt_profile(
+    pack_dir: &Path,
+    extra_writes: &[String],
+    allow_loopback_network: bool,
+) -> String {
     // Writable scopes: the pack's own install dir + the OS temp dirs an
     // interpreter (python/node) legitimately needs + the absolute paths the
     // pack DECLARED in its `file.write_allowlist` capability (resolved by the
@@ -56,10 +63,18 @@ fn seatbelt_profile(pack_dir: &Path, extra_writes: &[String]) -> String {
         })
         .map(|p| format!("\n    (subpath \"{p}\")"))
         .collect();
+    let network_policy = if allow_loopback_network {
+        // Seatbelt's `localhost` host token covers IPv4 and IPv6 loopback while
+        // continuing to deny every non-loopback destination.
+        // (ADR-004 cap §1 v13; ADR-010 communication § transports v12)
+        "(deny network*)\n(allow network-outbound (remote ip \"localhost:*\"))"
+    } else {
+        "(deny network*)"
+    };
     format!(
         r#"(version 1)
 (allow default)
-(deny network*)
+{network_policy}
 (deny file-write*)
 (allow file-write*
     (subpath "{pack}")
@@ -78,6 +93,44 @@ fn seatbelt_profile(pack_dir: &Path, extra_writes: &[String]) -> String {
     )
 }
 
+/// Wrap a managed local program in the same OS sandbox used by pack shell
+/// steps. Local source children may opt into loopback-only network for a
+/// private authenticated bridge; all non-loopback network remains denied.
+/// (ADR-004 cap §1 v13; ADR-010 communication § transports v12)
+pub fn wrap_program(
+    program: &str,
+    args: &[String],
+    pack_dir: &Path,
+    extra_writes: &[String],
+    allow_loopback_network: bool,
+) -> Command {
+    #[cfg(target_os = "macos")]
+    {
+        let profile = seatbelt_profile(pack_dir, extra_writes, allow_loopback_network);
+        let mut cmd = Command::new("/usr/bin/sandbox-exec");
+        cmd.arg("-p").arg(profile).arg(program).args(args);
+        cmd
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = (program, args, pack_dir, extra_writes, allow_loopback_network);
+        tracing::warn!(
+            "pack_sandbox: managed local child sandbox is not wired on this platform \n             (ADR-004 §1) — refusing to spawn the child"
+        );
+        Command::new("/usr/bin/false")
+    }
+    #[cfg(windows)]
+    {
+        let _ = (program, args, pack_dir, extra_writes, allow_loopback_network);
+        tracing::warn!(
+            "pack_sandbox: managed local child sandbox is not wired on Windows \n             (ADR-004 §1) — refusing to spawn the child"
+        );
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", "exit", "1"]);
+        cmd
+    }
+}
+
 /// Wrap a shell command so it runs inside the OS sandbox. On macOS this
 /// returns a `Command` that invokes `sandbox-exec -p <profile> sh -c
 /// <command>`; on other platforms it returns the bare shell `Command`
@@ -85,10 +138,11 @@ fn seatbelt_profile(pack_dir: &Path, extra_writes: &[String]) -> String {
 ///
 /// `pack_dir` is the pack's install root (`~/.ctrl/mcps/<id>`), used as
 /// the single writable scope outside the OS temp dirs.
+/// (ADR-004 cap §1 v13)
 pub fn wrap_shell(command: &str, pack_dir: &Path, extra_writes: &[String]) -> Command {
     #[cfg(target_os = "macos")]
     {
-        let profile = seatbelt_profile(pack_dir, extra_writes);
+        let profile = seatbelt_profile(pack_dir, extra_writes, false);
         let mut cmd = Command::new("/usr/bin/sandbox-exec");
         cmd.arg("-p").arg(profile).args(["sh", "-c", command]);
         cmd
@@ -191,6 +245,49 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&pack);
         let _ = std::fs::remove_dir_all(&allowed_dir);
+    }
+
+    // Proves that the OS sandbox admits only the private loopback bridge class.
+    // (ADR-004 cap §1 v13; ADR-010 communication § transports v12)
+    #[test]
+    fn allows_loopback_network_but_keeps_the_profile_scoped() {
+        use std::io::{Read, Write};
+        use std::time::{Duration, Instant};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut request = [0_u8; 512];
+                        let _ = stream.read(&mut request);
+                        stream
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                            .unwrap();
+                        return;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Err(error) => panic!("loopback accept failed: {error}"),
+                }
+            }
+            panic!("sandboxed loopback client never connected");
+        });
+
+        let pack = std::env::temp_dir().join("ctrl-sbx-loopback-pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        let args = vec!["-fsS".to_string(), format!("http://{addr}/")];
+        let output = wrap_program("/usr/bin/curl", &args, &pack, &[], true)
+            .output()
+            .expect("run sandboxed curl");
+        assert!(output.status.success(), "loopback request failed: {output:?}");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
+        server.join().unwrap();
+        let _ = std::fs::remove_dir_all(&pack);
     }
 
     #[test]

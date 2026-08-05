@@ -8,7 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('./bridge', () => ({ invoke: vi.fn() }));
 
-import { selectTerminalId, selectWorkspaceId } from './coding-launcher';
+import { reconcileWorkspaceId, selectTerminalId, selectWorkspaceId } from './coding-launcher';
 import type { CodingWorkspace, LauncherTarget } from './coding-launcher';
 
 const workspace = (id: string, opencodeConfigPresent = true): CodingWorkspace => ({
@@ -43,6 +43,28 @@ describe('selectWorkspaceId', () => {
 
   it('selects the sole workspace on first load (current starts empty)', () => {
     expect(selectWorkspaceId('', [workspace('ctrl')])).toBe('ctrl');
+  });
+
+  it('requires reset before a removed workspace falls back during refresh', () => {
+    const workspaces = [workspace('ctrl')];
+    expect(reconcileWorkspaceId('removed-pack', workspaces)).toEqual({
+      nextId: 'ctrl',
+      requiresReset: true,
+    });
+    // A late post-launch refresh sees the same uncommitted current id and must
+    // remain reset-required rather than publishing the fallback directly.
+    expect(reconcileWorkspaceId('removed-pack', workspaces).requiresReset).toBe(true);
+  });
+
+  it('does not require reset for initial selection or a stable refresh', () => {
+    expect(reconcileWorkspaceId('', [workspace('ctrl')])).toEqual({
+      nextId: 'ctrl',
+      requiresReset: false,
+    });
+    expect(reconcileWorkspaceId('ctrl', [workspace('ctrl')])).toEqual({
+      nextId: 'ctrl',
+      requiresReset: false,
+    });
   });
 });
 

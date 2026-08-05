@@ -239,7 +239,7 @@ Phase 2: Style Discovery (Show, don’t tell)
 
 **Start only after Phase 1 is complete** (see **Discovery gate**).
 
-**Purpose:** Narrow the aesthetic **visually** — most people can’t name what they want. Use **HTML previews** (and concrete anchors from [STYLE_PRESETS.md](STYLE_PRESETS.md) + repo examples: [examples/generated/presets/](examples/generated/presets/) smoke decks, [examples/editable-deck-reference.html](examples/editable-deck-reference.html) for runtime chrome) so the user picks **direction**, then **preset** or **mix**.
+**Purpose:** Narrow the aesthetic **visually** — most people can’t name what they want. Use **HTML previews** (and concrete anchors from [STYLE_PRESETS.md](STYLE_PRESETS.md) + generated smoke decks under `examples/generated/presets/`, plus [examples/editable-deck-reference.html](examples/editable-deck-reference.html) for runtime chrome) so the user picks **direction**, then **preset** or **mix**.
 
 **This is the "show, don't tell" phase.**
 

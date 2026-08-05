@@ -52,6 +52,7 @@ function rustStringConst(name) {
 const hermesVersion = rustStringConst('HERMES_VERSION');
 const hermesSpec = rustStringConst('HERMES_ACP_SPEC');
 const hermesPython = rustStringConst('HERMES_PYTHON');
+const hermesMcpSpec = rustStringConst('HERMES_MCP_SPEC');
 if (!hermesSpec.endsWith(`==${hermesVersion}`)) {
   throw new Error(`Hermes source pins disagree: version=${hermesVersion}, spec=${hermesSpec}`);
 }
@@ -59,7 +60,7 @@ if (!hermesSpec.endsWith(`==${hermesVersion}`)) {
 const cmd = process.env.CTRL_UVX_BIN ?? join(homedir(), '.ctrl', 'bin', 'uvx');
 const args = [
   '--python', hermesPython,
-  '--with', 'mcp>=1.24',
+  '--with', hermesMcpSpec,
   '--from', hermesSpec,
   'hermes-acp',
 ];

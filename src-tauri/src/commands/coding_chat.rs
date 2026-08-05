@@ -111,6 +111,11 @@ pub struct CodingChatStreamArgs {
     /// message; the frontend never resends a prior turn's attachments.
     #[serde(default)]
     pub attachments: Vec<ChatAttachmentWire>,
+    /// Optional explicit local SKILL.md pin. Auto is represented by None.
+    /// A changed pin is paired with a frontend Coding-owner reset so this body
+    /// only primes a fresh ACP session. (ADR-005 irisy §11 v38)
+    #[serde(default)]
+    pub skill_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -398,6 +403,18 @@ async fn run_turn(
         return Ok(());
     }
 
+    // An explicit pin is real execution scope, not a label: resolve the body
+    // through the shared local-skill authority and prime it into this fresh
+    // Coding ACP session. Auto contributes no pinned body.
+    // (ADR-001 spine §4 v21; ADR-005 irisy §11 v38)
+    let mut system_preamble = CODING_CAPABILITY_BRIEF.to_string();
+    if let Some(skill_id) = args.skill_id.as_deref() {
+        if let Some(skill_body) = crate::commands::skills::load_local_skill_by_name(skill_id).await {
+            system_preamble.push_str("\n\n[Explicitly pinned CTRL skill — follow this playbook:]\n");
+            system_preamble.push_str(&skill_body);
+        }
+    }
+
     // Attachments that fail to read (missing/too-large/unreadable) are
     // logged and skipped rather than failing the whole turn — the user's
     // text message still goes through (mirrors AcpClient::prompt's own
@@ -418,8 +435,14 @@ async fn run_turn(
     let _ = stale_cwd;
     if guard.is_none() {
         let env = BTreeMap::new();
-        match crate::shell::acp_client::AcpClient::start_in("opencode", &env, Some(&workspace))
-            .await
+        match crate::shell::acp_client::AcpClient::start_in_scoped(
+            "opencode",
+            &env,
+            Some(&workspace),
+            "coding",
+            Some(crate::kernel::projector::OPENCODE_CODING_INTENT),
+        )
+        .await
         {
             Ok(c) => *guard = Some(c),
             Err(e) => return Err(format!("opencode ACP start failed: {e}")),
@@ -431,7 +454,7 @@ async fn run_turn(
     let result = client
         .prompt_cancellable(
             &turns,
-            Some(CODING_CAPABILITY_BRIEF),
+            Some(&system_preamble),
             &attachments,
             |e: crate::shell::acp_client::AcpEvent| {
                 use crate::shell::acp_client::AcpEvent;

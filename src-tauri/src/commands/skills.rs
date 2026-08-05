@@ -1,9 +1,9 @@
-// Skill discovery — kernel-local (Phase 1, ADR-007 workbench § discovery v1).
+// Skill discovery — kernel-local (Phase 1, ADR-007 workbench § discovery v2).
 //
 // Searches GitHub for `filename:SKILL.md` matches, using a PAT read from the
 // macOS Keychain (service `app.ctrl`, account `github`). This is the working
 // path; production moves SEARCH behind the shared `ctrl-skills` Worker because
-// most users have no GitHub token (ADR-007 workbench § discovery v1 Phase 2). INSTALL of a public skill
+// most users have no GitHub token (ADR-007 workbench § discovery v2 Phase 2). INSTALL of a public skill
 // needs no token, so it stays kernel-local regardless.
 //
 // Consumed by Irisy's `search_skills` tool ([deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton] §5) and the Pool/workbench
@@ -17,7 +17,7 @@ use crate::kernel::event::{Cell, CellKind};
 use crate::kernel::EventWsBridge;
 
 /// Keychain account holding the GitHub PAT (service is `app.ctrl`). See
-/// doc/setup-github-token.md for how to store it.
+/// docs/development/setup-github-token.md for how to store it.
 const GITHUB_PAT_ACCOUNT: &str = "github";
 const SEARCH_URL: &str = "https://api.github.com/search/code";
 /// GitHub rejects API requests without a User-Agent.
@@ -51,8 +51,9 @@ pub async fn search_skills(query: String) -> Result<SkillSearchReply, String> {
     let token = crate::shell::KeychainStore::get(GITHUB_PAT_ACCOUNT)
         .map_err(|e| format!("keychain read failed: {e}"))?
         .ok_or_else(|| {
+            // Setup guidance for the ADR-007 workbench § discovery v2 credential prerequisite.
             "No GitHub token in Keychain. Store a PAT under service 'app.ctrl' \
-             account 'github' — see doc/setup-github-token.md."
+             account 'github' — see docs/development/setup-github-token.md."
                 .to_string()
         })?;
 
@@ -132,7 +133,7 @@ fn parse_item(item: &serde_json::Value) -> Option<SkillResult> {
     Some(SkillResult { repo, owner, name, description, stars, path, html_url })
 }
 
-// ── Skill executor (ADR-007 workbench § canvas v1 / ADR-007 workbench § discovery v1, cc-switch-native run model) ──────────
+// ── Skill executor (ADR-007 workbench § canvas v1 / ADR-007 workbench § discovery v2, cc-switch-native run model) ──────────
 // Runs a `skill`-variant mcp. The kernel does NOT orchestrate the skill —
 // the active brain CLI does (it already has the skill in its skills dir). The
 // kernel only: (1) hands the brain the mcp's working folder in the vault,
@@ -470,8 +471,16 @@ pub struct LocalSkill {
 /// them all into the brain's context is slow + useless. Irisy passes a query
 /// to narrow; this bounds the worst case.
 const MAX_LOCAL_SKILLS: usize = 40;
+// Release-owned playbooks are projected to both isolated Irisy identities
+// through the shared gate skill surface. (ADR-001 spine §4 v21;
+// ADR-005 irisy §11 v38)
 const CREATE_FEATURE_PACK_SKILL: &str =
     include_str!("../../../ctrl-skills/skills/create-feature-pack/SKILL.md");
+const OFFICE_SKILL: &str = include_str!("../../../ctrl-skills/skills/office/SKILL.md");
+const BUNDLED_CTRL_SKILLS: &[(&str, &str)] = &[
+    ("create-feature-pack", CREATE_FEATURE_PACK_SKILL),
+    ("office", OFFICE_SKILL),
+];
 
 fn ctrl_skills_root(home: &Path) -> PathBuf {
     home.join(".ctrl").join("skills")
@@ -479,28 +488,38 @@ fn ctrl_skills_root(home: &Path) -> PathBuf {
 
 /// Materialize CTRL-owned skills as ordinary Markdown before discovery. User
 /// skills are scanned first and therefore override an identically named builtin;
-/// the builtin copy is refreshed from the release so Irisy always has the
-/// accepted pack-authoring playbook available offline.
-/// (ADR-002 substrate § 7.4 v34; ADR-005 irisy §9 v25)
+/// release copies are refreshed atomically so Irisy and Coding/OpenCode share
+/// the same governed playbooks offline. (ADR-001 spine §4 v20;
+/// ADR-005 irisy §11 v37)
 fn ensure_bundled_ctrl_skills(root: &Path) -> Result<(), String> {
     static REFRESH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = REFRESH_LOCK
         .lock()
         .map_err(|_| "bundled CTRL skill refresh lock poisoned".to_string())?;
 
-    let dir = root.join("create-feature-pack");
+    for (name, content) in BUNDLED_CTRL_SKILLS {
+        ensure_bundled_ctrl_skill(root, name, content)?;
+    }
+    Ok(())
+}
+
+fn ensure_bundled_ctrl_skill(root: &Path, name: &str, content: &str) -> Result<(), String> {
+    // Each release-owned playbook has one atomic local Markdown authority.
+    // (ADR-001 spine §4 v20)
+    let dir = root.join(name);
     let path = dir.join("SKILL.md");
     let backup = dir.join("SKILL.md.backup");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create CTRL skills dir: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create CTRL skill {name}: {e}"))?;
 
-    // A prior Windows replacement may have crashed after moving the old file
-    // aside. Recover the last known-good copy before attempting a new refresh.
-    // (ADR-002 substrate § 7.4 v34; ADR-005 irisy §9 v25)
+    // Recover the last known-good copy if a Windows replacement was interrupted.
+    // (ADR-001 spine §4 v20)
     if !path.exists() && backup.exists() {
         std::fs::rename(&backup, &path)
-            .map_err(|e| format!("recover bundled CTRL skill backup: {e}"))?;
+            .map_err(|e| format!("recover bundled CTRL skill {name}: {e}"))?;
     }
-    if std::fs::read_to_string(&path).ok().as_deref() == Some(CREATE_FEATURE_PACK_SKILL) {
+    // Release bytes replace stale managed copies; user overrides live in the
+    // higher-precedence user root. (ADR-001 spine §4 v20)
+    if std::fs::read_to_string(&path).ok().as_deref() == Some(content) {
         let _ = std::fs::remove_file(&backup);
         return Ok(());
     }
@@ -508,38 +527,43 @@ fn ensure_bundled_ctrl_skills(root: &Path) -> Result<(), String> {
     static NEXT_TMP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let tmp_id = NEXT_TMP_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = dir.join(format!("SKILL.md.tmp-{}-{tmp_id}", std::process::id()));
+    // Durably stage the complete release bytes before replacement.
+    // (ADR-001 spine §4 v20)
     let mut tmp_file = std::fs::File::create(&tmp)
-        .map_err(|e| format!("create bundled CTRL skill temp file: {e}"))?;
-    std::io::Write::write_all(&mut tmp_file, CREATE_FEATURE_PACK_SKILL.as_bytes())
+        .map_err(|e| format!("create bundled CTRL skill {name} temp file: {e}"))?;
+    std::io::Write::write_all(&mut tmp_file, content.as_bytes())
         .and_then(|_| tmp_file.sync_all())
         .map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
-            format!("write bundled CTRL skill: {e}")
+            format!("write bundled CTRL skill {name}: {e}")
         })?;
     drop(tmp_file);
 
-    // Unix rename replaces atomically. Windows does not replace an existing
-    // destination, so move the known-good file to a recoverable backup first;
-    // never delete the only durable copy before the new bytes are in place.
+    // Unix rename replaces atomically. Windows needs a recoverable backup.
+    // (ADR-001 spine §4 v20)
     if let Err(first_error) = std::fs::rename(&tmp, &path) {
         if !path.exists() {
             let _ = std::fs::remove_file(&tmp);
-            return Err(format!("install bundled CTRL skill: {first_error}"));
+            return Err(format!("install bundled CTRL skill {name}: {first_error}"));
         }
+        // Preserve the last durable managed copy until replacement succeeds.
+        // (ADR-001 spine §4 v20)
         let _ = std::fs::remove_file(&backup);
         std::fs::rename(&path, &backup).map_err(|backup_error| {
             let _ = std::fs::remove_file(&tmp);
             format!(
-                "stage bundled CTRL skill backup after rename failed ({first_error}): {backup_error}"
+                "stage bundled CTRL skill {name} backup after rename failed ({first_error}): {backup_error}"
             )
         })?;
+        // Restore the managed authority if the platform-specific retry fails.
+        // (ADR-001 spine §4 v20)
         if let Err(retry_error) = std::fs::rename(&tmp, &path) {
             let restore_result = std::fs::rename(&backup, &path);
             let _ = std::fs::remove_file(&tmp);
             return match restore_result {
-                Ok(()) => Err(format!("replace bundled CTRL skill: {retry_error}")),
+                Ok(()) => Err(format!("replace bundled CTRL skill {name}: {retry_error}")),
                 Err(restore_error) => Err(format!(
-                    "replace bundled CTRL skill ({retry_error}); restore backup failed: {restore_error}"
+                    "replace bundled CTRL skill {name} ({retry_error}); restore backup failed: {restore_error}"
                 )),
             };
         }
@@ -561,6 +585,15 @@ pub async fn list_local_skills(query: Option<String>) -> Result<Vec<LocalSkill>,
     tokio::task::spawn_blocking(move || list_local_skills_blocking(query))
         .await
         .map_err(|e| format!("skill list task panicked: {e}"))?
+}
+
+/// Resolve one explicit user pin through the same hot-scanned authority used by
+/// skill_list. A stale id degrades to Auto instead of widening scope.
+/// (ADR-005 irisy §11 v38)
+pub async fn load_local_skill_by_name(skill_id: &str) -> Option<String> {
+    let skills = list_local_skills(Some(skill_id.to_string())).await.ok()?;
+    let skill = skills.into_iter().find(|skill| skill.name == skill_id)?;
+    read_local_skill(skill.path).await.ok()
 }
 
 fn list_local_skills_blocking(query: Option<String>) -> Result<Vec<LocalSkill>, String> {
@@ -795,9 +828,14 @@ mod tests {
         let root = fresh_tmp("bundled");
         ensure_bundled_ctrl_skills(&root).expect("materialize bundled skill");
         let skill_md = root.join("create-feature-pack").join("SKILL.md");
+        let office_md = root.join("office").join("SKILL.md");
         assert_eq!(
             std::fs::read_to_string(&skill_md).expect("read materialized skill"),
             CREATE_FEATURE_PACK_SKILL
+        );
+        assert_eq!(
+            std::fs::read_to_string(&office_md).expect("read materialized office skill"),
+            OFFICE_SKILL
         );
 
         std::fs::write(&skill_md, "stale release copy").unwrap();
@@ -830,6 +868,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // The Office playbook is a shared release-owned skill and must preserve
+    // the Companion boundary. (ADR-001 spine §4 v20) (ADR-005 irisy §10 v35)
+    #[test]
+    fn bundled_office_skill_is_read_only_and_hides_private_transport() {
+        for required in [
+            "source_describe",
+            "source_query",
+            "ctrl-libreoffice",
+            "explicit, non-empty text selection",
+            "more than one cell",
+            "Never call `source_produce`",
+            "unavailable_message",
+        ] {
+            assert!(OFFICE_SKILL.contains(required), "office skill missing {required}");
+        }
+        // Private Companion transport never enters the public skill authority.
+        // (ADR-005 irisy §10 v35)
+        for forbidden in [
+            "CTRL_LIBREOFFICE_BRIDGE_URL",
+            "CTRL_LIBREOFFICE_BRIDGE_TOKEN",
+        ] {
+            assert!(!OFFICE_SKILL.contains(forbidden), "office skill leaked {forbidden}");
+        }
+    }
+
     #[test]
     fn user_skill_with_same_name_precedes_bundled_skill() {
         let root = fresh_tmp("override");
@@ -854,16 +917,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // Release-owned skills remain readable through the single shared gate
+    // boundary for both isolated agents. (ADR-001 spine §4 v20)
     #[test]
     fn bundled_ctrl_root_is_an_allowed_skill_read_boundary() {
         let home = fresh_tmp("read-bundled");
         let root = ctrl_skills_root(&home);
         ensure_bundled_ctrl_skills(&root).expect("materialize bundled skill");
         let skill_md = root.join("create-feature-pack").join("SKILL.md");
+        let office_md = root.join("office").join("SKILL.md");
 
-        let body = read_skill_under(&[root], skill_md.to_str().unwrap())
+        let body = read_skill_under(&[root.clone()], skill_md.to_str().unwrap())
             .expect("read skill under CTRL root");
         assert_eq!(body, CREATE_FEATURE_PACK_SKILL);
+        // Office uses the same release-owned Markdown authority, not a second
+        // OpenCode-native skill store. (ADR-001 spine §4 v20)
+        let office = read_skill_under(&[root], office_md.to_str().unwrap())
+            .expect("read office skill under CTRL root");
+        assert_eq!(office, OFFICE_SKILL);
 
         let _ = std::fs::remove_dir_all(&home);
     }

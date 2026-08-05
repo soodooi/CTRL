@@ -1,16 +1,16 @@
 // smart-table — the content-type MODULE declaration.
 //
 // One place that says what this module IS: the content type it renders, which
-// vault files it claims, the :17873 kernel gate tools it owns (ADR-002 §14 three
-// verbs), and the kernel QuerySource backing it. The platform's viewer registry
-// and the vault discovery scan reference THIS instead of scattering the same
-// literals across files — so "smart table" is a single declarable thing, not a
-// loose pile of registrations.
+// vault files it claims, the :17873 kernel gate tools it owns, and the kernel
+// QuerySource backing it. The platform's viewer registry and the vault discovery
+// scan reference THIS instead of scattering the same literals across files — so
+// "smart table" is a single declarable thing, not a loose pile of registrations.
 //
-// This is the seed of CTRL's "every capability is an installable module" model
-// (project-ctrl-modular-intent-platform). There is no platform module loader
-// yet; this is a co-located descriptor the existing registry consumes. Canonical
-// capability spec: vault/ctrl/spec-smart-table-capabilities.md.
+// This is the seed of CTRL's "every capability is an installable module" model.
+// There is no platform module loader yet; this is a co-located descriptor the
+// existing registry consumes. Authority: (ADR-002 substrate §
+// unified-operation-interface v77). Historical capability inventory:
+// vault/ctrl/history/specs/spec-smart-table-capabilities.md.
 
 /** Content type the platform maps to SmartTableViewer. The file on disk stays
  *  plain markdown (vim test); this is a render hint, not a storage format. */
@@ -32,8 +32,10 @@ export interface SmartTableModule {
   gateTools: readonly string[];
   /** Kernel QuerySource implementing §14 read/produce for this content type. */
   querySource: string;
-  /** Canonical capability spec (vault). */
-  doc: string;
+  /** Accepted decision that owns this module's contract. */
+  authority: string;
+  /** Retired planning inventory retained only for provenance. */
+  provenance: string;
 }
 
 export const smartTableModule: SmartTableModule = {
@@ -48,5 +50,6 @@ export const smartTableModule: SmartTableModule = {
     'smart_table.run_ai_column',
   ],
   querySource: 'vault_smart_table::SmartTable',
-  doc: 'vault/ctrl/spec-smart-table-capabilities.md',
+  authority: 'vault/ctrl/adrs/002-substrate.md#unified-operation-interface',
+  provenance: 'vault/ctrl/history/specs/spec-smart-table-capabilities.md',
 };

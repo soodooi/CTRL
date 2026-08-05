@@ -1,5 +1,6 @@
-// Smart-table SQLite derived index — the relational backbone (ADR-002 §14 v30
-// route C). Design: vault/ctrl/smart-table-relational-index-design.md.
+// Smart-table SQLite derived index — the relational backbone (ADR-002 substrate
+// § unified-operation-interface v77). Historical design provenance:
+// vault/ctrl/history/designs/smart-table-relational-index-design.md.
 //
 // Per `.kiro/steering/development-philosophy.md` Design Philosophy (same doctrine as vault_index.rs):
 //   - the markdown smart-table files are the source of truth (vim test)

@@ -198,7 +198,11 @@ pub fn validate_manifest(manifest: &Value) -> ValidationReport {
                 let has_auth = manifest.pointer("/auth/token_exchange").is_some()
                     || manifest.pointer("/auth/bootstrap").is_some()
                     || spec.token_exchange.is_some();
-                if !has_auth {
+                let is_http = matches!(
+                    spec.query.transport(),
+                    Ok(manifest_source::QueryTransport::Http(_))
+                );
+                if is_http && !has_auth {
                     issues.push(Issue::warn(
                         "auth",
                         "record_source has no auth declaration; a connector usually needs one",
@@ -430,6 +434,23 @@ mod tests {
             .issues
             .iter()
             .any(|issue| issue.field == "auth" && issue.severity == Severity::Warn));
+        assert_eq!(report.record_source_fields, Some(1));
+    }
+
+    #[test]
+    fn local_mcp_record_source_does_not_require_http_auth() {
+        let report = validate_manifest(&serde_json::json!({
+            "id": "ctrl-libreoffice",
+            "manifest_version": 2,
+            "variant": "mcp-server",
+            "server": { "command": "node", "args": ["${PACK_DIR}/server.mjs"] },
+            "record_source": {
+                "query": { "mcp_tool": "read_selected_context", "array_at": "rows" },
+                "fields": [{ "key": "content", "label": "Content", "type": "text" }]
+            }
+        }));
+        assert!(report.ok, "issues: {:?}", report.issues);
+        assert!(!report.issues.iter().any(|issue| issue.field == "auth"));
         assert_eq!(report.record_source_fields, Some(1));
     }
 

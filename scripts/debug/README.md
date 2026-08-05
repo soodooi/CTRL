@@ -1,7 +1,7 @@
 # CTRL debug harness
 
 Autonomous verification of CTRL/Irisy without a desktop click. See the plan in
-`vault/ctrl/debug-harness-plan.md`. The kernel must be running (dev build) — the
+`vault/ctrl/specs/development/debug-harness.md`. The kernel must be running (dev build) — the
 gate token is read from `~/.ctrl/state/gate-token`.
 
 - **`test_all.py`** ★ — the master autonomous test. Part A = capability smoke

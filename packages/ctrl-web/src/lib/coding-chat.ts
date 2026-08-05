@@ -63,6 +63,7 @@ export async function* streamCodingChat(
   messages: LLMMessage[],
   signal?: AbortSignal,
   attachments?: CodingAttachment[],
+  skillId?: string,
 ): AsyncIterable<CodingChatChunk> {
   if (signal?.aborted) {
     yield { delta: '', done: true, error: 'aborted' };
@@ -126,7 +127,13 @@ export async function* streamCodingChat(
 
   try {
     await invoke('coding_chat_stream', {
-      args: { request_id: requestId, workspace, messages, attachments: attachments ?? [] },
+      args: {
+        request_id: requestId,
+        workspace,
+        messages,
+        attachments: attachments ?? [],
+        skill_id: skillId,
+      },
     });
     backendStarted = true;
     if (cancellationRequested) cancelBackendTurn();

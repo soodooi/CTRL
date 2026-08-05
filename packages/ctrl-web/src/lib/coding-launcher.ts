@@ -61,6 +61,27 @@ export const selectWorkspaceId = (
 ): string =>
   workspaces.some((w) => w.id === current) ? current : (workspaces[0]?.id ?? '');
 
+export interface WorkspaceReconciliation {
+  nextId: string;
+  requiresReset: boolean;
+}
+
+/**
+ * Reconcile a refreshed workspace list without conflating first selection with
+ * actor handoff. Losing a non-empty current workspace always requires an ACP
+ * reset before the fallback id becomes visible. (ADR-005 irisy §11 v37)
+ */
+export const reconcileWorkspaceId = (
+  current: string,
+  workspaces: readonly CodingWorkspace[],
+): WorkspaceReconciliation => {
+  const nextId = selectWorkspaceId(current, workspaces);
+  return {
+    nextId,
+    requiresReset: current !== '' && nextId !== current,
+  };
+};
+
 /**
  * Keep the current terminal selection across a refresh when it is still
  * available; otherwise fall back to the first available terminal, or ''

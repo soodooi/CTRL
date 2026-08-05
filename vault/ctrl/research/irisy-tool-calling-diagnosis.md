@@ -3,7 +3,7 @@ title: Irisy 工具调用诊断 — hermes one-shot 工具编排瓶颈
 date: 2026-06-27
 status: active-investigation
 relates:
-  - vault/ctrl/architecture-byo-cli-driver.md
+  - vault/ctrl/history/architecture/architecture-byo-cli-driver.md
   - vault/ctrl/adrs/002-substrate.md  # §1 brain = hermes
 ---
 

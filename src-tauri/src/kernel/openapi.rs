@@ -1,5 +1,5 @@
 //! OpenAPI -> §14 record_source scaffold (ADR-002 §7.4 AutoMCP posture). The
-//! research (`vault/ctrl/ai-native-feature-pack-research.md`): automatic
+//! research (`vault/ctrl/research/ai-native-feature-pack-research.md`): automatic
 //! OpenAPI->MCP codegen is largely solved (AutoMCP ~76.5% out of the box) and the
 //! REAL bottleneck is SPEC QUALITY, not codegen. So this produces a best-effort
 //! `record_source` DRAFT from one OpenAPI read operation plus spec-repair NOTES

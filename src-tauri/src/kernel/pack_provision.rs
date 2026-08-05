@@ -1,5 +1,6 @@
-//! Generic provision engine for the feature-pack provision+auth engine (design:
-//! `vault/ctrl/feature-pack-provision-auth-engine.md`). Turns a manifest's
+//! Generic provision engine for feature-pack provision and auth
+//! (ADR-002 substrate § composition v77; historical implementation plan:
+//! `vault/ctrl/history/plans/feature-pack-provision-auth-engine.md`). Turns a manifest's
 //! declared `provision.service` (a container/compose stack) + `auth` into a
 //! one-click, silent install — zero per-pack code:
 //!

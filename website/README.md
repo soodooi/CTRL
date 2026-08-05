@@ -1,7 +1,7 @@
 # CTRL — marketing site
 
 Static multi-page site, **no build step**. Plain HTML + one shared `styles.css`.
-Brand tokens (cobalt blue + keycap母题) derive from `../doc/design/tokens.json`
+Brand tokens (cobalt blue + keycap母题) derive from `../docs/design/tokens.json`
 and `../brand/brand-tokens.md`. Copy is locked to ADR-006 §5 (OPC positioning)
 and §1 (BYOK).
 

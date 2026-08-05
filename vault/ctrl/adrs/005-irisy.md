@@ -1,10 +1,10 @@
 ---
 adr_id: 005
 module: irisy
-title: CTRL Irisy — PWA persona shell + sycophancy filter + system-prompt injection + drill-down + §8 terminal-essence dialog (engine owns loop+context) + §9 mission + knowledge system (数字员工 operator)
-version: 34
+title: CTRL Irisy — App AI assistant + persona shell + §8 terminal-essence dialog + §9 mission/knowledge + §10 capability integration + §11 role boundary
+version: 38
 status: accepted
-last_updated: 2026-07-28
+last_updated: 2026-08-03
 deciders: [bao, zeus, hephaestus]
 sections:
   - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
@@ -14,7 +14,13 @@ sections:
   - { id: self-reflection-loop,       source: new-2026-06-04 — MIGRATED to hermes via SKILL.md (Irisy is no longer an agent) }
   - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
   - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
+  - { id: capability-integration,     source: bao-2026-08-02, note: "Normative contract for every Irisy capability or external-application integration; project review records are evidence, never a second authority." }
+  - { id: role-boundary,              source: bao-2026-08-03-one-irisy-two-identities, note: "One user-visible Irisy has Assistant and Coding identities while distinct runtime, session, resource, cancellation, and capability owners remain isolated." }
 changelog:
+  - v38 2026-08-03: **§8.7 + §11 amendment — Irisy is the sole user-visible AI brand with two identities, Assistant and Coding; runtime names are not product actors (bao confirmed).** The identity selector, real Resource scope, and Auto/explicit Skill control live under the one composer. Assistant resources are current content, explicit application selection, knowledge, or active pack; Coding resources are eligible projects, auto-bound when only one exists. A pinned skill is loaded from the existing local SKILL.md authority and injected into that identity's fresh ACP session; an installed-but-unused skill is never shown as active. Identity/resource/skill changes reset only the affected owner before the next turn. Beneath the brand, Assistant and Coding still own separate ACP singleton, cancellation/drain, durable transcript/session, resource scope, capabilities, credentials, and approvals; no context transfer is implied. Pairs ADR-001 spine §4 v21 and ADR-003 frontend §8.5/§8.6 v39.
+  - v37 2026-08-02: **§8.7 + §11 amendment — presentation converges from LEFT Coding / RIGHT Irisy into one persistent dialog shell with an explicit Irisy/Coding actor selector, without merging agent authority (bao confirmed).** The selected mode owns the visible transcript and mode chrome; Irisy keeps its own selectable ACP engine, roles, Companions, packs, transcript, and context, while Coding keeps the separate `coding_singleton()`, OpenCode command/cancellation owner, workspace-keyed sessions, projected coding skills, attachments, and workspace scope. Shared React renderer/composer components are presentation reuse only. Switching actors never shares session, context, credentials, pending tool calls, cancellation, or approval. The standalone Coding chat authority is retired. `record_source` remains a data contract and cannot imply Coding workspace eligibility; projection requires explicit actor/surface metadata. Pairs ADR-001 spine §4 v20 and ADR-003 frontend §8.5/§8.6 v38.
+  - v36 2026-08-02: **NEW §11 App AI Assistant Role Boundary — Irisy, the left-region Coding agent, and the repository development agent are three distinct actors.** Irisy is the shipped, user-facing App AI assistant: it completes user jobs through installed capabilities and the gate, but it is not the CTRL repository maintainer or an architecture authority. Coding is the separate user-owned OpenCode agent for code and feature-pack work in the selected workspace; sharing ACP and gate infrastructure does not make it Irisy. Kiro or another repository development agent works outside the shipped product, follows GOAL + owning ADRs, and changes CTRL itself; it must never be presented as Irisy. Handoffs preserve explicit identity, scope, session, and approval boundaries. This section is the sole role definition; `irisy-roles.md` and `irisy-coding-companion.md` are retired as live design sources. Pairs ADR-001 spine §4 v19 and ADR-005 irisy §8.7 v36.
+  - v35 2026-08-02: **NEW §10 Irisy Capability Integration Contract — every capability or external-application project must review the same contract before implementation and again after real validation.** Irisy has exactly three reusable forms: Workspace (expanded work area + right Irisy), Companion (the same Irisy surface with the workspace collapsed), and Artifact (a produced native result). Companion is NOT a second native window, shell, or transport: it reuses ADR-003's single NSPanel and existing Irisy session. Each integration declares its job, chosen form, explicit context boundary, local truth source, capability mapping, write/review boundary, credential and identity boundary, visible scope, degradation behavior, and evidence. The gate remains the sole cross-domain control plane; data operations use §14 describe/query/produce, mutations cross ReviewGate, and external applications retain their own collaboration and permission authority. Each project writes a non-authoritative review record under `vault/ctrl/research/irisy-integrations/<slug>.md`; its preflight and post-validation reviews yield only Conforms, Clarification, or Contract delta. A Contract delta requires bao approval and an in-place ADR-005 amendment before implementation, so accumulated evidence evolves one contract rather than leaving project-specific architectures. First record: LibreOffice Companion. Pairs ADR-003 frontend §1.1 v37, ADR-002 substrate §14 v77, and ADR-010 communication § waist v11.
   - v34 2026-07-28: **§8.3.1 scope correction — ACP cancellation is a caller-owned opt-in, not a claimed Irisy UI feature.** Only a surface that registers an active request owner and invokes `prompt_cancellable` may send `session/cancel` and drain the original response. Coding is the current such surface. Irisy does not yet expose an ACP cancellation command; its reset discards the singleton and must not be represented as safe cancellation or reuse. Any future Irisy Stop control must adopt the same owner/cancel/drain contract before it is enabled.
   - v33 2026-07-28: **§8.3 amendment — ACP prompt cancellation is request-owned and stdout-safe.** A UI stop sends `session/cancel` only for the active ACP session, then the owning client drains the terminal response for that original prompt while it exclusively owns the stream; late thought/message/tool updates are discarded and never reach a later UI turn. A client is reusable only after that terminal response is drained and the child remains alive. Cancellation-write, drain, EOF, or timeout failure marks it non-reusable; the caller drops the singleton and creates a fresh session re-hydrated only from the durable local transcript. A clean cancel does not kill the live engine. Coding's independent ACP client follows the same rule; reset/workspace replacement first cancels active owners and waits for their drain. This preserves engine-owned loop/context while preventing stale stdout attribution.
   - v32 2026-07-27: **§8.7 the RIGHT-region Irisy surface gains Kiro-parity Session and Attachments modules, closing v31's "not wired to any Irisy UI" gap for attachments and adding multi-session tabs (bao "Irisy的页面，清修改成跟kiro一样...session，model，attachments等等模块都要"; explicitly out of scope this round: token/credit usage stats and checkpoint/restore).** Before this amendment `IrisyChat.tsx` persisted exactly ONE conversation per mode under a single localStorage key — there was no way to hold multiple parallel conversations the way Kiro's screenshot shows (a row of session tabs across the top). New `lib/irisy-sessions.ts` (zustand + persist, same convention as `workspace-store.ts`) replaces that with a LIST of sessions the user creates/switches/closes/renames, rendered by a new `SessionTabs.tsx` tab bar mounted just below `ChatHeaderControls`; a one-time `migrateLegacySingleSession` folds an upgrading user's existing single conversation into the first new session rather than dropping it. Session tabs auto-title from the first user message (`deriveSessionLabel`, truncated) exactly as Kiro's own tabs do, and stay user-renamable via double-click. Attachments (v31's gap): `IrisyChat`'s composer now shares the SAME native-drop mechanism Coding uses — the underlying Tauri drag-drop hook was extracted to `lib/native-file-drop.ts` (`coding-drop.ts` becomes a thin re-export so `CodingScene.tsx` needed no change) — and the disk-reading/ContentBlock-classification logic (`ChatAttachmentWire`/`read_from_disk`, formerly private to `coding_chat.rs`) moved to a new shared `commands/chat_attachment.rs` both `coding_chat.rs` and `irisy_chat.rs` now call, so `irisy_chat_stream`'s ACP path (only the ACP path — the provider-router fallback has no attachment support) resolves a dropped file into an `Image`/`EmbeddedResource` ContentBlock via the SAME `AcpClient::prompt` capability negotiation Coding already exercises (ADR-002 substrate §1.8.6 v75). Model module: the existing `AgentSelector` (unchanged logic) moves from a row above the composer to a bottom toolbar row below it, matching Kiro's bottom bar position — position/styling only, no new engine-selection behavior. Deliberately NOT built, per bao's explicit scope cut: Kiro's credit/token usage counter (no CTRL-side token metering exists to back it — a real number, not a placeholder, or nothing) and the checkpoint/restore timeline (a distinct, separately-scoped message-snapshot-rollback feature). Coding mode (`forceMode==='coding'`) keeps its dormant legacy single-conversation code path untouched — CodingScene.tsx already owns Coding's own workspace-keyed conversations, so this redesign only touches the Personal ("assistant") surface. Verified: `cargo test --lib` 523/523 (chat_attachment.rs's disk-reading tests relocated + a new `read_all` test); `vitest run` 243/243 (22 new: `irisy-sessions.test.ts` covering create/close-fallback-ordering/rename/label-derivation/legacy-migration); `npm run typecheck` clean. Pairs ADR-003 frontend §8.6 v36 (SessionTabs/AgentSelector placement) and ADR-002 substrate §1.8.6 v75 (the attachment capability this consumes).
@@ -27,11 +33,11 @@ changelog:
   - v25 2026-07-23: **§9 authority boundary reconciled with module ADR governance.** `irisy-architecture.md` remains a non-authoritative research/planning map for the accepted mission, knowledge-system detail, and the new five-capability planning lens; this ADR and the other owning module ADRs are the sole architectural authority. The lens may organize cross-module review but cannot create, override, or downgrade a decision; implementation still requires an in-place amendment to each owning module ADR. This supersedes v11's delegated "Governing SSOT" wording without changing the locked operator mission.
   - v24 2026-07-13: **§8 operational authority corrected to existing build-owned sources.** The nonexistent `.kiro/skills/hermes/SKILL.md` pointer is removed; engine pin/install truth is `shell/agent_installer.rs`, runtime ACP behavior is `shell/acp_client.rs`, and release evidence is `scripts/probes/hermes-acp-probe.mjs`. No runtime architecture change.
   - v23 2026-07-13: **Retired Pi-era §5-§7 governance is made explicitly non-binding (no new architecture).** Their prose remains as provenance, but headings/checklists now say retired and use `[~]`; live runtime verification is Hermes ACP plus the current §8/§9 model. Removes deleted `ctrl-pi-bridge`/Pi RPC work from accepted release debt and pairs ADR-002 v63.
-  - v22 2026-07-08: **§2 mobile = describe-driven SDUI (generic, not stock) + Irisy conversation over the tunnel.** bao 2026-07-08「我们不仅仅是股票,不能拘泥于股票」+「对话没有了,这是个问题」+「通讯协议要抽象化通用化」. Researched server-driven-UI (Airbnb Ghost / OpenAI Apps SDK / MCP-UI / Shopify remote-dom, cross-verified): the right protocol = **describe-driven SDUI over the gate** — a pack `describe`s its mobile surface as a flat list of typed PARTS (kind + data + actions), the phone renders them through ONE registry with zero per-pack code; borrow the industry's *contract shape* (typed kind → registered renderer + declarative action + version + unknown-kind fallback), reject its heavyweight *transport* (iframes / remote-dom / AG-UI event stream) — matches local-first + gate-governed + JSON-semantic + the existing PartKind registry. **As-built (`feat/mobile-sdui`)**: `SurfaceRenderer` = domain-agnostic primitives (gauge/metrics/barlist/tiers/table/record/list + json fallback) — **no `stock` kind**, stock is just one composition; `Surface{v,pack,title,parts[]}` + `Action{verb:query|produce,source,op}`. Phone `RemoteApp` fetches each pack's Surface via `remote_surface` (describe) + renders generically + rounds actions back over the tunnel (deleted the `if(pack===stock)` hardcode). Desktop `RemoteHost` builds the Surface — the stock→parts mapping is a TRANSITIONAL desktop shim (real design: the pack describes its own surface via §14; every other pack flows through unchanged, the phone never knows a pack is "stock"). **Conversation**: `ChatSheet` slides in from the right edge / an Irisy button (maps the desktop's right chat column onto the phone); `sendChat` tunnels to the desktop, `RemoteHost` streams the engine reply (`engineTransport`, same assistant) back as chat_chunk/chat_done. Desktop Mobile (L1) page embeds a live phone preview (`MobilePreview`) beside the config so you see the app without a phone; "Mobile" is now a first-class L1 entry (not a settings-corner route). Verified: tsc + generic renderer render (2 packs, one renderer) + chat-tunnel protocol sim (send→stream→accumulate→done) + AES-GCM/passcode/surface sims. Honest gaps: move the stock shim into the pack (§14 describe); live phone↔desktop round-trip (engine stream + real data) = desktop+phone. Plan `vault/ctrl/plan-remote-window.md`.
-  - v21 2026-07-07: **§2 remote window — persistent device model (RustDesk/ToDesk parity) + hosted PWA + relay deployed.** bao「是todesk的最佳实践吗」→ researched RustDesk (open-source authority) / ToDesk / TeamViewer connection models (multi-source). Verdict: the relay-only + E2E + dial-out transport is RIGHT and deliberately simpler than the reference products for JSON (P2P/hole-punching is their most-complained subsystem — #6689 — and still relays on mobile/CGNAT; adopting it = over-engineering for JSON; do NOT). BUT the ephemeral "Start session → one-time link" pairing was the ATTENDED-support model, wrong for the main use case ("reach my OWN desktop from my OWN phone" = UNATTENDED, which all three ship as persistent device-id + password + always-registered). **As-built (`chore/remote-pages-base`)**: `remote-identity` (stable device id + E2E key + 6-digit passcode, persisted; Keychain migration is the noted hardening) ; "Stay reachable" keeps the outbound relay link alive with backoff (RustDesk's registration-heartbeat posture, still 0 listening ports) ; a durable connect link the phone bookmarks ; the passcode verified AFTER the E2E channel is up (relay never sees it — RustDesk's `SHA256(pw)`-inside-encrypted-channel shape) ; passcode Reset = soft-revoke remembered phones ; one-time "Share once" link kept for the attended/share case ; phone remembers the passcode for silent reconnect. Also: PWA now HOSTED (a phone can't reach the desktop's local Tauri origin) at **app.ctrlapplab.com** (Cloudflare Pages, `ctrl-app` project; pairing link points there, data still flows peer-to-peer over the relay so the host serves only the static shell) ; **ctrl-relay deployed + live-verified** (`wss://ctrl-relay.soodooi2018.workers.dev` — two peers through the real worker, E2E round-trip). Multi-tenant needs zero per-user setup: shared host + relay, each session isolated by device-id + E2E key (like HA's Nabu Casa / RustDesk's ID registry). Honest gap: DNS CNAME for app.ctrlapplab.com (token lacks dns:edit) + real phone↔desktop round-trip. Verified: tsc + AES-GCM round-trip/tamper/wrong-key + host↔relay↔client protocol sim + passcode-auth sim (no/wrong/right) + card renders. Plan `vault/ctrl/plan-remote-window.md`.
-  - v20 2026-07-07: **§2 remote co-view SHIPPED — semantic "remote window" (option B), relay-only + E2E; NOT pixel remote-desktop (that = ADR-010 ⑧).** bao 2026-07-07「远程桌面和远程窗口…L1 配置页管手机显示/功能」→ evaluated the prior work (a `feat/remote-window-share-spike` worktree = a RustDesk-style PIXEL remote-desktop: screen_capture/H.264/WebRTC/input_inject) and the ADRs, and bao chose **B (semantic remote / phone-native PWA)** over A (pixel). Two research rounds (transport best-practice + Home Assistant Companion benchmark, multi-source cross-verified) locked the transport: **relay-only, NO WebRTC (JSON not video → Syncthing proves data tools don't need it), zero-knowledge relay with E2E frames** (beats HA-Cloud's disclosed "cloud owns the trust root, could MITM" hole by anchoring the E2E key in the phone↔desktop pairing exchange). **bao chose strict 0-listening-ports = relay-only** (LAN also hairpins the relay; offline-LAN-direct deliberately dropped — deletes HA's two most-complained subsystems: SSID local/cloud switching + blocking connection-lost wall). **As-built (`feat/remote-window`, frontend-only, no kernel/Rust — the running desktop PWA is the host peer)**: L1 `/remote` config page = per-device deny-by-default allowlist (function visible + view/act) ; mobile bottom-nav shell rendering allowed functions NATIVELY (stock cockpit renders as-is) ; `worker/ctrl-relay` (zero-knowledge CF Worker, reused from the spike) ; `remote-crypto` (AES-256-GCM frames, verified round-trip/tamper/wrong-key) ; `RemoteHost`/`RemoteConnection` (desktop dials the room + serves allowlist + proxies gate-calls ↔ phone joins via `?remote=<room>#k=<key>` link, tunnels gate invokes E2E). Verified: tsc + crypto + a full host↔relay↔client protocol sim (hello→allow→invoke→result E2E). **Honest gaps (bao's)**: relay deploy (CF account) + real phone↔desktop round-trip. Governing plan = `vault/ctrl/plan-remote-window.md`. Supersedes §2's "not in v1 scope / on mesh" framing for the SEMANTIC path; the spike's `ADR-002 §remote-control v1` (pixel) references collapse into ADR-010 ⑧ (independent pixel-remote-desktop module, not built).
+  - v22 2026-07-08: **§2 mobile = describe-driven SDUI (generic, not stock) + Irisy conversation over the tunnel.** bao 2026-07-08「我们不仅仅是股票,不能拘泥于股票」+「对话没有了,这是个问题」+「通讯协议要抽象化通用化」. Researched server-driven-UI (Airbnb Ghost / OpenAI Apps SDK / MCP-UI / Shopify remote-dom, cross-verified): the right protocol = **describe-driven SDUI over the gate** — a pack `describe`s its mobile surface as a flat list of typed PARTS (kind + data + actions), the phone renders them through ONE registry with zero per-pack code; borrow the industry's *contract shape* (typed kind → registered renderer + declarative action + version + unknown-kind fallback), reject its heavyweight *transport* (iframes / remote-dom / AG-UI event stream) — matches local-first + gate-governed + JSON-semantic + the existing PartKind registry. **As-built (`feat/mobile-sdui`)**: `SurfaceRenderer` = domain-agnostic primitives (gauge/metrics/barlist/tiers/table/record/list + json fallback) — **no `stock` kind**, stock is just one composition; `Surface{v,pack,title,parts[]}` + `Action{verb:query|produce,source,op}`. Phone `RemoteApp` fetches each pack's Surface via `remote_surface` (describe) + renders generically + rounds actions back over the tunnel (deleted the `if(pack===stock)` hardcode). Desktop `RemoteHost` builds the Surface — the stock→parts mapping is a TRANSITIONAL desktop shim (real design: the pack describes its own surface via §14; every other pack flows through unchanged, the phone never knows a pack is "stock"). **Conversation**: `ChatSheet` slides in from the right edge / an Irisy button (maps the desktop's right chat column onto the phone); `sendChat` tunnels to the desktop, `RemoteHost` streams the engine reply (`engineTransport`, same assistant) back as chat_chunk/chat_done. Desktop Mobile (L1) page embeds a live phone preview (`MobilePreview`) beside the config so you see the app without a phone; "Mobile" is now a first-class L1 entry (not a settings-corner route). Verified: tsc + generic renderer render (2 packs, one renderer) + chat-tunnel protocol sim (send→stream→accumulate→done) + AES-GCM/passcode/surface sims. Honest gaps: move the stock shim into the pack (§14 describe); live phone↔desktop round-trip (engine stream + real data) = desktop+phone. Plan `vault/ctrl/plans/remote/plan-remote-window.md`.
+  - v21 2026-07-07: **§2 remote window — persistent device model (RustDesk/ToDesk parity) + hosted PWA + relay deployed.** bao「是todesk的最佳实践吗」→ researched RustDesk (open-source authority) / ToDesk / TeamViewer connection models (multi-source). Verdict: the relay-only + E2E + dial-out transport is RIGHT and deliberately simpler than the reference products for JSON (P2P/hole-punching is their most-complained subsystem — #6689 — and still relays on mobile/CGNAT; adopting it = over-engineering for JSON; do NOT). BUT the ephemeral "Start session → one-time link" pairing was the ATTENDED-support model, wrong for the main use case ("reach my OWN desktop from my OWN phone" = UNATTENDED, which all three ship as persistent device-id + password + always-registered). **As-built (`chore/remote-pages-base`)**: `remote-identity` (stable device id + E2E key + 6-digit passcode, persisted; Keychain migration is the noted hardening) ; "Stay reachable" keeps the outbound relay link alive with backoff (RustDesk's registration-heartbeat posture, still 0 listening ports) ; a durable connect link the phone bookmarks ; the passcode verified AFTER the E2E channel is up (relay never sees it — RustDesk's `SHA256(pw)`-inside-encrypted-channel shape) ; passcode Reset = soft-revoke remembered phones ; one-time "Share once" link kept for the attended/share case ; phone remembers the passcode for silent reconnect. Also: PWA now HOSTED (a phone can't reach the desktop's local Tauri origin) at **app.ctrlapplab.com** (Cloudflare Pages, `ctrl-app` project; pairing link points there, data still flows peer-to-peer over the relay so the host serves only the static shell) ; **ctrl-relay deployed + live-verified** (`wss://ctrl-relay.soodooi2018.workers.dev` — two peers through the real worker, E2E round-trip). Multi-tenant needs zero per-user setup: shared host + relay, each session isolated by device-id + E2E key (like HA's Nabu Casa / RustDesk's ID registry). Honest gap: DNS CNAME for app.ctrlapplab.com (token lacks dns:edit) + real phone↔desktop round-trip. Verified: tsc + AES-GCM round-trip/tamper/wrong-key + host↔relay↔client protocol sim + passcode-auth sim (no/wrong/right) + card renders. Plan `vault/ctrl/plans/remote/plan-remote-window.md`.
+  - v20 2026-07-07: **§2 remote co-view SHIPPED — semantic "remote window" (option B), relay-only + E2E; NOT pixel remote-desktop (that = ADR-010 ⑧).** bao 2026-07-07「远程桌面和远程窗口…L1 配置页管手机显示/功能」→ evaluated the prior work (a `feat/remote-window-share-spike` worktree = a RustDesk-style PIXEL remote-desktop: screen_capture/H.264/WebRTC/input_inject) and the ADRs, and bao chose **B (semantic remote / phone-native PWA)** over A (pixel). Two research rounds (transport best-practice + Home Assistant Companion benchmark, multi-source cross-verified) locked the transport: **relay-only, NO WebRTC (JSON not video → Syncthing proves data tools don't need it), zero-knowledge relay with E2E frames** (beats HA-Cloud's disclosed "cloud owns the trust root, could MITM" hole by anchoring the E2E key in the phone↔desktop pairing exchange). **bao chose strict 0-listening-ports = relay-only** (LAN also hairpins the relay; offline-LAN-direct deliberately dropped — deletes HA's two most-complained subsystems: SSID local/cloud switching + blocking connection-lost wall). **As-built (`feat/remote-window`, frontend-only, no kernel/Rust — the running desktop PWA is the host peer)**: L1 `/remote` config page = per-device deny-by-default allowlist (function visible + view/act) ; mobile bottom-nav shell rendering allowed functions NATIVELY (stock cockpit renders as-is) ; `worker/ctrl-relay` (zero-knowledge CF Worker, reused from the spike) ; `remote-crypto` (AES-256-GCM frames, verified round-trip/tamper/wrong-key) ; `RemoteHost`/`RemoteConnection` (desktop dials the room + serves allowlist + proxies gate-calls ↔ phone joins via `?remote=<room>#k=<key>` link, tunnels gate invokes E2E). Verified: tsc + crypto + a full host↔relay↔client protocol sim (hello→allow→invoke→result E2E). **Honest gaps (bao's)**: relay deploy (CF account) + real phone↔desktop round-trip. Governing plan = `vault/ctrl/plans/remote/plan-remote-window.md`. Supersedes §2's "not in v1 scope / on mesh" framing for the SEMANTIC path; the spike's `ADR-002 §remote-control v1` (pixel) references collapse into ADR-010 ⑧ (independent pixel-remote-desktop module, not built).
   - v19 2026-07-06: **§9 knowledge — Irisy now CONSULTS a matching skill before a domain analysis (not just when it feels like it), + a data-grounding ban on memory-sourced market numbers; the A-share buy/sell 规范 (`stock-analysis-cn`) ships as a shareable skill (bao 2026-07-06「你应该是给 Irisy 一个规范呀」+「重启验证 + 提交 + 硬化 skill 热发现」).** Context: the stock pack's core = 选股/盯盘/止损 = data-grounded buy/sell decision analysis (NOT ledger tracking); guiding Irisy turn-by-turn doesn't scale, so the playbook becomes a SKILL Irisy self-serves. Three landed pieces: **(1) 规范** = `share/skills/stock-analysis-cn/SKILL.md` (铁律 data-grounded/no-fabrication/decision-not-荐股 · EastMoney keyless recipes secid+kline+realtime · 4 tasks 个股/选股/止损/盯盘 · output format · anti-patterns incl. "no ledger"). **(2) Brief reflex (`CTRL_CAPABILITY_BRIEF` in `acp_client.rs`, where hermes reads it turn-1)**: "WHEN A SKILL MATCHES THE TASK, skill_read it and FOLLOW it BEFORE you answer; for any A-share buy/sell / 选股 / 止损 / 盯盘 request FIRST skill_list + skill_read the matching skill; NEVER state a price/PE/revenue/fund-flow/MA from memory — pull it live per the skill, or say you can't." **(3) Hot-discovery LOCKED** — the "skills need a restart to be found" fear was FALSE: `list_local_skills` re-scans `~/.claude/skills` on every call (live `read_dir`, no boot cache), proven by driving the running gate's `skill_list` (found the just-created skill with no restart); added regression test `newly_created_skill_is_found_on_next_scan_no_cache` so nobody introduces a cache later. **Ledger-verified (audit_calls, caller=hermes)**: pre-brief Irisy only `skill_list`ed then answered from memory; post-brief it `skill_read stock-analysis-cn` AND, when it couldn't find a kline tool, `gate_tool_search`ed "stock kline history price" — i.e. the reflex now drives it toward the skill's data. **HONEST GAP (the real next slice, surfaced by this verify)**: the skill's data recipe (EastMoney kline/fund-flow via terminal) is NOT reachable through the gate headless — the gate has only `market_quote` (price) + `market_screen`, no A-share kline/fundamental/fund-flow tool and no generic terminal tool (only `mcp_pack_run`), so Irisy still falls back to `web_search`/memory for fundamentals. Making the 规范 fully BITE requires exposing A-share kline/fund-flow/fundamentals as one-shot GATE TOOLS via the `ctrl-stock-cn` pack (the AI-native uplift layer the GOAL is about) — separate slice. In the real app Irisy also has the terminal companion (CodingScene), so full data-pull is bao's in-app verify. Locks unchanged (hermes = assistant brain; skills = on-demand playbooks).
-  - v18 2026-07-06: **§8.7 — the CODING engine = OpenCode (open-source, model-agnostic), run as a BYO-CLI driver in the workspace; NOT hermes, NOT a wrapped commercial CLI (bao 2026-07-06「coding 模块规范得做…不是所有人有 claude…claude/codex 成熟产品不能直接用」).** Decisions, each bao-driven: **(a) not hermes** — hermes is an assistant harness (memory/RAG), weak at raw coding (verified: loses to Claude Code on coding chops; strength is cross-session memory); it stays the ASSISTANT brain, coding gets a dedicated agent. **(b) not Claude Code / Codex** — mature COMMERCIAL products; wrapping one makes CTRL a thin shell, adds a vendor dependency + ToS gray area (Anthropic 2026 cut third-party tools off Pro/Max subscriptions), and requires an account not everyone has. **(c) = OpenCode** (MIT, 160K★, 75+ providers incl. local Ollama, native `opencode acp`, MCP client, LSP): CTRL OWNS the integration, the user brings ANY model (free/local floor → BYOK upgrade) — aligns byok-no-Claude + sell-tools-not-models. **(d) integration mode = BYO-CLI driver, not the ACP-engine slot** (after a plan review found it simpler + fuller + de-risked): run `opencode`'s full TUI in the projected workspace (Coding scene's existing PTY, cwd = the configured vault root via `vault_root_path`, NOT a hardcoded `~/Documents/CTRL`), where the projector already writes the gate — no ACP-driving wiring, no model-injection, opencode keeps its full experience, and it matches spine §4 (user's own CLI, gate projected, CTRL doesn't supervise). **Landed (trial "B", bao「试试B…terminal 也保留」)**: Coding scene = tabs `[OpenCode | Terminal]` (both in the vault root) with Irisy chat pinned in the right column; `projector.rs` now also writes `opencode.json` (OpenCode's `mcp`/`type:remote` shape, vs Claude Code's `.mcp.json`) with a CODING intent (`source,discover,skill,mcp` for pack-building, `net` still excluded). Verified: on boot the projector writes `opencode.json` to the vault root with the live token; `opencode mcp list` there → `✓ ctrl-kernel connected`. Trial ALSO surfaced that the coding workspace must follow the CONFIGURED vault root (my first cut hardcoded `~/Documents/CTRL` and read a stale leftover from before the vault moved to `~/Documents/pkm`). Plan + full slice map: `vault/ctrl/plan-opencode-coding-engine.md`. Honest gap: pack-building end-to-end IN opencode (ask it to build a pack via the gate tools) is the user's in-app verify; one-click lazy-install of opencode + un-retiring the ACP-engine path (optional, for chat-integrated coding) are follow-ups. Locks unchanged (hermes = assistant; opencode = BYO-CLI driver, projection not supervision).
+  - v18 2026-07-06: **§8.7 — the CODING engine = OpenCode (open-source, model-agnostic), run as a BYO-CLI driver in the workspace; NOT hermes, NOT a wrapped commercial CLI (bao 2026-07-06「coding 模块规范得做…不是所有人有 claude…claude/codex 成熟产品不能直接用」).** Decisions, each bao-driven: **(a) not hermes** — hermes is an assistant harness (memory/RAG), weak at raw coding (verified: loses to Claude Code on coding chops; strength is cross-session memory); it stays the ASSISTANT brain, coding gets a dedicated agent. **(b) not Claude Code / Codex** — mature COMMERCIAL products; wrapping one makes CTRL a thin shell, adds a vendor dependency + ToS gray area (Anthropic 2026 cut third-party tools off Pro/Max subscriptions), and requires an account not everyone has. **(c) = OpenCode** (MIT, 160K★, 75+ providers incl. local Ollama, native `opencode acp`, MCP client, LSP): CTRL OWNS the integration, the user brings ANY model (free/local floor → BYOK upgrade) — aligns byok-no-Claude + sell-tools-not-models. **(d) integration mode = BYO-CLI driver, not the ACP-engine slot** (after a plan review found it simpler + fuller + de-risked): run `opencode`'s full TUI in the projected workspace (Coding scene's existing PTY, cwd = the configured vault root via `vault_root_path`, NOT a hardcoded `~/Documents/CTRL`), where the projector already writes the gate — no ACP-driving wiring, no model-injection, opencode keeps its full experience, and it matches spine §4 (user's own CLI, gate projected, CTRL doesn't supervise). **Landed (trial "B", bao「试试B…terminal 也保留」)**: Coding scene = tabs `[OpenCode | Terminal]` (both in the vault root) with Irisy chat pinned in the right column; `projector.rs` now also writes `opencode.json` (OpenCode's `mcp`/`type:remote` shape, vs Claude Code's `.mcp.json`) with a CODING intent (`source,discover,skill,mcp` for pack-building, `net` still excluded). Verified: on boot the projector writes `opencode.json` to the vault root with the live token; `opencode mcp list` there → `✓ ctrl-kernel connected`. Trial ALSO surfaced that the coding workspace must follow the CONFIGURED vault root (my first cut hardcoded `~/Documents/CTRL` and read a stale leftover from before the vault moved to `~/Documents/pkm`). Plan + full slice map: `vault/ctrl/history/plans/plan-opencode-coding-engine.md`. Honest gap: pack-building end-to-end IN opencode (ask it to build a pack via the gate tools) is the user's in-app verify; one-click lazy-install of opencode + un-retiring the ACP-engine path (optional, for chat-integrated coding) are follow-ups. Locks unchanged (hermes = assistant; opencode = BYO-CLI driver, projection not supervision).
   - v17 2026-07-06: **§persona + capability-brief — Irisy knows how to USE an installed connector pack + greets completely (bao 2026-07-06, ledger-verified).** Two fixes, both landing where hermes actually reads them (the compiled `CTRL_CAPABILITY_BRIEF` in `acp_client.rs` + the seeded `hermes-soul.md` — NOT the per-turn frontend ambient, which the hermes ACP path only sends on the SESSION'S FIRST turn, so a mid-conversation edit never reaches it; ledger-diagnosed root cause of "my brief edits didn't change Irisy"). **(1) Connector-pack usage rule (`CTRL_CAPABILITY_BRIEF`)**: asked "can you use ghostfolio?", Irisy searched for a product-named tool, found none (a §14 connector's data is reached via the GENERIC `source_describe/query/produce` + `source_id`, not a `ghostfolio_*` tool), and fell back to the industry-default "give me a URL + token." New brief section: an installed connector pack = generic `source_*` + `source_id`; a `not configured` error means SET IT UP (`mcp_pack_provision`), never demand a manual token. Verified on Claude: Irisy now calls `source_describe ctrl-ghostfolio` + reads the field shape (vs the old bare deflection). **(2) Greeting (`hermes-soul.md`)**: the soul said "terse, don't recite a feature list," so "你好" got a one-line deflection; changed to give ONE complete concrete intro on a greeting / "what can you do" (grounded in real tools), then stay terse for task work. Locks unchanged (hermes stays the assistant brain; §9 mission/knowledge unaffected). Honest note: takes effect on a FRESH hermes session (the brief primes turn-1 only), so an ongoing conversation must start a new turn/session to pick it up.
   - v11 2026-06-29: **NEW §9 mission + knowledge system (root-fix for "Irisy isn't smart").** bao 2026-06-29 钦定: 「Irisy 要做什么他不清楚 → 得有一个整体架构和 Irisy 的整体知识体系」+「你还是做个调研吧」→ 3 路调研 (knowledge/context-engineering · proactive-operator · China-OPC) 合成。**魂 LOCKED** = Irisy = 一人公司的数字员工/运营官 (按角色把整件事做完 / 本地记住你的生意 / 缺工具就造 / 经 gate)。病根 = ①没使命 ②知识散 5 摊无 SSOT。§9.2 = 8 层知识栈 (每层一 SSOT, 注入 vs 召回, **能力意识从 gate 注册表派生不手写**, 记忆存 vault markdown 写时对账)。§9.3 = 操作循环 Sense→Anticipate→Plan→Act(经gate)→Produce→Persist + 4 条主动性护栏 (可逆性=ask 边界)。定位红线: 不抢免费超级框 / 不做陪伴 / 隐私=商业数据主权。Governing SSOT = `vault/ctrl/irisy-architecture.md` v2 + [[irisy-roles.md]]。配 §3 persona-shell (§9 在 persona 之上 = Irisy 是为了什么)。实施走 dev-loop 分步。**+ §9.5 实施路径校准 (bao「hermes 已做了一些, 你要综合考虑」)= 驯化非造**: hermes 已是完整 agent 引擎 (记忆/循环/技能/cron/kanban), Irisy 三件 = 给魂 + 把记忆引流回 vault + 藏黑话 (减法非加法)。审计: CTRL 早把三件设计在 `vault_seed/irisy-soul.md` (记忆体系 episodes/playbook/curator + privacy + 藏黑话规则) + `CTRL_CAPABILITY_BRIEF` (已命令 hermes 把记忆写 vault SOUL 不写私有库) 里, 只是魂旧 (co-pilot/passenger/Pi/keycap) + 散两处会漂 + 引流没收口 (hermes 双写) + `vault/irisy/SOUL.md` 从未 seed。本刀已: 换魂 (seed about/identity → operator/back-office-of-one-person-company, 擦 Pi/keycap/co-pilot) + PWA spine 注入使命 (irisy-prompts v13→v14)。待做: 收口引流 (hermes 启动同步 vault SOUL + 停私有 MEMORY 双写) + 合并两源成单 spine。
   - v1 2026-05-31: module reorg — merged orig-016 (8-stage mcp lifecycle) + orig-017 (remote co-view = Irisy primitives) + lifted orig-024 §7 persona rule into this ADR + amended persona rule with prompt v5 (brain self-awareness with brand labels).
@@ -40,8 +46,8 @@ changelog:
   - v4 2026-06-04: **NEW §6 capability-decomposition + §7 pi-extension-integration** — root-cause fix for "Pi 一切动词都 install_mcp" + "Pi 说我没 skill 系统" 实测 fail. ctrl-pi-bridge 升级从 provider-only → registerTool + 3 hook (before_agent_start chain / tool_call inspector / resources_discover skills 贡献), Pi `--no-tools` → `--no-builtin-tools` (撤 7 个 built-in 但保 extension 注册的). System prompt 从 monolithic 200 行 → thin base (~30 行) + 8 capability segment, 通过 `before_agent_start` hook 按关键词动态注入 (token cache 友好). PWA `<call>` XML loop 保留作 Volc Qwen/Llama 弱模型 fallback. 调研: `vault/ctrl/history/brainstorm/irisy-pipeline-2026-06-04.md` v2 §3 (Pi/Letta/Cline/Goose/Cursor 对标) + §8 (background agent 深拉源码).
   - v5 2026-06-09: **Irisy reframed as PWA persona shell (H-2026-06-09-002).** bao 2026-06-09 校准: "Irisy 是表象". Irisy is **no longer a brain / agent runtime** — the brain role belongs to 3 external agents (hermes / opencode / kairo per ADR-002 §1 v19). Irisy is now the PWA UX persona layer: (1) **Avatar + branding** — Irisy character, voice, blink animation (Lottie). (2) **System-prompt injection** — wraps user message with CTRL substrate context (active provider info, Notes folder path, OS hint) before routing to whichever agent matches active L1 chip (default `/assistant` → hermes). (3) **Sycophancy filter** — `packages/ctrl-web/src/lib/persona-filter/patterns.md` (relocated from retired `packages/ctrl-pi-bridge/data/persona-patterns.md`). (4) **Drill-down** — long-press / Alt-click reveals raw agent output before filter. RETIRED sections: lifecycle (moves to ADR-004 § mcp execution), soul-md-compat (applies to hermes memory, not Irisy), self-reflection-loop (migrates to hermes as `~/.ctrl/skills/auto-reflect/SKILL.md`), capability-decomposition (no Irisy system prompt — agents own theirs), pi-extension-integration (Pi exited, ctrl-pi-bridge deleted). Per memory `feedback_no_redundancy_one_ssot` 🔒: hermes is the sole substrate-level agent memory primitive — Irisy doesn't duplicate.
   - v16 2026-07-04: **§8.6.1/§8.6.2 SHIPPED — the terminal frontend, built + verified.** bao 「继续做…」 across a long build. Delivered (each a commit): §8.6.1 work-trace (reasoning + tool-call steps, ACP `SessionUpdate` types adopted); the **review-gate moat** — NOT a new ACP-layer approval card as §8.6.2 planned but a RECONCILE to CTRL's EXISTING red-team-reviewed kernel `ReviewGate` (already wired to dispatch + mounted `ReviewGateHost` modal); the only fix was scope `is_first_party`→`is_user_surface` so it covers hermes (ADR-002 §264 v51, bao chose B) + reverting the duplicate ACP-layer approval I built before finding it (lesson: grep existing infra first); the **command surface, registry-driven** (`/` = `/new` + installed packs' actions; `:` jump = modules + packs; `@` vault notes/tables; `↑`/`↓` history — bao corrected my hardcoded capability list: CTRL is create/share/download, entries come from the registry); status line; session resume + **fork/checkpoint** (`irisy_reset_engine` + engine re-hydrate §8.4, also fixing a latent engine-memory-drift bug on switch); Blocks (re-run + fork-from-here); output-routing (auto-open a note Irisy writes). Status markers updated in the §8.6.1 table + §8.6.2 priority. Honest gap: real-data + engine round-trip verify on desktop (browser can't reach the kernel).
-  - v15 2026-07-04: **§8.6.2 amend — verified build kit + detailed capability/resource plan.** 3 more research agents verified the reference SOURCE CODE + licenses (live from repos): official ACP SDKs moved to `agentclientprotocol` org and are **Apache-2.0** (crate `agent-client-protocol` + `@agentclientprotocol/sdk` + codegen `schema.json`) — adopt, retire hand-rolled `acp_client.rs` parsing; UI kit all MIT/Apache and 4/6 extend CTRL's existing Tiptap/CM6: `cmdk` + `@tiptap/suggestion`/`extension-mention` + `@codemirror/merge` (built-in per-hunk accept/reject) + `assistant-ui`(MIT) or AI Elements(Apache) chat shell + `agent-inbox` 4-flag approval (approve/deny/edit-args); Zed's UI = GPL, read-only reference. Avoid `@nlux/react` (MPL+AI-training clause), Open WebUI (branding). Detailed slash-set/modes/keyboard/approval/status/blocks plan → `vault/ctrl/irisy-terminal-frontend-plan.md`.
-  - v14 2026-07-04: **NEW §8.6.2 — terminal FRONTEND advantages + the reference to copy (5-facet web research).** bao 「前端也有不一样，发挥 terminal 前端优势 / 全网调研」. 5 parallel research agents (9 agentic CLIs · terminal renaissance · agent transparency/approval · REPL HCI primitives · keyboard-first consumer apps), cross-verified, full synthesis + primary sources in `vault/ctrl/terminal-frontend-research.md`. Decision: **Irisy's frontend = an ACP-contract-driven friendly GUI review client** (render ACP wire types as dialog + cards + approval + status; keep terminal SEMANTICS, GUI the delivery, drop the raw shell per §8.1). References to copy: contract → **ACP (Zed)**; form → **Zed + Warp**; write-gate moat → **LangGraph HITL + Copilot approval card** (approve/deny/edit-args, gated after-pick-before-execute, deferred write — CTRL today auto-allows via `select_allow_outcome`, the top gap); keyboard/command → **Raycast + GitHub/VS Code sigil palette**. Priority: ①✅ trace → ②★ inline approval → ③ command surface → ④ status line → ⑤ session fork/checkpoint → ⑥ Blocks.
+  - v15 2026-07-04: **§8.6.2 amend — verified build kit + detailed capability/resource plan.** 3 more research agents verified the reference SOURCE CODE + licenses (live from repos): official ACP SDKs moved to `agentclientprotocol` org and are **Apache-2.0** (crate `agent-client-protocol` + `@agentclientprotocol/sdk` + codegen `schema.json`) — adopt, retire hand-rolled `acp_client.rs` parsing; UI kit all MIT/Apache and 4/6 extend CTRL's existing Tiptap/CM6: `cmdk` + `@tiptap/suggestion`/`extension-mention` + `@codemirror/merge` (built-in per-hunk accept/reject) + `assistant-ui`(MIT) or AI Elements(Apache) chat shell + `agent-inbox` 4-flag approval (approve/deny/edit-args); Zed's UI = GPL, read-only reference. Avoid `@nlux/react` (MPL+AI-training clause), Open WebUI (branding). Detailed slash-set/modes/keyboard/approval/status/blocks plan → `vault/ctrl/history/plans/irisy-terminal-frontend-plan.md`.
+  - v14 2026-07-04: **NEW §8.6.2 — terminal FRONTEND advantages + the reference to copy (5-facet web research).** bao 「前端也有不一样，发挥 terminal 前端优势 / 全网调研」. 5 parallel research agents (9 agentic CLIs · terminal renaissance · agent transparency/approval · REPL HCI primitives · keyboard-first consumer apps), cross-verified, full synthesis + primary sources in `vault/ctrl/research/terminal-frontend.md`. Decision: **Irisy's frontend = an ACP-contract-driven friendly GUI review client** (render ACP wire types as dialog + cards + approval + status; keep terminal SEMANTICS, GUI the delivery, drop the raw shell per §8.1). References to copy: contract → **ACP (Zed)**; form → **Zed + Warp**; write-gate moat → **LangGraph HITL + Copilot approval card** (approve/deny/edit-args, gated after-pick-before-execute, deferred write — CTRL today auto-allows via `select_allow_outcome`, the top gap); keyboard/command → **Raycast + GitHub/VS Code sigil palette**. Priority: ①✅ trace → ②★ inline approval → ③ command surface → ④ status line → ⑤ session fork/checkpoint → ⑥ Blocks.
   - v13 2026-07-04: **NEW §8.6.1 — the terminal-essence advantage map + surface the first three.** bao 「对比 terminal 本质和对话框本质的优势，将这些优势发挥出来」. A dialog box = one stateless Q→A (context rebuilt per turn, tool use hidden, no session object); terminal-essence (engine owns loop+context) is strictly more powerful, and each advantage is a moat vs the default chatbot. Shipped the live WORK-TRACE (advantages #1–3): a per-turn **reasoning trace** (`chat-stream-thought` ← `agent_thought_chunk`, collapsible "Thinking") + **tool-step chips** (`chat-stream-tool` ← `tool_call`/`tool_call_update`, drill-down to raw I/O §6). Kernel now maps ALL of the engine's session/update kinds (`acp_client.rs` `AcpEvent` + `parse_session_update`) instead of dropping everything but the answer text. Roadmap in §8.6.1: #4 session resume/list/fork (engine-advertised), #5 mid-loop steering, #6 slash/@-mention, #7 usage chip. Rule: surface the ESSENCE, keep the friendly dialog FORM (§8.1 "not a raw shell"). Empirical basis captured 2026-07-04.
   - v12 2026-07-04: **§8.5 acceptance verified — terminal-essence is REAL (not just designed).** bao 「验证 terminal 本质」. All three §8.5 criteria confirmed: (#1 routing) `irisy_chat.rs` `use_agent = !coding_mode && !force_direct && engine_ready` sends EVERY non-coding turn to the single persistent engine — `turn_needs_agent` no longer gates it (comment §8.3, tests-only now); (#2 no-nuke) on a prompt error CTRL keeps the LIVE session and resets only when `!c.is_alive()` (process genuinely dead) → re-hydrate, never per-turn amnesia; (#3 continuity) **runtime-proven** — a controlled 2-turn ACP test drove a fresh `hermes-acp` (same spawn as `acp_client.rs`) on ONE session: turn 1 stated codeword `sky-anchor-7731`, turn 2 recalled it verbatim without restating (`acp_continuity_test.py`, 29s). Engine = single long-lived process per app-session (verified PID). `primed` flag confirms §8.4 re-hydration (first turn = system + brief + prior-turn replay; continuing turns = last_user only). Form stays a friendly dialog (§8.1/§8.6 lock: "not a raw shell") — the terminal is the ESSENCE (engine owns loop+context), not the look. No decision change; records verification per dev-loop.
   - v7 2026-06-28: **NEW §8 terminal-essence dialog — the engine owns the loop + context (continuity root-fix).** bao 2026-06-28 钦定: Irisy 的对话「**对话框形态, terminal 本质**」—— 友好对话 UI 罩在一个**持久 REPL 引擎**上, 引擎自持 agent loop + 对话上下文 (Claude Code / Codex 同模型), 正是 ADR-001 spine §byo-cli-driver + ADR-002 §brain 早已钦定的「调度权在 CLI/引擎手里, CTRL 不 supervise/编排 loop」。根治 §8.2 三条失忆 (每轮只发 last_user / 一出错就 nuke session / 路径切换两后端不共享记忆) —— 把实装拉回架构本位: CTRL 停止「半管」一个它不该拥有的 loop+context, 回到 projection+gate。「先不用管 provider」(bao): 引擎单元就用现有 hermes, 暂不动 provider/模型层; provider-direct 降为「引擎缺席/离线」纯 fallback, 不再参与正常对话记忆。Supersedes §1「对话持续」intent 的脆弱实装。
@@ -71,7 +77,7 @@ Irisy = vertically-cross-cutting companion. **8 stages**, each with explicit rol
 
 **Companion ≠ in-your-face**:
 - Default visibility = bubble (collapsed); user click → drawer
-- **Single brand voice, switchable functional roles** (amends `decision_one_persona_irisy` 🔒, v6 2026-06-25) — Irisy stays ONE character / voice / brand (never splits into Janus/Talos multi-personalities), but exposes **switchable functional roles** = a flexibly-configured `(persona + toolset)` per L1, shown + switched **above the chat box**, conversation persisting across switches. Switching a role ≠ splitting the persona. Persona pool ⊥ toolset pool (decoupled, composable, cross-L1 reusable; swap/add = config not code). **L1 ≠ role** (L1 = module incl. data/workspace; role = its persona facet). Design SSOT `vault/ctrl/irisy-roles.md`
+- **Single brand voice, switchable functional roles** (amends `decision_one_persona_irisy` 🔒, v6 2026-06-25) — Irisy stays ONE character / voice / brand (never splits into Janus/Talos multi-personalities), but exposes **switchable functional roles** = a flexibly-configured `(persona + toolset)` per L1, shown + switched **above the chat box**, conversation persisting across switches. Switching a role ≠ splitting the persona. Persona pool ⊥ toolset pool (decoupled, composable, cross-L1 reusable; swap/add = config not code). **L1 ≠ role** (L1 = module incl. data/workspace; role = its persona facet). The authoritative actor and role boundary is §11; the retired `irisy-roles.md` file is historical provenance only.
 - **First-class PWA page**, not a mcp (memory `decision_irisy_is_pwa_native_not_keycap` 🔒)
 - Drawer slides from bottom or right; never full-screen takeover (ADR-003 § nav-keyboard)
 
@@ -81,7 +87,7 @@ Stage 7 → 2 loopback (Improvement feeds new Creation) is the creator-economy f
 
 ## §2 Remote co-view — semantic "remote window" (SHIPPED v20, option B)
 
-> **v20 status (2026-07-07): SHIPPED as "remote window" — option B (semantic / phone-native PWA), relay-only + E2E.** The phone runs the SAME CTRL PWA, joins the desktop over a zero-knowledge relay, and renders the desktop's allowlisted functions NATIVELY (JSON semantic surfaces — e.g. the stock cockpit — NOT pixels). This SUPERSEDES the original "on mesh / not in v1 scope" framing below for the semantic path. **A vs B**: pixel remote-desktop (screen mirror + input inject, ToDesk/RustDesk-style) is the SEPARATE, unbuilt **ADR-010 ⑧** module — the `feat/remote-window-share-spike` worktree explored it and was NOT taken. Governing plan + research + HA-Companion benchmark: `vault/ctrl/plan-remote-window.md`.
+> **v20 status (2026-07-07): SHIPPED as "remote window" — option B (semantic / phone-native PWA), relay-only + E2E.** The phone runs the SAME CTRL PWA, joins the desktop over a zero-knowledge relay, and renders the desktop's allowlisted functions NATIVELY (JSON semantic surfaces — e.g. the stock cockpit — NOT pixels). This SUPERSEDES the original "on mesh / not in v1 scope" framing below for the semantic path. **A vs B**: pixel remote-desktop (screen mirror + input inject, ToDesk/RustDesk-style) is the SEPARATE, unbuilt **ADR-010 ⑧** module — the `feat/remote-window-share-spike` worktree explored it and was NOT taken. Governing plan + research + HA-Companion benchmark: `vault/ctrl/plans/remote/plan-remote-window.md`.
 >
 > **As-built (`feat/remote-window`)** — frontend-only, no kernel/Rust (the running desktop PWA is the host peer):
 > - **L1 `/remote` config page** — per-device, deny-by-default allowlist: each function (built-in face + installed pack) toggles visible-on-phone + view-only vs can-act. Out-designs HA's leaky per-user dashboard visibility.
@@ -115,7 +121,7 @@ Memory `project_remote_co_view_is_irisy` 🔒 — 远程同屏 / mirror / 跨设
 
 **Persona sources** (amended v6 2026-06-25 — flexible config, not per-mcp-only):
 - **Per-mcp persona** (original) — lives inside `cap_asset.files` as markdown (ADR-002 § composition axis 6); vault override `vault/mcps/<id>/persona.md` wins.
-- **Role persona pool** (NEW v6) — Irisy's switchable functional roles draw from a small curated persona pool (`lib/irisy-prompts.ts` + `personas/irisy/*`); a persona is **decoupled from any single mcp** and composable into a role. This **supersedes the old "no global persona library" lock** — there IS now a flat curated pool, but it stays a flat pool + per-L1 `(persona, toolset[])` config, NOT a brain-self-aware indirection mesh. Roles switch above the chat box; conversation persists. Design SSOT `vault/ctrl/irisy-roles.md`.
+- **Role persona pool** (NEW v6) — Irisy's switchable functional roles draw from a small curated persona pool (`lib/irisy-prompts.ts` + `personas/irisy/*`); a persona is **decoupled from any single mcp** and composable into a role. This **supersedes the old "no global persona library" lock** — there IS now a flat curated pool, but it stays a flat pool + per-L1 `(persona, toolset[])` config, NOT a brain-self-aware indirection mesh. Roles switch above the chat box; conversation persists. The authoritative actor and role boundary is §11; implementation detail remains owned by this ADR and ADR-003.
 
 **Irisy prompt v5** (`vault/.irisy-prompts/irisy-system.md`):
 
@@ -672,7 +678,7 @@ The projection never includes prompts, completions, thoughts, tool arguments/res
 bao 「前端也有不一样，发挥 terminal 前端优势 / 全网调研」. 5-facet web research (9 agentic
 CLIs + terminal renaissance + agent transparency/approval + REPL HCI primitives +
 keyboard-first consumer apps) — full cross-verified synthesis + primary sources in
-`vault/ctrl/terminal-frontend-research.md` (governing reference). Meta-thesis (all 5
+`vault/ctrl/research/terminal-frontend.md` (governing reference). Meta-thesis (all 5
 converge): **terminal-frontend power decouples from shell syntax** — keep the
 semantics (nameable/repeatable actions, addressable output, keyboard-first flow,
 ambient context, plan-then-approve, reversibility), GUI the delivery, drop the raw
@@ -700,7 +706,7 @@ client.** Not a shell — render ACP's wire types as dialog + cards + approval +
 
 **Detailed capability + resource plan** (Irisy slash set, conversation modes, keyboard,
 approval card, status line, sessions, blocks — each mapped to a verified open-source
-code reference + license + where it plugs into CTRL): `vault/ctrl/irisy-terminal-frontend-plan.md`.
+code reference + license + where it plugs into CTRL): `vault/ctrl/history/plans/irisy-terminal-frontend-plan.md`.
 Build kit (all licenses verified 2026-07-04): kernel/PWA **adopt the official Apache-2.0
 ACP SDKs** (`agent-client-protocol` crate + `@agentclientprotocol/sdk`) + codegen from
 `schema.json`; UI = `cmdk` (palette, MIT) + `@tiptap/suggestion`+`@tiptap/extension-mention`
@@ -728,39 +734,23 @@ permission DSLs, --yolo, leader/chord/vim-as-default, raw token math, two-axis f
 Honest gap: much is tsc/Playwright-verified (render + client logic); real-data +
 engine round-trip (approval modal, auto-open, fork re-hydrate) verify on desktop.
 
-### §8.7 Consolidation — left/right regions + the right-region pluggable ACP engine (NEW v9, 2026-06-28)
+### §8.7 Consolidation — one Irisy, two isolated identities (v38)
 
-> Authoritative consolidation of §8 after a design pass with bao (2026-06-28).
-> Answers the open mechanism question and corrects two overclaims in §8.6.
-> **§8.7 governs where it conflicts with §8.6.**
+> Authoritative consolidation of §8 after bao confirmed every visible AI is Irisy, with Assistant and Coding identities. Runtime branding is hidden, while execution isolation remains load-bearing. **§8.7 governs where it conflicts with §8.6.**
 
-**The workspace is TWO regions** (bao: 「你分开一下,左边区域和右边区域」):
+**The product has ONE mounted Irisy dialog and TWO identities:**
 
-- **LEFT — workspace / output.** Each L1 module's own workspace (notes, tables,
-  KB, coding). The **coding module's** primary surface (v30) drives the user's
-  own `opencode` over Agent Client Protocol — its native `acp` subcommand,
-  the SAME protocol driving Irisy's own engine on the RIGHT, but through a
-  SECOND, independent `AcpClient` singleton so the two engines can never evict
-  each other. No PTY, no terminal emulation: CTRL renders the engine's
-  structured events (answer text, reasoning, tool calls/results) as native
-  React, over a **selectable workspace**: CTRL spawns the process and relays
-  its ACP events, leaving OpenCode's agent loop, error handling, and recovery
-  to the user-owned CLI. A workspace is selectable when it is the configured
-  root OR a direct child of it carrying `opencode.json` — the configured root
-  plus every installed feature-pack scope (ADR-002 §1B.8 v74 projects
-  `opencode.json` into each pack scope alongside `.mcp.json` + `AGENTS.md`),
-  now also the engine's cwd. Switching workspaces while a session is live
-  shows a confirm step first (restarting the ACP session ends the running
-  one). Opening a separate OS terminal/editor remains available as a
-  secondary, collapsed action. CTRL **projects** its arsenal in (gate config +
-  `AGENTS.md` + Skill) and **does NOT supervise** OpenCode.
-- **RIGHT — Irisy (the assistant).** ONE brand persona (§3 single-brand lock).
-  Irisy's **engine is selectable** — Hermes / Codex / Claude Code — and CTRL
-  **DRIVES** the chosen one as Irisy's brain (bao: 「Irisy 不是可以选择是 Hermes
-  或者 Codex 么」). The `<AgentSelector>` belongs HERE; it is the Irisy-engine
-  picker, not a per-shell toggle.
+- **Assistant.** Uses Irisy's durable Assistant transcript/session and the real Resource derived from current content, explicit application selection, knowledge context, Companion, or pack.
+- **Coding.** Uses Irisy's Coding transcript/session and the selected eligible project resource. The configured project is automatic when it is the sole eligible scope; multiple scopes expose a Project choice rather than Workspace terminology.
+- **Skill.** Both identities default to `Auto`. An explicit pin resolves through the existing local `SKILL.md` authority and is injected into that identity's next fresh ACP session. Installed-but-unused skills are available, not active, and must not be shown as active chips.
 
-**The right-region engine = a pluggable ACP agent.** All three speak the Agent
+Hermes, Codex, Claude Code, OpenCode, ACP, and MCP are execution machinery, not user identities. They may appear in advanced diagnostics/settings or explicit external-launch copy, but not as competing names in the ordinary identity control. Content viewers are selected automatically by content type; users do not choose a frontend implementation layer.
+
+Changing Identity, Resource, or pinned Skill MUST change real prompt/capability scope. Before the next turn, CTRL resets only that identity's affected ACP owner so a live session cannot retain stale project or skill context. Assistant and Coding MUST NOT share ACP singleton, command owner, cancellation/drain state, transcript/session, Resource scope, projected capabilities, credentials, pending tool calls, or approval state. A visible brand unification is not runtime fusion. The standalone Coding chat surface remains retired; `/coding` may only select the Coding identity in this Irisy shell.
+
+Coding project eligibility remains explicit projection metadata. A manifest's `record_source` field describes data behavior only and never makes that pack a Coding project.
+
+**Irisy's engine remains a pluggable ACP agent.** All three speak the Agent
 Client Protocol (JSON-RPC over stdio), which `shell/acp_client.rs` already drives
 for hermes:
 
@@ -776,31 +766,30 @@ choice is ONE parameter (the spawn command); everything downstream — gate tool
 Irisy persona, §8.3 loop+context ownership, streaming — is identical. This makes
 ADR-001 spine §byo-cli-driver's "ACP-aware CLI 增强通道" concrete.
 
-**Driven (right) vs projected (left) — the key distinction.** The same product
-(e.g. Codex) can appear in BOTH regions in DIFFERENT roles (this answers the §8 Q2
-raised in the design pass):
+**Driven Irisy engine vs projected Coding agent — the key distinction.** The
+persistent shell does not collapse the two runtime roles:
 
-- RIGHT: Codex as Irisy's **engine** — CTRL spawns + drives it over ACP, streams
-  its answer into the chat. **CTRL-driven.**
-- LEFT: Codex as the **terminal coding agent** — the user runs it; CTRL only
-  projected tools in. **User-driven, not supervised.**
+- Irisy mode: Codex or Claude Code may be selected as Irisy's **engine**; CTRL
+  installs/spawns/drives that adapter over Irisy's ACP singleton and streams its
+  answer into Irisy's transcript. **CTRL-driven.**
+- Coding mode: OpenCode is the user-owned **Coding agent** in the selected
+  workspace; CTRL projects instructions, Skills, and the gate and relays its
+  independent ACP stream. **User-owned loop, not Irisy's engine.**
 
-They are INDEPENDENT selections. "CTRL does not supervise a BYO CLI" (ADR-001/002)
-governs the LEFT (projection) path only; the RIGHT engine is always CTRL-driven,
-whichever ACP agent backs it.
+The actor choice and Irisy-engine choice are independent controls. "CTRL does not
+supervise a BYO CLI" governs the Coding projection path; Irisy's selected engine is
+CTRL-driven under its existing contract.
 
 **Corrections to §8.6** (§8.7 governs on conflict):
 
-1. §8.6's "every surface routes through ONE engine" was an overclaim. The LEFT
-   Coding launcher and optional Quick Terminal are NOT the Irisy engine — they
-   hand control to a user-driven coding CLI or shell. Only the RIGHT (Irisy)
-   surfaces share the ACP engine. `coding_mode` legitimately bypasses the Irisy
-   engine (`irisy_chat.rs`: `use_agent = !coding_mode`); that is correct, not a
-   bug.
-2. The "BYO = honest hand-off, don't fake a stream" device in `engineTransport`
-   was a STOPGAP that conflated left/right. With ACP, picking Codex/Claude as
-   Irisy's engine **really drives it** and streams a real answer — no dead-end.
-   The hand-off survives ONLY as the *not-installed* fallback (§InstallAgentModal).
+1. §8.6's "every surface routes through ONE engine" remains an overclaim. One
+   persistent visual shell contains two actor modes with separate engine/session
+   owners. Coding never routes through Irisy's engine; presentation reuse is not
+   loop reuse.
+2. The top-level Irisy/Coding selector chooses the actor. Irisy's `AgentSelector`
+   chooses only Irisy's engine. Neither selector changes the other, and neither
+   mode inherits the other's transcript, context, workspace, credentials, or
+   approvals.
 
 **Continuity — the real §8.4 fix (still UNMET as of v9, code-verified).** The
 transcript persists to the UI (`transcript-store`) but the engine receives only
@@ -816,7 +805,7 @@ transcript is the recovery source (§8.4).
 Claude Code via their ACP adapters)". Hermes stays the bundled default and does
 NOT retire.
 
-**Acceptance (right region) — implemented 2026-06-29 (v0.1.684):**
+**Acceptance (Irisy engine; implemented 2026-06-29, presentation amended v37):**
 - [x] `acp_client.rs` spawn command is parameterized by the selected engine
   (`engine_argv`); `hermes-acp` / `codex-acp` / `claude-code-acp` all drive
   through one client + one ACP handshake. **hermes verified end-to-end**
@@ -832,9 +821,9 @@ NOT retire.
 - [x] Transcript re-hydrates a fresh engine session (`prompt` replays prior turns
   when `!primed`) — closes the §8.4 illusion (UI-remembers / engine-forgets).
   Behavioral recall-after-reload to verify on a real multi-turn run.
-- [x] Left/right roles stay independent: right-region engine selector
-  (`active-agent`) ≠ left-region terminal coding-agent; projection (left) ≠ drive
-  (right).
+- [x] Actor/session roles stay independent: top-level `AgentMode` ≠ Irisy's
+  `active-agent` engine selector; `coding_singleton()` ≠ Irisy's singleton;
+  Coding projection ≠ Irisy engine drive.
 
 ### §8.8 One-click managed install for right-region BYO engines (NEW v10, 2026-06-29)
 
@@ -946,7 +935,7 @@ user who pre-installed via brew/npm is detected too — CTRL never double-instal
 - [x] Strategic lock recorded — SOUL.md spec adopted verbatim, `x-ctrl:` namespace reserved for CTRL extensions, ecosystem stance documented in `vault/ctrl/history/brainstorm/openclaw-compat-2026-06-03.md` and memory `decision_openclaw_compat_layer`. Code follow-up tracked in **Future work** below (deferred batch, not a blocker for ongoing P0 fixes).
 ## §9 Mission + knowledge system (NEW v11, 2026-06-29)
 
-> Architectural authority = this accepted module ADR plus the other owning module ADRs. `vault/ctrl/irisy-architecture.md` is the non-authoritative research/planning map holding supporting detail and the five-capability review lens; it cannot create or override a decision. This § records the DECISION. Pairs with §3 persona-shell (§9 is the layer ABOVE persona: what Irisy is FOR) + [[irisy-roles.md]] (the role axis).
+> Architectural authority = this accepted module ADR plus the other owning module ADRs. `vault/ctrl/irisy-architecture.md` is the non-authoritative five-capability planning lens; it cannot create or override a decision. This § records the mission and knowledge DECISION; §11 is the sole actor and role boundary.
 
 ### §9.1 The mission (LOCKED, bao 2026-06-29)
 
@@ -992,7 +981,7 @@ Audit finding: CTRL already DESIGNED all three, scattered + stale. `vault_seed/i
 ### §9.4 Acceptance (§9)
 
 - [x] Mission LOCKED by bao 2026-06-29 (数字员工/operator frame) — recorded here + reflected in planning map §一.
-- [x] Module ADR authority reconciled: this ADR owns the accepted Irisy mission/knowledge decisions; `vault/ctrl/irisy-architecture.md` v2 retains non-authoritative research detail and the five-capability planning lens, while `vault/ctrl/irisy-roles.md` retains role-axis context.
+- [x] Module ADR authority reconciled: this ADR owns the accepted Irisy mission/knowledge decisions; `vault/ctrl/irisy-architecture.md` retains only the non-authoritative five-capability planning lens; §11 owns the role boundary; `vault/ctrl/irisy-roles.md` is a retired historical pointer.
 - [x] **Soul re-souled (§9.5 ③ + ②-jargon)**: `vault_seed/irisy-soul.md` `about` + `x-ctrl.identity` rewritten co-pilot/passenger → operator/back-office-of-your-one-person-company; retired jargon (`Pi`/`keycap`/`co-pilot`/`servant`) wiped. Seeds into `vault/irisy/SOUL.md` on next launch (`write_if_missing`, currently absent → writes the new soul). PWA chat path reads it via `irisy_soul_get`.
 - [x] **Mission in the PWA spine**: `irisy-prompts.ts` v13→v14 prepends mission + operating loop (layer 1).
 - [ ] **Close the drain (§9.5 ②)**: on hermes launch, sync `vault/irisy/SOUL.md` → `~/.hermes/SOUL.md` (or point hermes at the vault) so the engine path reads the SAME re-souled file as the PWA path; stop hermes double-writing its private `~/.hermes/memories/MEMORY.md` (land durable facts in the vault instead). ← needs on-device hermes verification.
@@ -1023,3 +1012,186 @@ Audit finding: CTRL already DESIGNED all three, scattered + stale. `vault_seed/i
 - §2 ← orig-017 (Remote co-view = Irisy primitives, 2026-05-22, accepted, v1.1+ scope)
 - §3 ← orig-024 §7 (Irisy persona rule, 2026-05-30) + amendment 2026-05-31 (prompt v5 replaces v4 "no codenames" with brand-label + self-aware policy; closes bao 2026-05-31 root issue "Irisy doesn't know its own stack")
 - §4 ← NEW 2026-06-03. Driven by bao competitive research dump (OpenClaw 350k stars / WorkBuddy compat / SOUL.md cross-tool recognition); locks ecosystem alignment that memory `decision_pi_is_sole_brain_hermes_is_keycap` half-committed to. Full strategic analysis at `vault/ctrl/history/brainstorm/openclaw-compat-2026-06-03.md`.
+
+## §10 Irisy Capability Integration Contract (v35)
+
+This section is the sole architectural contract for attaching any capability or
+external application to Irisy. It complements, but does not replace, the owning
+contracts: ADR-003 owns the single shell and layout, ADR-002 owns the gate and
+§14 data contract, and ADR-010 owns cross-domain transport. A project review
+record is evidence and a proposal source; it is never a second architectural
+authority.
+
+### §10.1 Forms
+
+Every integration declares exactly one primary Irisy form:
+
+| Form | User experience | Boundary |
+|---|---|---|
+| Workspace | The work area is expanded beside the resident Irisy surface. | The module owns its work area; Irisy remains the assistant surface. |
+| Companion | The work area is collapsed and Irisy assists an external application. | This is the existing Irisy surface in a compact state, not a second window, shell, process, or transport. |
+| Artifact | Irisy produces a native result in a registered viewer or workspace. | The artifact remains inspectable and routes back to its source data. |
+
+Companion reuses the single CTRL NSPanel and its existing Irisy session. An
+integration must not create a product-specific chat popup, duplicate assistant,
+or bypass the shell presentation path. A future shell change remains owned by
+ADR-003 and requires its own accepted amendment.
+
+### §10.2 Required integration declaration
+
+Before implementation, the project review record must declare all of the
+following:
+
+1. **Job** — the complete user job Irisy helps finish, not a list of raw API calls.
+2. **Form** — Workspace, Companion, or Artifact and the reason that form is
+   necessary.
+3. **Context boundary** — the minimum explicit context Irisy may read, such as
+   an active document, user-selected range, attached file, or declared source.
+   Implicit scraping of an application's UI, clipboard, or private state is not
+   an integration contract.
+4. **Truth and provenance** — the local file, portable source, or external
+   application that remains authoritative, plus the raw-input and transformed-
+   output drill-down path.
+5. **Capability mapping** — the existing MCP, Skill, API, §14
+   `describe`/`query`/`produce`, or Effect surface used. New raw endpoint
+   mirrors require justification; an adapter must not invent a parallel data
+   contract.
+6. **Write boundary** — the exact mutations, preview or staged representation,
+   ReviewGate requirement, and any application-native safe write mechanism.
+7. **Credential and identity boundary** — the user or application authority
+   that authenticates the action. Credentials remain in the OS keychain or the
+   declared application boundary and never enter Irisy or an LLM payload.
+8. **Visibility and least privilege** — the intent-scoped capability subset
+   visible to Irisy; external applications retain their own authorization and
+   collaboration rules.
+9. **Degradation** — honest behavior when the application, selection,
+   connection, credential, or feature is unavailable. CTRL must not fabricate
+   context or claim a mutation occurred.
+10. **Evidence** — preflight and post-validation evidence for the real context,
+    read path, write/review path when applicable, and a failure or recovery
+    path.
+
+### §10.3 Gate and mutation rules
+
+Every cross-domain capability invocation travels through `:17873` as the
+governed operation gate. This governs capability operations, not the transport
+selection owned by ADR-010. Readable data products use ADR-002 §14 `describe`
+and `query`; writes use `produce` or the existing explicit Effect surface. A
+mutating integration crosses ReviewGate before execution unless it is a direct
+user-surface action already governed by the existing gate policy. Neither a
+local extension nor a downstream MCP server may self-approve a write.
+
+An external application's own concurrency, collaboration, permissions, and
+format rules remain authoritative. CTRL may offer a staged change, native diff,
+or native revision mechanism, but must not emulate or replace that application's
+transaction model.
+
+### §10.4 Review lifecycle
+
+Each integration creates one record at
+`vault/ctrl/research/irisy-integrations/<slug>.md`. The record is plain Markdown
+and has the following required sections:
+
+```text
+# <Name> — Irisy integration review
+
+## Job and form
+## Context and truth
+## Capability and gate mapping
+## Write, identity, and review boundary
+## Degradation and transparency
+## Preflight evidence
+## Post-validation evidence
+## Review outcome
+## Proposed contract delta (only when needed)
+```
+
+The project has two mandatory reviews:
+
+1. **Preflight review** — before code, confirm every §10.2 declaration and
+   reject an integration that requires a new window, a parallel transport, a
+   duplicate truth source, or an ungoverned mutation.
+2. **Post-validation review** — after real interaction evidence, compare the
+   observed behavior with the declaration and record failures, recovery, and
+   user-visible behavior.
+
+A review outcome is exactly one of:
+
+- **Conforms** — the project fits this contract; no architecture change.
+- **Clarification** — the contract already decides the issue; improve the
+  record, tests, or reference implementation without changing architecture.
+- **Contract delta** — evidence reveals a missing or conflicting rule. Stop
+  implementation at that boundary, obtain bao approval, and amend this section
+  in place before continuing.
+
+This lifecycle turns every project into evidence for one evolving Irisy
+contract. It does not permit project-specific architecture to become a de facto
+standard.
+
+### §10.5 LibreOffice Companion reference review
+
+`research/irisy-integrations/libreoffice-companion.md` is the first review
+record. It evaluates a Companion form only: the workspace is collapsed, the
+existing Irisy panel is reused, and a future local UNO adapter must be governed
+by the gate. It is a research and contract review, not an implementation
+commitment for a LibreOffice extension, MCP server, or new native window.
+
+### Design Acceptance (non-release)
+
+- [ ] Every new Irisy capability or external-application integration has a
+  preflight review record before implementation.
+- [ ] Every implemented integration has post-validation evidence and one
+  recorded review outcome.
+- [ ] A Contract delta is accepted through an ADR-005 amendment before code
+  relies on it.
+
+## §11 Irisy Identity and Runtime Boundary (v38)
+
+This section is the sole role definition for AI identities visible in CTRL. Product, planning, research, and historical documents may link here but must not restate or redefine these boundaries.
+
+### §11.1 One product identity, distinct owners
+
+| Identity / actor | Product position | Owns | Does not own |
+|---|---|---|---|
+| **Irisy — Assistant** | The Assistant identity in the persistent Irisy dialog and Companion form. | The user's jobs across current content, explicit selections, knowledge, installed capabilities, and inspectable artifacts. | Coding's project session, cancellation owner, hidden runtime identity, CTRL repository architecture, or an independent permission system. |
+| **Irisy — Coding** | The Coding identity in the same Irisy dialog, scoped to one eligible project resource. | Code and feature-pack work inside that project, using its independent ACP owner, cancellation/drain, transcript, projected instructions, Skills, and gate scope. | Assistant memory/context, another project, or authority to merge runtime state because both identities share the Irisy name. |
+| **CTRL development agent** | An out-of-product development tool such as Kiro used to build and maintain CTRL itself. | Repository analysis and changes governed by `vault/ctrl/GOAL.md`, `adrs/INDEX.md`, the owning module ADR, tests, and review. | The shipped Irisy persona, the user's session, or authority to invent product architecture outside accepted ADRs. |
+
+An engine or protocol is not a product identity. Hermes, Codex, Claude Code, OpenCode, ACP, and MCP may provide accepted execution machinery, but ordinary users choose Assistant or Coding, not those implementation names. Shared Irisy branding and React presentation never authorize state, session, resource, credential, cancellation, capability, or approval transfer.
+
+### §11.2 User-selectable axes and routing
+
+The ordinary composer exposes exactly these understandable axes:
+
+1. **Identity** — Assistant or Coding.
+2. **Resource** — the real current content/selection/knowledge/Companion/pack for Assistant, or eligible project for Coding. A sole Coding project is automatic; multiple real projects produce a Project choice, with paths available only as detail.
+3. **Skill** — `Auto` or one explicitly pinned local `SKILL.md`. Auto permits task-matched on-demand discovery; it does not claim a specific skill is active. An explicit pin loads the skill body into the affected identity's next fresh session.
+
+Frontend/viewer technology is not a fourth user axis: CTRL selects Markdown, table, HTML, or another viewer by content type. A feature pack is a real capability/resource container and appears only when active in context, never merely because it is installed.
+
+Requests to operate documents, applications, business data, or installed capabilities normally belong to Assistant. Requests to author code or a feature pack in the selected project belong to Coding. Requests to change CTRL's own source, architecture, governance, tests, or release artifacts belong to the out-of-product CTRL development agent.
+
+### §11.3 Projection, reset, and isolation
+
+Identity, Resource, and pinned Skill are runtime inputs, not labels. A changed value must alter real prompt/capability scope. Before the next turn CTRL resets only the affected identity's ACP owner so stale project or skill context cannot survive. It never copies another identity's hidden context to simulate continuity.
+
+The following stay explicit and separate between Assistant and Coding:
+
+1. runtime/ACP owner and cancellation/drain state;
+2. durable transcript/session;
+3. selected Resource and capability projection;
+4. credentials and mutation approval owner;
+5. pending requests/tool calls;
+6. completion evidence and authoritative output location.
+
+The configured Coding project remains available even when no selector is shown; hiding a redundant single-option control never removes filesystem, editing, or command capability. Project switching still cancels/drains or resets the Coding owner before committing the new resource. Sharing attachment parsing, gate access, renderer, composer, or the Irisy name is implementation reuse, not runtime fusion.
+
+### §11.4 Documentation authority
+
+- This §11 owns the role boundary.
+- §8.7 owns the one-shell/two-agent runtime and session topology.
+- §9 owns Irisy's mission and knowledge model.
+- §10 owns capability and external-application integration.
+- ADR-001 §4 owns the projection/gate relationship for Coding.
+- `irisy-architecture.md` may contain only the non-authoritative five-capability planning lens required by the active GOAL.
+- `irisy-roles.md` and `irisy-coding-companion.md` are retired historical pointers and must not carry live design requirements.

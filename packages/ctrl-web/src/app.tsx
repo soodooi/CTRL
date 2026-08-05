@@ -223,9 +223,6 @@ const IrisyRoute = lazy(() =>
 const CodeSpaceRoute = lazy(() =>
   import('./routes/code-space').then((m) => ({ default: m.CodeSpaceRoute })),
 );
-const CodingRoute = lazy(() =>
-  import('./routes/coding').then((m) => ({ default: m.CodingRoute })),
-);
 const CodeSpaceDetailRoute = lazy(() =>
   import('./routes/code-space').then((m) => ({ default: m.CodeSpaceDetailRoute })),
 );
@@ -433,11 +430,10 @@ const codeSpaceRoute = createRoute({
 const codingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/coding',
-  component: () => (
-    <Suspense fallback={<LazyFallback />}>
-      <CodingRoute />
-    </Suspense>
-  ),
+  // AmbientWorkbench observes this path and selects Coding in the one
+  // persistent dialog. No routed chat authority is mounted here.
+  // (ADR-003 frontend §8.5/§8.6 v38)
+  component: () => null,
 });
 const codeSpaceDetailRoute = createRoute({
   getParentRoute: () => rootRoute,

@@ -3,7 +3,7 @@
   CTRL — primary wordmark
   Design: 4 stencil letters + 4 LED bars (one per letter, top-aligned)
   Color: ctrl-blue oklch(0.45 0.19 264) ≈ #1E3FB0
-  Reference: doc/reference/logo-reference.png
+  Reference: docs/reference/logo-reference.png
   Token-canonical: --ctrl-blue (defined in brand-tokens.md)
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" role="img" aria-label="CTRL">

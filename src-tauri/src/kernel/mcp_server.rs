@@ -1122,8 +1122,10 @@ impl KernelMcpRouter {
         // couldn't see them either (the exact gap that left Irisy improvising
         // A-share data from memory).
         let mut all = Self::tool_router().list_all();
-        for desc in self.runtime.mcp_host.list_installed().await {
-            if let Ok(downstream) = self.runtime.mcp_host.list_tools(&desc.id).await {
+        // Search only caller-visible downstream tools; private source children
+        // are internal adapter implementation. (ADR-002 substrate §14 v78)
+        for desc in self.runtime.mcp_host.list_proxy_installed().await {
+            if let Ok(downstream) = self.runtime.mcp_host.proxy_list_tools(&desc.id).await {
                 for mut t in downstream {
                     t.name = format!("{}_{}", desc.id, t.name).into();
                     all.push(t);
@@ -1224,7 +1226,7 @@ impl KernelMcpRouter {
     #[tool(description = "Report kernel health: uptime, registered LLM adapters, MCP server count")]
     async fn kernel_status(&self) -> Result<CallToolResult, McpError> {
         let uptime = self.runtime.booted_at.elapsed();
-        let installed = self.runtime.mcp_host.list_installed().await;
+        let installed = self.runtime.mcp_host.list_proxy_installed().await;
         // Internal status exposes only explicit, independently verified role
         // intent; catalogue rows never become a production chain by inspection.
         // (ADR-002 substrate § provider v71)
@@ -2136,26 +2138,77 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let spec = load_source_spec(&args.source_id)?;
         let d = manifest_source::ManifestConnectorSource::describe_spec(&spec);
-        let body = serde_json::to_string(&d).map_err(map_serde_err)?;
+        let mut body = serde_json::to_value(&d).map_err(map_serde_err)?;
+        if let Some(message) = spec.unavailable_message.as_deref() {
+            body["unavailable_message"] = serde_json::json!(message);
+        }
+        let body = serde_json::to_string(&body).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
     /// source.query — GENERIC §14 read over an installed connector (ADR-002
-    /// §14.12). Resolves creds kernel-side (never the LLM), fetches the
-    /// self-hosted instance live from the manifest's declared endpoint, and runs
-    /// the SAME shared kernel query engine — identical contract to smart_table /
-    /// ghostfolio, but data-driven for any connector.
+    /// §14.12 / §14 v78). HTTP sources retain the existing live-fetch path;
+    /// local MCP-backed sources invoke one private downstream tool through the
+    /// existing McpHost, then both pass through the SAME shared query engine.
+    /// (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
     #[tool(
-        description = "Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Fetches the self-hosted instance live from its manifest. Call source_describe first."
+        description = "Query an installed connector's records by source_id with a structured filter/sort/group request (not a query string). Reads the source live through its declared HTTP or private local MCP transport. Call source_describe first."
     )]
     async fn source_query(
         &self,
         Parameters(args): Parameters<SourceQueryArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let (spec, base_url, token) = load_source(&args.source_id)?;
-        let source = manifest_source::fetch(&spec, &base_url, &token)
-            .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let manifest = read_installed_manifest(&args.source_id)?;
+        let spec = manifest_source::spec_from_manifest(&manifest).ok_or_else(|| {
+            McpError::invalid_params(
+                format!("{} declares no record_source", args.source_id),
+                None,
+            )
+        })?;
+        let source = match spec
+            .query
+            .transport()
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?
+        {
+            manifest_source::QueryTransport::Http(_) => {
+                let send_secret =
+                    manifest_source::send_secret_of(&manifest).unwrap_or_else(|| "token".into());
+                let (base_url, token) = resolve_pack_creds(&args.source_id, &send_secret)
+                    .ok_or_else(|| {
+                        McpError::invalid_params(
+                            format!(
+                                "{} not configured — provision or set its credentials",
+                                args.source_id
+                            ),
+                            None,
+                        )
+                    })?;
+                manifest_source::fetch(&spec, &base_url, &token)
+                    .await
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?
+            }
+            manifest_source::QueryTransport::Mcp(tool) => {
+                // The downstream id follows the existing installed-pack Actor
+                // registration rule; it is never exposed through describe or a
+                // new caller-visible tool. (ADR-004 cap §1 v13)
+                let server_id = crate::kernel::mcp_host::private_source_server_id(&args.source_id);
+                let result = self
+                    .runtime
+                    .mcp_host
+                    .invoke(&server_id, tool, serde_json::json!({}))
+                    .await
+                    .map_err(|_| {
+                        McpError::internal_error(
+                            spec.unavailable_message
+                                .clone()
+                                .unwrap_or_else(|| "local source is unavailable".into()),
+                            None,
+                        )
+                    })?;
+                manifest_source::from_mcp_result(&spec, &result)
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?
+            }
+        };
         let req = query::QueryRequest {
             filters: args.filters,
             conjunction: args.conjunction,
@@ -2184,6 +2237,20 @@ impl KernelMcpRouter {
         &self,
         Parameters(args): Parameters<SourceProduceArgs>,
     ) -> Result<CallToolResult, McpError> {
+        // Native writes stay disabled for local MCP-backed Sources.
+        // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+        let spec = load_source_spec(&args.source_id)?;
+        if matches!(
+            spec.query
+                .transport()
+                .map_err(|e| McpError::invalid_params(e.to_string(), None))?,
+            manifest_source::QueryTransport::Mcp(_)
+        ) {
+            return Err(McpError::invalid_params(
+                "local MCP-backed sources are read-only in this version",
+                None,
+            ));
+        }
         let (spec, base_url, token) = load_source(&args.source_id)?;
         let input = args.input.as_object().cloned().unwrap_or_default();
         // Resolve a produce body's `from_secret` field (e.g. a connector's default
@@ -2684,7 +2751,9 @@ impl KernelMcpRouter {
         &self,
         Parameters(args): Parameters<RuntimeQueryArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let installed = self.runtime.mcp_host.list_installed().await;
+        // Runtime registry rows are caller-visible and exclude private adapter
+        // Actors. (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+        let installed = self.runtime.mcp_host.list_proxy_installed().await;
         let rows: Vec<query::Row> = installed
             .iter()
             .map(|d| {
@@ -3344,7 +3413,9 @@ impl KernelMcpRouter {
     /// (proxy view onto McpHost's registry).
     #[tool(description = "List external MCP servers the kernel has registered (proxy view)")]
     async fn mcp_list_servers(&self) -> Result<CallToolResult, McpError> {
-        let installed = self.runtime.mcp_host.list_installed().await;
+        // Private adapter children are not caller-discoverable.
+        // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+        let installed = self.runtime.mcp_host.list_proxy_installed().await;
         // Redact downstream auth headers: a connected server's credential must
         // never be handed to an MCP client. The gate proxies auth on the
         // client's behalf.
@@ -3419,12 +3490,18 @@ impl KernelMcpRouter {
         // install exposed: installed packs' servers were never wired).
         let mut connected_tools: Vec<String> = Vec::new();
         if let Some(server) = manifest.get("server").and_then(|v| v.as_object()) {
-            let id = manifest
+            // A local MCP-backed Source receives a collision-free private Actor id.
+            // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+            let private_source = crate::kernel::mcp_host::is_private_source_manifest(&manifest);
+            let manifest_id = manifest
                 .get("id")
                 .and_then(|v| v.as_str())
-                .unwrap_or("pack")
-                .trim_start_matches("ctrl-")
-                .to_string();
+                .unwrap_or("pack");
+            let id = if private_source {
+                crate::kernel::mcp_host::private_source_server_id(manifest_id)
+            } else {
+                manifest_id.trim_start_matches("ctrl-").to_string()
+            };
             let command = server.get("command").and_then(|v| v.as_str()).unwrap_or("");
             let cmd_args: Vec<String> = server
                 .get("args")
@@ -3450,24 +3527,43 @@ impl KernelMcpRouter {
                     // install dir + resolve a bare command, same as boot-time
                     // reconnect (ADR-002 substrate § composition §7.4) — so a
                     // freshly-installed shared pack spawns on this machine.
+                    // Resolve the kernel-owned private adapter identity at both
+                    // install and reconnect. (ADR-004 cap §1 v13;
+                    // ADR-010 communication § transports v13)
                     source: crate::kernel::mcp_host::resolve_local_source(
                         command,
                         &cmd_args,
                         &dir.join(installed_id),
+                        private_source,
+                        crate::kernel::mcp_host::manifest_allows_only_loopback(&manifest),
                     ),
                 };
-                self.runtime.mcp_host.register(desc).await;
+                // Private source children share McpHost but are omitted from proxy
+                // discovery and calls. (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+                if private_source {
+                    self.runtime.mcp_host.register_private(desc).await;
+                } else {
+                    self.runtime.mcp_host.register(desc).await;
+                }
+                // Connect once to validate the managed child without projecting it.
+                // (ADR-004 cap §1 v13)
                 match self.runtime.mcp_host.connect(&id).await {
                     Ok(()) => {
-                        connected_tools = self
+                        // Private tools are validated internally but never projected
+                        // into the install response's caller-visible tool list.
+                        // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+                        let tools = self
                             .runtime
                             .mcp_host
                             .list_tools(&id)
                             .await
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|t| format!("{id}_{}", t.name))
-                            .collect();
+                            .unwrap_or_default();
+                        if !private_source {
+                            connected_tools = tools
+                                .into_iter()
+                                .map(|t| format!("{id}_{}", t.name))
+                                .collect();
+                        }
                     }
                     Err(e) => {
                         tracing::warn!(pack = %id, error = %e, "pack server connect failed (tools not on gate yet)");
@@ -3514,6 +3610,17 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let dir = crate::commands::kernel::mcp_dir()
             .map_err(|e| McpError::internal_error(e, None))?;
+        // Stop both deterministic Actor identities before removing local truth;
+        // manifest drift cannot orphan a child. (ADR-004 cap §1 v13)
+        for server_id in crate::kernel::mcp_host::installed_pack_actor_ids(&args.mcp_id) {
+            self.runtime
+                .mcp_host
+                .unregister(&server_id)
+                .await
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        }
+        // Remove local truth after every possible managed Actor is gone.
+        // (ADR-004 cap §1 v13)
         crate::commands::kernel::uninstall_from(&dir, &args.mcp_id)
             .map_err(|e| McpError::invalid_params(e, None))?;
         self.notify_packs_changed("uninstalled", &args.mcp_id);
@@ -3816,10 +3923,12 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
         &self,
         Parameters(args): Parameters<McpProxyListArgs>,
     ) -> Result<CallToolResult, McpError> {
+        // Proxy callers can reach only public downstream servers.
+        // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
         let tools = self
             .runtime
             .mcp_host
-            .list_tools(&args.server)
+            .proxy_list_tools(&args.server)
             .await
             .map_err(|e| McpError::internal_error(format!("mcp.list_tools: {e}"), None))?;
         let body = serde_json::to_string(&tools).map_err(map_serde_err)?;
@@ -3835,10 +3944,12 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
         Parameters(args): Parameters<McpProxyCallArgs>,
     ) -> Result<CallToolResult, McpError> {
         let arguments = args.arguments.unwrap_or(serde_json::Value::Null);
+        // The host rejects private adapter children before downstream invocation.
+        // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
         let result = self
             .runtime
             .mcp_host
-            .invoke(&args.server, &args.tool, arguments)
+            .proxy_invoke(&args.server, &args.tool, arguments)
             .await
             .map_err(|e| McpError::internal_error(format!("mcp.call_tool: {e}"), None))?;
         let body = serde_json::to_string(&result).map_err(map_serde_err)?;
@@ -4262,7 +4373,9 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         // Route a namespaced downstream call `<server>_<tool>` to mcp_host;
         // otherwise fall through to the static kernel tool router (§1.9.1).
-        for desc in self.runtime.mcp_host.list_installed().await {
+        // Dynamic downstream dispatch is a caller-visible proxy path; private
+        // source children are excluded. (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+        for desc in self.runtime.mcp_host.list_proxy_installed().await {
             let prefix = format!("{}_", desc.id);
             if let Some(tool) = request.name.as_ref().strip_prefix(&prefix) {
                 let tool = tool.to_string();
@@ -4271,10 +4384,12 @@ impl KernelMcpRouter {
                     .clone()
                     .map(serde_json::Value::Object)
                     .unwrap_or(serde_json::Value::Null);
+                // Enforce the public proxy boundary again at invocation.
+                // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
                 let result = self
                     .runtime
                     .mcp_host
-                    .invoke(&desc.id, &tool, args)
+                    .proxy_invoke(&desc.id, &tool, args)
                     .await
                     .map_err(|e| {
                         McpError::internal_error(format!("downstream {}: {e}", desc.id), None)
@@ -4298,10 +4413,12 @@ impl ServerHandler for KernelMcpRouter {
         let mut tools = self.tool_router.list_all();
         // Then aggregate each connected downstream server's tools, namespaced
         // so names never collide and call_tool can route them back (§1.9.1).
-        let installed = self.runtime.mcp_host.list_installed().await;
+        // Aggregate only public downstream servers; the private source Actor
+        // never enters tools/list. (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+        let installed = self.runtime.mcp_host.list_proxy_installed().await;
         let downstream_ids: Vec<String> = installed.iter().map(|d| d.id.clone()).collect();
         for desc in &installed {
-            match self.runtime.mcp_host.list_tools(&desc.id).await {
+            match self.runtime.mcp_host.proxy_list_tools(&desc.id).await {
                 Ok(downstream) => {
                     for mut t in downstream {
                         t.name = format!("{}_{}", desc.id, t.name).into();
@@ -4392,10 +4509,12 @@ impl ServerHandler for KernelMcpRouter {
         // when its name collides with a first-party prefix/exact name, so it
         // can't be reached under a narrow first-party intent (SC3). Mirrors the
         // downstream-first routing in `dispatch_tool`.
+        // Private adapter children never participate in caller tool identity.
+        // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
         let downstream_ids: Vec<String> = self
             .runtime
             .mcp_host
-            .list_installed()
+            .list_proxy_installed()
             .await
             .into_iter()
             .map(|d| d.id)
@@ -5874,6 +5993,20 @@ mod tests {
     use super::*;
     use crate::kernel::query::RecordSink;
     use crate::kernel::runtime::KernelRuntime;
+
+    // The downstream Actor id remains private behind the generic Source gate.
+    // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+    #[test]
+    fn local_source_uses_collision_free_private_actor_id() {
+        assert_eq!(
+            crate::kernel::mcp_host::private_source_server_id("ctrl-libreoffice"),
+            "source:ctrl-libreoffice"
+        );
+        assert_ne!(
+            crate::kernel::mcp_host::private_source_server_id("ctrl-libreoffice"),
+            crate::kernel::mcp_host::private_source_server_id("libreoffice")
+        );
+    }
 
     #[test]
     fn diagnostics_gate_surface_is_read_only() {

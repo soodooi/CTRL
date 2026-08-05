@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<description
+  xmlns="http://openoffice.org/extensions/description/2006"
+  xmlns:dep="http://openoffice.org/extensions/description/2006"
+  xmlns:lo="http://libreoffice.org/extensions/description/2011"
+  xmlns:xlink="http://www.w3.org/1999/xlink">
+  <identifier value="app.ctrl.libreoffice-companion"/>
+  <version value="0.1.0"/>
+  <display-name>
+    <name lang="en">CTRL LibreOffice Companion</name>
+  </display-name>
+  <publisher>
+    <name lang="en" xlink:href="https://ctrlapplab.com">CTRL contributors</name>
+  </publisher>
+  <extension-description>
+    <src lang="en" xlink:href="description.txt"/>
+  </extension-description>
+  <dependencies>
+    <lo:LibreOffice-minimal-version value="7.6" dep:name="LibreOffice 7.6"/>
+  </dependencies>
+</description>

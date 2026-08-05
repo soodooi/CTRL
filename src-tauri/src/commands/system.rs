@@ -111,7 +111,9 @@ pub async fn kernel_status(
         .filter(|provider_id| runtime.provider_registry.is_verified(provider_id))
         .cloned();
 
-    let mcp_servers_installed = runtime.mcp_host.list_installed().await.len();
+    // System status counts only caller-visible downstream servers; private
+    // source Actors remain implementation detail. (ADR-002 substrate §14 v78)
+    let mcp_servers_installed = runtime.mcp_host.list_proxy_installed().await.len();
 
     let vault_files = match default_vault_root() {
         Some(root) => crate::kernel::vault::list(&root, None)

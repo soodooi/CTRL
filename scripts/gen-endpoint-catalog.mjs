@@ -5,10 +5,10 @@
 // Reads:
 //   - vault/ctrl/mcp-schema.json           -> the authoritative endpoint spec
 //       (the MCP tools/list JSON Schema, exported by `cargo run --bin
-//        dump_mcp_schema`; ADR-010 section endpoint-spec v6). The catalog is
+//        dump_mcp_schema`; ADR-010 communication § endpoint-spec v11). The catalog is
 //        derived FROM the spec, NOT by scraping Rust source.
 //   - src-tauri/src/commands/mod.rs        -> the Tauri command surface (dual-surface)
-// Emits: vault/ctrl/endpoint-catalog.md
+// Emits: vault/ctrl/generated/endpoint-catalog.md
 //   Regenerate: cargo run --manifest-path src-tauri/Cargo.toml --bin dump_mcp_schema
 //               && node scripts/gen-endpoint-catalog.mjs
 //
@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA = join(ROOT, 'vault/ctrl/mcp-schema.json');
 const CMDS = join(ROOT, 'src-tauri/src/commands/mod.rs');
-const OUT = join(ROOT, 'vault/ctrl/endpoint-catalog.md');
+const OUT = join(ROOT, 'vault/ctrl/generated/endpoint-catalog.md');
 
 // Module classification (mirrors kernel/visibility.rs tool_domain).
 function moduleOf(tool) {
@@ -108,38 +108,37 @@ const writeCount = tools.filter((t) => t.rw === 'WRITE').length;
 
 let md = `---
 title: CTRL endpoint catalog (auto-generated)
-kind: reference
+kind: generated-inventory
 generated_by: scripts/gen-endpoint-catalog.mjs
 regenerate: node scripts/gen-endpoint-catalog.mjs
-note: DO NOT hand-edit the tables — regenerate. Spec = ADR-002 section 14; this is the inventory.
+note: DO NOT hand-edit the tables. Architecture authority remains the owning module ADR.
 related:
-  - 002-substrate.md
-  - "[[comms-interface-spec]]"
-  - "[[capability-pack-map]]"
+  - "[[002-substrate]]"
+  - "[[010-communication]]"
+  - "[[mcp-schema.json]]"
 ---
 
 # CTRL endpoint catalog (auto-generated)
 
-Derived **from the authoritative endpoint spec** \`vault/ctrl/mcp-schema.json\` (the
-MCP \`tools/list\` JSON Schema, exported by \`cargo run --bin dump_mcp_schema\`) — NOT
-by scraping source (ADR-010 section endpoint-spec v6). Contract spec = **ADR-002
-section 14** (describe/query/produce). This file is the human-readable **inventory**;
-the machine-readable spec is \`mcp-schema.json\`.
+Generated from the machine-readable MCP schema at \`vault/ctrl/mcp-schema.json\`
+and the registered Tauri command surface. The schema is exported by
+\`cargo run --bin dump_mcp_schema\`; this catalog is a human-readable inventory,
+not a second endpoint or architecture specification (ADR-010 communication § endpoint-spec v11).
 
 ## Overview
 
-- **${tools.length}** MCP tools on the :17873 gate (the endpoints AI actually sees)
-- **${sc14Count}** are on the section-14 three-verb contract; the other **${tools.length - sc14Count}** are bespoke tools (not section-14 shaped)
-- **${writeCount}** writes (produce, through the review gate) / **${tools.length - writeCount}** reads
-- **${totalCmds}** Tauri commands (the frontend RPC surface); **${overlap.length}** share an exact name with an MCP tool = dual-surface drift risk (P1, SC5 not done)
+- **${tools.length}** MCP tools registered on the \`:17873\` gate
+- **${sc14Count}** tools recognized by this generator's curated §14 face list
+- **${writeCount}** probable writes / **${tools.length - writeCount}** probable reads, classified by endpoint-name heuristic
+- **${totalCmds}** registered Tauri commands
+- **${overlap.length}** exact-name overlaps between MCP tools and Tauri commands
 
-Honest takeaway: **the section-14 spec exists, but only smart-table fully migrated;
-vault/notes is mostly the old bespoke \`vault_*\` tools; html/pdf and other envisioned
-sources are not built.**
+These counts describe the generated surfaces only. The owning module ADR defines
+whether a surface is intended, migrated, retired, or governed correctly.
 
-## Endpoints x module (MCP gate tools)
+## Endpoints by module (MCP gate tools)
 
-Legend: **s14** = three-verb contract face · bespoke = ad-hoc tool · **WRITE** = produce (gated) · read
+Legend: **s14** = member of the generator's curated §14 face list · bespoke = other registered tool · **WRITE** = name-classified probable write · read = name-classified probable read
 `;
 
 for (const mod of modules) {
@@ -153,30 +152,16 @@ for (const mod of modules) {
   }
 }
 
-md += `\n## Dual-surface evidence — Tauri commands per module (${totalCmds} total)\n\n`;
-md += `Many capabilities are BOTH an MCP tool and a Tauri command = the P1 drift risk ADR-010 diagnosed. SC5 (collapse the dual surface) is not done.\n\n`;
+md += `\n## Tauri command registration by module (${totalCmds} total)\n\n`;
+md += `This table is generated from \`src-tauri/src/commands/mod.rs\`. Exact-name overlap with an MCP tool is an inventory signal only; architectural interpretation belongs to the owning ADR.\n\n`;
 md += `| commands module | count |\n|---|---|\n`;
 for (const g of cmdGroups) md += `| \`commands/${g.label}.rs\` | ${g.n} |\n`;
 
-md += `\n## Section-14 contract coverage (spec vs built)\n
-| module | s14 describe | s14 query | s14 produce | note |
-|---|---|---|---|---|
-| **smart-table** | yes | yes | yes (append_row/update_cell) | only full section-14 impl |
-| **notes** | yes | yes | no | read contract; writes still go through bespoke \`vault_*\` |
-| **providers** | yes | yes | — | read-only runtime registry |
-| **registry** (installed mcp) | yes | yes | — | read-only runtime registry |
-| **vault/Obsidian** | no | no | no | ~27 bespoke \`vault_*\` (read/write/search…); Obsidian REST MCP endpoints spec'd in ADR-002 section 1.9.1, connector not fully built |
-| **hermes** | — | — | — | a brain, not a data source; its interface is the ACP single door — it *consumes* endpoints, it is not queried |
-| **html / pdf / blob** | no | no | no | envisioned section-14 sources, NOT built |
-
-## Gaps this catalog exposes
-1. **Section-14 is one module deep** (smart-table); notes is half (no produce), vault/Obsidian/html/pdf not migrated or not built.
-2. **Dual surface not collapsed** (${overlap.length} MCP tools share a name with a Tauri command) = SC5 not done.
-3. **No versioned external endpoint contract** (section 14.10 version negotiation is spec'd, gate routing not implemented).
-
-Convergence path = make section-14 cover everything (migrate \`vault_*\` etc. into
-describe/query/produce) + SC5 collapse the dual surface. **Interface reaches
-production grade when those two are done.**
+md += `\n## Generation boundaries\n
+- MCP names, descriptions, and input schemas come from \`vault/ctrl/mcp-schema.json\`.
+- Tauri command counts come from the registration list in \`src-tauri/src/commands/mod.rs\`.
+- Module, read/write, and §14-face labels are generator heuristics for navigation; they are not contracts.
+- Accepted decisions and migration status live only in ADR-002, ADR-010, and the relevant owning module ADR.
 `;
 
 writeFileSync(OUT, md);

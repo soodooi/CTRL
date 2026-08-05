@@ -2,7 +2,13 @@
 title: 0007 — Irisy = 读取整个工作区的 ambient 助手（含隐私例外）
 tags: [strategy, irisy, context, privacy, framework]
 updated: 2026-06-13
+kind: strategy-snapshot
+status: snapshot
+as_of: 2026-06-13
+authority: ../adrs/005-irisy.md
 ---
+
+> **历史策略快照（非权威）**：本文只记录 `as_of` 日期的研究与判断。正文中的“主框架”“必须”“待写逻辑”均为当时语境，不是当前实施要求；Irisy 的当前角色与上下文边界只见 ADR-005，范围与进度见 `GOAL.md`。
 
 # 0007 — Irisy 是读取整个工作区的 ambient 助手
 

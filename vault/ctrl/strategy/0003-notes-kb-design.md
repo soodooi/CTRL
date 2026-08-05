@@ -2,7 +2,13 @@
 title: 0003 — Notes 知识库板块设计（对标 NotebookLM / Kimi / 豆包）
 tags: [strategy, notes, knowledge-base, design]
 updated: 2026-06-13
+kind: strategy-snapshot
+status: snapshot
+as_of: 2026-06-13
+authority: ../adrs/002-substrate.md + ../adrs/003-frontend.md
 ---
+
+> **历史策略快照（非权威）**：本文只记录 `as_of` 日期的研究与判断。正文中的“锁定”“必须”“待实现”均为当时语境，不是当前实施要求；当前产品意图见 `PRODUCT.md`，架构见 owning module ADR，范围与进度见 `GOAL.md`。
 
 # 0003 — Notes 知识库板块设计
 

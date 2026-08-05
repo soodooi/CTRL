@@ -31,6 +31,9 @@ pub mod diagnostics;
 pub mod effect;
 pub mod event;
 pub mod local_storage;
+// Private LibreOffice bridge rendezvous + keychain credential resolution.
+// (ADR-010 communication § trust-domains v13; § transports v13)
+pub mod libreoffice_bridge;
 pub mod mcp_host;
 pub mod mcp_server;
 pub mod pack_sandbox;
@@ -60,8 +63,10 @@ pub mod event_ws;
 pub mod subprocess_actor;
 pub mod subprocess_channel_adapter;
 pub mod smart_table_index;
-// Feature-pack provision+auth engine (governing
-// `vault/ctrl/feature-pack-provision-auth-engine.md`) — generic runtime that
+// Feature-pack provision+auth engine
+// (ADR-002 substrate § composition v77; historical implementation plan:
+// `vault/ctrl/history/plans/feature-pack-provision-auth-engine.md`) —
+// generic runtime that
 // makes any self-hosted connector one-click + silent from its manifest data:
 // pack_auth = declared bootstrap / token-exchange executors; pack_provision =
 // generated-secret + compose provisioning + install orchestration.
@@ -85,8 +90,9 @@ pub mod openapi;
 // evals a pack then POSTs its manifest to a registry/commons. Kernel-internal
 // HTTPS, token kernel-side; the real public registry is the honest external gap.
 pub mod pack_publish;
-// ADR-002 substrate §14 (LifeOS layer Phase 1, governing
-// `vault/ctrl/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
+// Tasks as a unified-operation-interface RecordSource
+// (ADR-002 substrate § unified-operation-interface v77; historical context:
+// `vault/ctrl/history/plans/lifeos-layer-restructure.md`) — tasks as a §14 RecordSource:
 // one plain-markdown file per task (vim test), describe/query via the shared
 // engine, produce (create/update) through the vault layer.
 pub mod tasks_source;

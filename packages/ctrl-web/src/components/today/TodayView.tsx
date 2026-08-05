@@ -1,5 +1,6 @@
-// Today — the LifeOS home surface (GOAL Phase 1, governing
-// `vault/ctrl/lifeos-layer-restructure.md`). Quick-capture a task and see your
+// Today — the LifeOS home surface (ADR-002 substrate § unified-operation-interface
+// v77; historical context: `vault/ctrl/history/plans/lifeos-layer-restructure.md`).
+// Quick-capture a task and see your
 // open tasks, all operated through the SAME :17873 gate an external agent uses
 // (task_query / task_create / task_update). Tasks are inline `- [ ]` checkbox
 // lines in the vault (markdown = truth), so what shows here is exactly what a

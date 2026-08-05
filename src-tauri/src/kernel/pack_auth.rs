@@ -1,5 +1,6 @@
 //! Generic silent-auth executors for the feature-pack provision+auth engine
-//! (design: `vault/ctrl/feature-pack-provision-auth-engine.md`). The manifest
+//! (ADR-002 substrate § composition v77; historical implementation plan:
+//! `vault/ctrl/history/plans/feature-pack-provision-auth-engine.md`). The manifest
 //! DECLARES how a pack gets credentials (`auth.bootstrap` / `auth.token_exchange`
 //! / `auth.oauth`); this runs the declared flow with no manual token entry, so
 //! any self-hosted connector is silent by data — zero per-pack code.

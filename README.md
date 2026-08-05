@@ -1,80 +1,55 @@
 # CTRL
 
-> An ambient AI layer that runs on your machine, with your own keys, that we can't see. Press `Ctrl`, get a workspace, talk to one assistant that routes to any tool.
+> A local-first ambient AI workbench. Press `Ctrl`, ask one App AI assistant, and turn local capabilities into inspectable work.
 
-## What is CTRL
+CTRL serves one-person companies, independent developers, and professional creators who want AI to operate their own files, tools, models, and applications without moving the source of truth into a vendor cloud.
 
-CTRL is the local AI workbench for the **one-person company** — the solopreneur, indie founder, or freelancer who runs a whole company alone, wants AI as their team, and won't hand their business data to someone else's cloud.
+## Start here
 
-Press `Ctrl` anywhere → an ephemeral workspace appears → you talk to **one** assistant (Irisy) that reads your intent and routes it to the right capability: an LLM, an installed MCP tool, a CLI, a skill. The surface *morphs* to the output — a doc, a table, an editable HTML page, code — which you can copy, export as a file, or save into a plain-markdown vault you fully own.
+Read these in order before changing the repository:
 
-Three things separate it from "yet another local AI client":
+1. [`vault/ctrl/GOAL.md`](vault/ctrl/GOAL.md) — the single active development goal.
+2. [`vault/ctrl/adrs/INDEX.md`](vault/ctrl/adrs/INDEX.md) and [`ADR-001`](vault/ctrl/adrs/001-spine.md) — the architecture registry and immutable spine.
+3. The owning module ADR for the area being changed.
+4. [`PRODUCT.md`](PRODUCT.md) — stable product intent only; never an architecture override.
 
-- **Ambient, not an app you open.** One global hotkey, one morphing conversation, no tab-soup. Capabilities live in an open registry (MCP / CLI / Skills), so the UI stays simple while the ecosystem scales — scale lives in the registry, not the chrome.
-- **Bring your own everything — keys, models, brain.** No CTRL account, no markup, no default model spend. You wire your own provider (Claude / the fal.ai aggregator / OpenAI / local Ollama); CTRL is the stitching layer, not the model vendor. Keys live in the OS keychain — we literally can't read them.
-- **Plain-text all the way down.** Your notes are markdown + frontmatter — and so are the agent assets: tools (`.mcp.json`), skills (`SKILL.md`), memory (`CLAUDE.md` / `AGENTS.md`). Open them in vim in 100 years. There's no "export" because nothing was ever imported.
+Irisy is the shipped App AI assistant. The left-region Coding agent and out-of-product CTRL development agents are separate actors. The sole role contract is [`ADR-005 §11`](vault/ctrl/adrs/005-irisy.md#11-app-ai-assistant-role-boundary-v36).
 
-The economy is **share & be shared**: package a tool as a plain-text definition, publish it to the Discover commons, one-click install what others share — only definitions travel; data and keys never leave any machine. CTRL sells the substrate; the commons stays free and is the moat.
+## Development
 
-> Full positioning + architecture: [`vault/ctrl/adrs/006-cross-cutting.md`](./vault/ctrl/adrs/006-cross-cutting.md) §5 (positioning) + §6 (cold-start loop) · [`vault/ctrl/adrs/INDEX.md`](./vault/ctrl/adrs/INDEX.md) (module ADR registry).
-
-Private repository. Single deliverable: this repo (`soodooi/CTRL`). All Rights Reserved (see [LICENSE](./LICENSE)).
-
-## Required reading (in order)
-
-1. [`.kiro/steering/development-philosophy.md`](./.kiro/steering/development-philosophy.md) — active development contract, hard rules, and design philosophy
-2. [`vault/ctrl/GOAL.md`](./vault/ctrl/GOAL.md) — single active development goal
-3. [`vault/ctrl/adrs/INDEX.md`](./vault/ctrl/adrs/INDEX.md) — ADR registry; then read ADR-001 and the owning module ADR
-
-Kiro runs the checked-in `.kiro/skills/{goal,dev-loop}` workflow and `.kiro/hooks/session-context.json`. The architecture map lives in `vault/ctrl/adrs/`; legacy Claude/Olym development runtimes are archived outside the repository.
-
-## Prerequisites
-
-| Tool | Min version |
-|---|---|
-| Rust | 1.77+ stable (`rustup show`) |
-| Node | 20 LTS, npm 10+ |
-| Tauri CLI | 2.x (`cargo install tauri-cli --version "^2"` or via npm devDeps) |
-| Platform | macOS 13+ (primary dev) / Windows 11 (secondary) |
-| WebView | macOS 13+ (WKWebView) / Win 10 1809+ (WebView2 evergreen) — no extra install |
-
-## First-time setup
+Prerequisites: Rust 1.77+, Node 20 LTS, npm 10+, and Tauri 2. macOS 13+ is the primary platform; Windows is secondary.
 
 ```bash
-git clone git@github.com:soodooi/CTRL.git
-cd CTRL
 npm install
-```
-
-## Run (development)
-
-```bash
 npm run tauri:dev
 ```
 
-Tauri spawns the Rust shell, which boots the L1 kernel, opens the ST-SS WS bridge on `127.0.0.1:17872`, installs the tray icon, registers the lone-`Ctrl` hotkey, and loads the PWA from `http://localhost:5173` in the WebView.
+The desktop shell starts the Rust kernel, the authenticated `:17873` capability gate, the current Tauri Channels/CBOR-over-WebSocket event transport, the global Ctrl hotkey, and the PWA WebView.
 
-PWA only (mobile testing in a regular browser):
+PWA-only development:
 
 ```bash
 npm run dev
-# desktop: http://localhost:5173
-# mobile : http://<lan-ip>:5173   (tunnel WS bridge via cloudflared if cross-router)
 ```
 
-## Build (release)
+Release build:
 
 ```bash
 npm run tauri:build
 ```
 
-Outputs (current binary budget per `vault/ctrl/adrs/003-frontend.md` and governing ADRs):
+Validation and release requirements are governed by [`vault/ctrl/adrs/PROCESS.md`](vault/ctrl/adrs/PROCESS.md), repository scripts, and the owning ADR—not this README.
 
-- macOS: `src-tauri/target/release/bundle/dmg/CTRL_*.dmg`
-- Win: `src-tauri/target/release/bundle/msi/CTRL_*_x64_en-US.msi`
+## Repository map
 
-Budget: kernel ≤ 18 MB · installer ≤ 25 MB default / ≤ 18 MB slim (mesh-included).
+- `src-tauri/` — native shell and Rust kernel
+- `packages/ctrl-web/` — PWA frontend
+- `packages/ctrl-mcps/` — built-in capability implementations
+- `ctrl-skills/` — shareable Skills
+- `vault/ctrl/` — development governance: the active goal, module ADRs, planning lenses, research, generated inventories, and history
+- `docs/` — static human-facing repository materials: design prototypes, reference assets, and development setup guides; never architecture authority
+- `brand/` — visual identity and tokens
 
 ## License
 
-**All Rights Reserved.** See [LICENSE](./LICENSE). Private repository; no part of this source may be used, copied, or distributed without prior written permission. All packages are `private: true` with `license: UNLICENSED`.
+See [`LICENSE`](LICENSE). Packaging and distribution must also satisfy the repository's governing open-core policy before release.

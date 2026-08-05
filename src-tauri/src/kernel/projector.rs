@@ -196,7 +196,8 @@ fn project_gate_into_dir(
 /// `source` (§14 connectors), `discover`, `skill`, and `mcp` (the `mcp_pack_*`
 /// create/install/run tools classify into the `mcp` domain, `visibility.rs`).
 /// Still excludes `net` — the `http_*` exfiltration floor stays closed.
-const OPENCODE_CODING_INTENT: &str =
+/// (ADR-002 substrate § projection v79; ADR-001 spine §4 v21)
+pub(crate) const OPENCODE_CODING_INTENT: &str =
     "vault,smart_table,tasks,notes,source,discover,skill,mcp,providers,registry,kv,llm,memory,calendar";
 
 /// The `ctrl-kernel` gate entry in OpenCode's config shape (`type: "remote"` +
@@ -530,18 +531,15 @@ OUTSIDE the markers — that content is preserved.\n\
     )
 }
 
-/// Project a PER-PACK scope (ADR-002 substrate §1B.8 v74; the feature-pack =
-/// project analog, §7.5): materialize a pack-scoped `.mcp.json` +
+/// Project a PER-PACK scope after explicit eligibility has been established
+/// (ADR-002 substrate §1B.8 v79): materialize a pack-scoped `.mcp.json` +
 /// `opencode.json` (both carry the pack's OWN `intent` domain, NOT the global
 /// default) + a pack-context `AGENTS.md` into `~/Documents/CTRL/<pack_id>/`,
 /// so a driver launched there sees exactly that pack's capability subset +
-/// context. `opencode.json` is projected too (ADR-001 spine §4 v14) so a pack
-/// scope is a full OpenCode launch target, not just a generic BYO-CLI
-/// `.mcp.json` scope — a feature pack is a project-scope and OpenCode is
-/// CTRL's coding engine, so the two must agree: any pack a driver can be
-/// launched in must actually be launchable with OpenCode. Best-effort; an
-/// empty token (gate not up) is a no-op. Returns whether anything was
-/// written.
+/// context. `opencode.json` is projected too (ADR-001 spine §4 v20) so an
+/// explicitly eligible pack is a full OpenCode launch target, not just a
+/// generic BYO-CLI `.mcp.json` scope. Best-effort; an empty token (gate not up)
+/// is a no-op. Returns whether anything was written.
 pub fn project_pack(
     pack_id: &str,
     name: &str,
@@ -559,19 +557,186 @@ pub fn project_pack(
     let dir = root.join(pack_id);
     let gate = project_gate_into_dir(&dir, port, token, Some(intent))?;
     // opencode.json alongside .mcp.json, same pack intent (ADR-002 substrate
-    // §1B.8 v74; ADR-001 spine §4 v14) — a pack scope must be a real OpenCode
-    // launch target, not just a Claude-Code-shaped BYO-CLI scope.
+    // §1B.8 v79; ADR-001 spine §4 v20) — an explicitly eligible pack scope is
+    // a launch target, not just a Claude-Code-shaped BYO-CLI scope.
     let opencode = project_opencode_into_dir(&dir, port, token, Some(intent))?;
     let agents = project_agents_block(&dir, &pack_agents_block(name, kb, intent))?;
     Ok(gate || opencode || agents)
 }
 
-/// At boot, project a PER-PACK scope for each installed pack that declares a §14
-/// `record_source` (the product-grade data packs — §7.5 / §1B.8). Each gets its
-/// own `~/Documents/CTRL/<pack_id>/` scoped to the `source` domain + its KB, so a
-/// driver launched there is scoped to that one pack. Best-effort: an unreadable
-/// manifest is skipped, never blocking boot. v1 scopes only data packs; an
-/// action-only pack still gets the base workspace projection.
+// Projection retirement must preserve user-owned configuration while replacing
+// only CTRL-owned artifacts. (ADR-002 substrate §1B.8 v79)
+fn write_json_atomic(path: &Path, value: &Value) -> std::io::Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    let serialized = serde_json::to_vec_pretty(value)
+        .map_err(std::io::Error::other)?;
+    {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(&serialized)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+    }
+    fs::rename(tmp, path)
+}
+
+fn managed_kernel_entry(entry: &Value, expected_type: &str) -> bool {
+    let Some(object) = entry.as_object() else {
+        return false;
+    };
+    let expected_object_keys: &[&str] = if expected_type == "remote" {
+        &["type", "url", "enabled", "headers"]
+    } else {
+        &["type", "url", "headers"]
+    };
+    if object.len() != expected_object_keys.len()
+        || !object.keys().all(|key| expected_object_keys.contains(&key.as_str()))
+    {
+        return false;
+    }
+    let managed_url = object
+        .get("url")
+        .and_then(Value::as_str)
+        .is_some_and(|url| {
+            url.strip_prefix("http://127.0.0.1:")
+                .and_then(|rest| rest.strip_suffix("/mcp"))
+                .and_then(|port| port.parse::<u16>().ok())
+                .is_some_and(|port| port != 0)
+        });
+    let Some(headers) = object.get("headers").and_then(Value::as_object) else {
+        return false;
+    };
+    let expected_header_keys = [
+        "Authorization",
+        audit::CALLER_HEADER,
+        visibility::INTENT_HEADER,
+    ];
+    if headers.len() != expected_header_keys.len()
+        || !headers.keys().all(|key| expected_header_keys.contains(&key.as_str()))
+    {
+        return false;
+    }
+    let managed_headers = headers
+        .get("Authorization")
+        .and_then(Value::as_str)
+        .is_some_and(|value| value.strip_prefix("Bearer ").is_some_and(|token| !token.is_empty()))
+        && headers.get(audit::CALLER_HEADER).and_then(Value::as_str) == Some(BYO_CLI_CALLER)
+        && headers.get(visibility::INTENT_HEADER).and_then(Value::as_str) == Some("source");
+    let managed_shape = object.get("type").and_then(Value::as_str) == Some(expected_type)
+        && (expected_type != "remote" || object.get("enabled").and_then(Value::as_bool) == Some(true));
+    managed_url && managed_headers && managed_shape
+}
+
+fn remove_managed_json_entry(
+    path: &Path,
+    map_key: &str,
+    expected_type: &str,
+    removable_when_empty: &[&str],
+) -> std::io::Result<bool> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let Ok(mut root) = serde_json::from_slice::<Value>(&bytes) else {
+        return Ok(false);
+    };
+    let Some(object) = root.as_object_mut() else {
+        return Ok(false);
+    };
+    let Some(entries) = object.get_mut(map_key).and_then(Value::as_object_mut) else {
+        return Ok(false);
+    };
+    // A key collision is not ownership. Retire only an entry whose complete
+    // gate shape proves it is CTRL's old per-pack projection; preserve a user
+    // replacement under the same key. (ADR-002 substrate §1B.8 v79)
+    if !entries
+        .get(KERNEL_SERVER_KEY)
+        .is_some_and(|entry| managed_kernel_entry(entry, expected_type))
+    {
+        return Ok(false);
+    }
+    entries.remove(KERNEL_SERVER_KEY);
+    if entries.is_empty() {
+        object.remove(map_key);
+    }
+    if object.keys().all(|key| removable_when_empty.contains(&key.as_str())) {
+        fs::remove_file(path)?;
+    } else {
+        write_json_atomic(path, &root)?;
+    }
+    Ok(true)
+}
+
+fn write_text_atomic(path: &Path, content: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("md.tmp");
+    {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+    }
+    fs::rename(tmp, path)
+}
+
+fn remove_managed_agents_block(path: &Path) -> std::io::Result<bool> {
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let (Some(start), Some(end_start)) = (content.find(AGENTS_BEGIN), content.find(AGENTS_END)) else {
+        return Ok(false);
+    };
+    if end_start < start {
+        return Ok(false);
+    }
+    let end = end_start + AGENTS_END.len();
+    let remaining = format!("{}{}", &content[..start], &content[end..]);
+    if remaining.trim().is_empty() {
+        fs::remove_file(path)?;
+    } else {
+        write_text_atomic(path, &(remaining.trim_end().to_owned() + "\n"))?;
+    }
+    Ok(true)
+}
+
+/// Remove only CTRL-managed projection artifacts from a pack that is no longer
+/// eligible. User servers, OpenCode settings, and prose outside the managed
+/// AGENTS block survive. (ADR-002 substrate §1B.8 v79)
+fn retire_pack_projection_in_dir(dir: &Path) -> std::io::Result<bool> {
+    let mut changed = remove_managed_json_entry(
+        &dir.join(".mcp.json"),
+        "mcpServers",
+        "http",
+        &[],
+    )?;
+    changed |= remove_managed_json_entry(
+        &dir.join("opencode.json"),
+        "mcp",
+        "remote",
+        &["$schema"],
+    )?;
+    changed |= remove_managed_agents_block(&dir.join("AGENTS.md"))?;
+    if fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_none()) {
+        fs::remove_dir(dir)?;
+    }
+    Ok(changed)
+}
+
+/// Project a PER-PACK scope for a manifest that explicitly opts into Coding.
+/// Eligibility is decided by `projection.coding_workspace`, never inferred
+/// from `record_source` or another capability field. (ADR-002 substrate
+/// §1B.8 v79)
+fn coding_workspace_projection_enabled(manifest: &Value) -> bool {
+    manifest
+        .pointer("/projection/coding_workspace")
+        .and_then(Value::as_bool)
+        == Some(true)
+}
+
+/// At boot, project a PER-PACK scope only for installed packs that explicitly
+/// opt into a Coding workspace. Each eligible pack gets its own workspace
+/// scoped to the `source` domain + its KB. Best-effort: an unreadable manifest
+/// is skipped, never blocking boot. (ADR-002 substrate §1B.8 v79)
 fn project_installed_packs(port: &str, token: &str) {
     let Ok(dir) = crate::commands::kernel::mcp_dir() else {
         return;
@@ -596,12 +761,24 @@ fn project_installed_packs(port: &str, token: &str) {
         let Ok(manifest) = serde_json::from_slice::<Value>(&bytes) else {
             continue;
         };
-        if manifest.get("record_source").is_none() {
-            continue; // v1: only §14 data packs get an auto per-pack scope.
+        if !coding_workspace_projection_enabled(&manifest) {
+            // Retire only stale managed scope artifacts when explicit Coding
+            // eligibility is absent. (ADR-002 substrate §1B.8 v79)
+            if let Some(root) = workspace_root() {
+                if let Err(error) = retire_pack_projection_in_dir(&root.join(&pack_id)) {
+                    tracing::warn!(
+                        pack = %pack_id,
+                        error = %error,
+                        "Projector: stale per-pack scope retirement failed"
+                    );
+                }
+            }
+            continue;
         }
         let name = manifest.get("name").and_then(Value::as_str).unwrap_or(&pack_id);
         let kb = manifest.get("knowledge_base").and_then(Value::as_str);
-        // A record_source pack is reached through the generic `source` domain.
+        // Eligible pack workspaces receive the existing scoped `source` gate;
+        // eligibility itself is the explicit manifest decision above.
         if let Err(e) = project_pack(&pack_id, name, kb, "source", port, token) {
             tracing::warn!(pack = %pack_id, error = %e, "Projector: per-pack scope projection failed");
         }
@@ -665,8 +842,8 @@ pub fn project_kernel_gate(port: &str, token: &str) {
         ),
     }
 
-    // Per-pack scoped projection (§1B.8) — each §14 data pack gets its own
-    // scoped workspace dir alongside the base one.
+    // Per-pack scoped projection (§1B.8 v79) — only explicitly eligible
+    // Coding workspaces receive a projected scope.
     project_installed_packs(port, token);
 }
 
@@ -729,6 +906,137 @@ mod tests {
     }
 
     // --- per-pack scoped projection (§1B.8) ---------------------------------
+
+    // Explicit actor/surface metadata is the only Coding workspace trigger.
+    // (ADR-002 substrate §1B.8 v79)
+    #[test]
+    fn record_source_alone_does_not_enable_coding_workspace_projection() {
+        let manifest = json!({
+            "record_source": { "kind": "local-selection" }
+        });
+        assert!(!coding_workspace_projection_enabled(&manifest));
+    }
+
+    #[test]
+    fn explicit_coding_workspace_projection_is_required() {
+        let enabled = json!({
+            "projection": { "coding_workspace": true }
+        });
+        let disabled = json!({
+            "projection": { "coding_workspace": false },
+            "record_source": { "kind": "local-selection" }
+        });
+        // Data semantics cannot grant Coding actor scope.
+        // (ADR-002 substrate §1B.8 v79)
+        assert!(coding_workspace_projection_enabled(&enabled));
+        assert!(!coding_workspace_projection_enabled(&disabled));
+    }
+
+    #[test]
+    fn retiring_ineligible_pack_removes_only_managed_projection() {
+        // Retirement starts from a fully managed projected scope.
+        // (ADR-002 substrate §1B.8 v79)
+        let dir = TempDir::new().unwrap();
+        project_gate_into_dir(
+            dir.path(),
+            "17873",
+            FIXTURE_GATE_VALUE,
+            Some("source"),
+        )
+        .unwrap();
+        project_opencode_into_dir(
+            dir.path(),
+            "17873",
+            FIXTURE_GATE_VALUE,
+            Some("source"),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("AGENTS.md"),
+            format!("User rule\n\n{}\n", pack_agents_block("Pack", None, "source")),
+        )
+        .unwrap();
+
+        let mut mcp = read_json(dir.path());
+        mcp["mcpServers"]["user-server"] = json!({ "command": "user" });
+        write_json_atomic(&dir.path().join(".mcp.json"), &mcp).unwrap();
+
+        assert!(retire_pack_projection_in_dir(dir.path()).unwrap());
+        let mcp = read_json(dir.path());
+        assert!(mcp["mcpServers"].get(KERNEL_SERVER_KEY).is_none());
+        assert_eq!(mcp["mcpServers"]["user-server"]["command"], "user");
+        assert!(!dir.path().join("opencode.json").exists());
+        assert_eq!(fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(), "User rule\n");
+    }
+
+    // A user may deliberately reuse the conventional key. Retirement must
+    // prove the managed gate shape, not infer ownership from the name alone.
+    // (ADR-002 substrate §1B.8 v79)
+    #[test]
+    fn retiring_ineligible_pack_preserves_user_replacement_under_managed_key() {
+        let dir = TempDir::new().unwrap();
+        project_gate_into_dir(
+            dir.path(),
+            "17873",
+            FIXTURE_GATE_VALUE,
+            Some("source"),
+        )
+        .unwrap();
+        project_opencode_into_dir(
+            dir.path(),
+            "17873",
+            FIXTURE_GATE_VALUE,
+            Some("source"),
+        )
+        .unwrap();
+
+        let mut mcp = read_json(dir.path());
+        mcp["mcpServers"][KERNEL_SERVER_KEY] = json!({ "command": "user-server" });
+        write_json_atomic(&dir.path().join(".mcp.json"), &mcp).unwrap();
+        let mut opencode: Value = serde_json::from_slice(
+            &fs::read(dir.path().join("opencode.json")).unwrap(),
+        )
+        .unwrap();
+        opencode["mcp"][KERNEL_SERVER_KEY] = json!({
+            "type": "local",
+            "command": ["user-server"]
+        });
+        write_json_atomic(&dir.path().join("opencode.json"), &opencode).unwrap();
+
+        assert!(!retire_pack_projection_in_dir(dir.path()).unwrap());
+        assert_eq!(
+            read_json(dir.path())["mcpServers"][KERNEL_SERVER_KEY]["command"],
+            "user-server"
+        );
+        let preserved: Value = serde_json::from_slice(
+            &fs::read(dir.path().join("opencode.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(preserved["mcp"][KERNEL_SERVER_KEY]["type"], "local");
+    }
+
+    #[test]
+    fn retiring_ineligible_pack_preserves_near_managed_user_entry() {
+        let dir = TempDir::new().unwrap();
+        project_gate_into_dir(
+            dir.path(),
+            "17873",
+            FIXTURE_GATE_VALUE,
+            Some("source"),
+        )
+        .unwrap();
+        let mut mcp = read_json(dir.path());
+        // An extra user-owned field makes this a replacement, not the exact
+        // generated authority. (ADR-002 substrate §1B.8 v79)
+        mcp["mcpServers"][KERNEL_SERVER_KEY]["user_metadata"] = json!(true);
+        write_json_atomic(&dir.path().join(".mcp.json"), &mcp).unwrap();
+
+        assert!(!retire_pack_projection_in_dir(dir.path()).unwrap());
+        assert_eq!(
+            read_json(dir.path())["mcpServers"][KERNEL_SERVER_KEY]["user_metadata"],
+            true
+        );
+    }
 
     #[test]
     fn per_pack_gate_carries_the_packs_own_intent_not_the_global_default() {

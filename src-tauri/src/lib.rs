@@ -151,8 +151,12 @@ pub fn run() {
             if code.is_none() {
                 api.prevent_exit();
             } else {
-                // Explicit shutdown — kill the persistent hermes-acp brain
-                // (ADR-002 §1.8.1). Other agents are PWA-session-scoped.
+                // Explicit shutdown cancels every McpHost-owned child before
+                // the async runtime exits, then stops the persistent ACP brain.
+                // (ADR-004 cap §1 v13; ADR-002 substrate §1.8.1)
+                if let Err(error) = shell::KernelSupervisor::shutdown(app) {
+                    tracing::warn!(%error, "kernel shutdown was incomplete");
+                }
                 shell::acp_client::shutdown();
             }
         }
@@ -196,15 +200,16 @@ pub fn run() {
     // window closes, but our destroy + rebuild toggle pattern would then
     // kill kernel + hotkey + tray after a single lone-Ctrl tap. Prevent the
     // exit and let the process stay alive in tray for re-summoning.
-    app.run(|_app_handle, event| {
+    app.run(|app_handle, event| {
         if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
             // code = None means user-initiated (last window closed / Quit).
-            // code = Some(_) means explicit shutdown (tray Quit menu) — let it
-            // through and kill the persistent hermes-acp brain (ADR-002 §1.8.1);
-            // other agents are PWA-session-scoped.
+            // code = Some(_) means explicit shutdown (tray Quit menu).
             if code.is_none() {
                 api.prevent_exit();
             } else {
+                if let Err(error) = shell::KernelSupervisor::shutdown(app_handle) {
+                    tracing::warn!(%error, "kernel shutdown was incomplete");
+                }
                 shell::acp_client::shutdown();
             }
         }

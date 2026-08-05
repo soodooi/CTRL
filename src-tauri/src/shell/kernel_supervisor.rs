@@ -360,9 +360,16 @@ impl KernelSupervisor {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn shutdown() -> Result<()> {
+    /// Cancel every McpHost-owned child before the application runtime exits.
+    /// This is idempotent and does not unregister installed descriptors, so the
+    /// next boot can reconnect explicitly enabled packs.
+    /// (ADR-004 cap §1 v13)
+    pub fn shutdown(app: &AppHandle) -> Result<()> {
         tracing::info!("KernelSupervisor::shutdown");
-        Ok(())
+        let Some(handle) = app.try_state::<KernelHandle>() else {
+            return Ok(());
+        };
+        tauri::async_runtime::block_on(handle.runtime.mcp_host.shutdown_all())
+            .map_err(|error| anyhow!("MCP child shutdown failed: {error}"))
     }
 }

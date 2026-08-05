@@ -1,6 +1,7 @@
 //! Tasks as a first-class RecordSource of the Unified Operation Interface
-//! (ADR-002 §14) — the first slice of the LifeOS layer (GOAL Phase 1,
-//! governing `vault/ctrl/lifeos-layer-restructure.md`).
+//! (ADR-002 substrate § unified-operation-interface v77; historical
+//! implementation context:
+//! `vault/ctrl/history/plans/lifeos-layer-restructure.md`).
 //!
 //! **Storage substrate = inline `- [ ]` checkboxes inside notes**, not a file
 //! per task. Deep research (`lifeos-layer-restructure.md` §1) showed the

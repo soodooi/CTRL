@@ -1,0 +1,53 @@
+{
+  "manifest_version": 2,
+  "id": "ctrl-libreoffice",
+  "name": "LibreOffice Companion",
+  "version": "0.1.0",
+  "author": { "name": "CTRL contributors" },
+  "description": {
+    "short": "Read the explicit Writer selection or Calc range through CTRL's governed source interface.",
+    "long": "An optional, read-only LibreOffice Companion source. A user-installed LibreOffice extension remains the only UNO boundary. The private JavaScript MCP child reads only explicit Writer or Calc selection context from an authenticated loopback bridge, and CTRL exposes it only through source_describe/source_query at :17873. No document write path is enabled."
+  },
+  "license": "MIT",
+  "builtin": false,
+  "variant": "mcp-server",
+  "server": {
+    "type": "local",
+    "command": "node",
+    "args": ["${PACK_DIR}/server.mjs"]
+  },
+  "capabilities": {
+    "network": {
+      "http": {
+        "allowlist": [
+          "http://127.0.0.1:*",
+          "http://[::1]:*",
+          "http://localhost:*",
+          "https://127.0.0.1:*",
+          "https://[::1]:*",
+          "https://localhost:*"
+        ],
+        "methods": ["GET"]
+      }
+    }
+  },
+  "record_source": {
+    "kind": "record",
+    "query": {
+      "mcp_tool": "read_selected_context",
+      "array_at": "rows"
+    },
+    "operators": ["eq", "neq", "contains"],
+    "unavailable_message": "Enable CTRL Companion in LibreOffice, make an explicit non-empty Writer selection or multi-cell Calc range, then retry.",
+    "fields": [
+      { "key": "document_id", "label": "Document ID", "type": "text" },
+      { "key": "document_type", "label": "Document type", "type": "text" },
+      { "key": "revision", "label": "Revision", "type": "text" },
+      { "key": "selection_kind", "label": "Selection kind", "type": "text" },
+      { "key": "target", "label": "Target", "type": "text" },
+      { "key": "content", "label": "Selected content", "type": "text" },
+      { "key": "formulas", "label": "Selected formulas", "type": "text" },
+      { "key": "content_hash", "label": "Content hash", "type": "text" }
+    ]
+  }
+}

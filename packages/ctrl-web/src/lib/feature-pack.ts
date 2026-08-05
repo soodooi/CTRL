@@ -81,7 +81,16 @@ export async function loadInstalledPacks(): Promise<FeaturePack[]> {
         hasRecords: m.record_source != null,
       });
     } catch {
-      // Skip an mcp whose manifest is unreadable — never break the list.
+      // Keep the directory-authoritative fallback visible so a malformed or
+      // missing manifest can still be uninstalled from the PWA. Do not invent
+      // capability surfaces for it. (ADR-004 cap §1 v13)
+      packs.push({
+        id: s.id,
+        name: s.name,
+        icon: typeof s.icon === 'string' && s.icon ? s.icon : '⚡',
+        summary: 'Manifest unavailable. Reinstall or uninstall this pack.',
+        actions: [],
+      });
     }
   }
   return packs;

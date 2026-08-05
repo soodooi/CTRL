@@ -12,6 +12,11 @@
       "valid": true
     },
     {
+      "name": "optional LibreOffice manifest",
+      "file": "packages/ctrl-mcps/optional/ctrl-libreoffice/manifest.json",
+      "valid": true
+    },
+    {
       "name": "minimal legacy actions-only manifest",
       "input": {
         "id": "ctrl-legacy-actions",
@@ -107,6 +112,63 @@
       "input": {
         "id": "ctrl-invalid-shell-step",
         "actions": [{ "id": "run", "name": "Run", "steps": [{ "type": "shell" }] }]
+      },
+      "valid": false
+    },
+    {
+      "name": "valid local MCP-backed record source",
+      "input": {
+        "id": "ctrl-local-source",
+        "manifest_version": 2,
+        "variant": "mcp-server",
+        "server": {
+          "command": "node",
+          "args": ["${PACK_DIR}/server.mjs"]
+        },
+        "record_source": {
+          "query": { "mcp_tool": "read_selected_context", "array_at": "rows" },
+          "fields": [{ "key": "content", "label": "Content", "type": "text" }]
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid explicit Coding workspace projection",
+      "input": {
+        "id": "ctrl-coding-workspace",
+        "actions": [{ "id": "build", "name": "Build" }],
+        "projection": { "coding_workspace": true }
+      },
+      "valid": true
+    },
+    {
+      "name": "reject non-boolean Coding workspace projection",
+      "input": {
+        "id": "ctrl-invalid-coding-workspace",
+        "actions": [{ "id": "build", "name": "Build" }],
+        "projection": { "coding_workspace": "yes" }
+      },
+      "valid": false
+    },
+    {
+      "name": "reject record source with both HTTP and MCP transports",
+      "input": {
+        "id": "ctrl-invalid-dual-source",
+        "record_source": {
+          "query": { "endpoint": "/api/items", "mcp_tool": "read_items" },
+          "fields": [{ "key": "name", "label": "Name", "type": "text" }]
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "reject record source without a query transport",
+      "input": {
+        "id": "ctrl-invalid-missing-source-transport",
+        "record_source": {
+          "query": { "array_at": "rows" },
+          "fields": [{ "key": "name", "label": "Name", "type": "text" }]
+        }
       },
       "valid": false
     },

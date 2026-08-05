@@ -1,10 +1,10 @@
-// Remote Window — L1 config page (ADR-005 §2 semantic co-view, option B).
+// Remote Window — L1 config page (ADR-005 irisy § remote-view v36).
 // Manages what a remotely-connected phone sees + can do: an allowlist of
 // functions (built-in faces + installed packs), each toggleable visible / view
 // vs act. The connection card pairs a phone to this desktop (live wiring = S3).
 //
 // This is the "L1 button page to configure/manage the remote phone" bao named.
-// Plan: vault/ctrl/plan-remote-window.md.
+// Plan: vault/ctrl/plans/remote/plan-remote-window.md.
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { loadInstalledPacks } from '@/lib/feature-pack';
 import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';

@@ -1,9 +1,11 @@
 # ctrl-skills
 
-Official **CTRL skills for Irisy** (the Hermes Agent that is Irisy's brain). These
-teach the agent *how to drive CTRL's `:17873` gate tools* — smart-tables and
-multi-sheet bases, notes, feature packs — so the guidance stays owned by CTRL
-and in sync with the tools, instead of drifting in a hand-edited local copy.
+Official **CTRL skills for Irisy and Coding/OpenCode**. These teach each agent
+how to drive CTRL's `:17873` gate tools—smart tables, explicit LibreOffice
+selections, and research-first feature-pack creation with backend discovery,
+real-software verification, semantic artifact checks, and truthful previews—so
+the guidance stays owned by CTRL and in sync with the tools instead of drifting
+in a local copy.
 
 ## Why this exists (the architecture)
 
@@ -34,8 +36,10 @@ Two paths from this one source:
 ctrl-skills/
 ├── skills.sh.json                 # Skills Hub category groupings
 └── skills/
+    ├── create-feature-pack/SKILL.md # Coding/OpenCode pack lifecycle
+    ├── office/SKILL.md              # LibreOffice explicit-selection reads
     └── vault-smart-tables/
-        ├── SKILL.md               # required
+        ├── SKILL.md                 # required
         ├── references/            # supporting detail
         └── templates/             # copy-ready scaffolds
 ```

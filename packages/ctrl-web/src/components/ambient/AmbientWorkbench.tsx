@@ -31,7 +31,8 @@ import styles from './AmbientHome.module.css';
 export function AmbientWorkbench(): ReactElement {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const isHome = pathname === '/' || pathname === '/irisy' || pathname === '';
+  const isHome =
+    pathname === '/' || pathname === '/irisy' || pathname === '/coding' || pathname === '';
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile sidebar drawer
@@ -44,10 +45,25 @@ export function AmbientWorkbench(): ReactElement {
   const [openCodingNonce, setOpenCodingNonce] = useState(0);
   const [openMobileNonce, setOpenMobileNonce] = useState(0);
   const [irisyNonce, setIrisyNonce] = useState(0);
+
   // Which sidebar entry is highlighted on home ('irisy' | 'discover' |
   // `${connectorId}.${toolName}`). Routes own their own nav, so off-home
   // nothing is highlighted.
   const [navSel, setNavSel] = useState<string>('irisy');
+
+  // Legacy deep links select an actor in the persistent dialog; they never
+  // mount a second chat surface. (ADR-003 frontend §8.5/§8.6 v38)
+  useEffect(() => {
+    if (pathname === '/coding') {
+      setView('chat');
+      setNavSel('coding');
+      setOpenCodingNonce((nonce) => nonce + 1);
+    } else if (pathname === '/irisy') {
+      setView('chat');
+      setNavSel('irisy');
+      setIrisyNonce((nonce) => nonce + 1);
+    }
+  }, [pathname]);
 
   // Active provider feeds the Sidebar model chip + AmbientHome top
   // display. Decision 0007 §display (2026-06-19): single hook replaces

@@ -2,7 +2,13 @@
 title: 0008 — UI 质感统一 pass（2026-06-13 夜）+ 一个待 bao 决策的架构点
 tags: [strategy, ui, ux, design-system, texture, decision-needed]
 updated: 2026-06-13
+kind: strategy-snapshot
+status: snapshot
+as_of: 2026-06-13
+authority: ../adrs/003-frontend.md
 ---
+
+> **历史策略快照（非权威）**：本文只记录 `as_of` 日期的一次 UI 调整与判断。正文中的布局、锁定和待决策项不是当前实施要求；当前前端架构只见 ADR-003，范围与进度见 `GOAL.md`。
 
 # 0008 — UI 质感统一 pass
 

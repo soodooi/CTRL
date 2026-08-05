@@ -30,6 +30,11 @@ pub struct RecordSourceSpec {
     /// for the kind (records get the full comparison + membership set).
     #[serde(default)]
     pub operators: Option<Vec<Operator>>,
+    /// Manifest-owned public guidance for an unavailable local source. The
+    /// downstream child text is never forwarded because it may contain private
+    /// transport details. (ADR-010 communication § transports v13)
+    #[serde(default)]
+    pub unavailable_message: Option<String>,
     /// How to mint a per-call bearer from the stored security token (reuses the
     /// v40 `auth.token_exchange` shape). Absent → the stored token is sent as the
     /// bearer directly (a connector that issues a usable long-lived token).
@@ -40,16 +45,42 @@ pub struct RecordSourceSpec {
     pub produce: Option<ProduceSpec>,
 }
 
-/// Where and how to read the row array.
+/// Where and how to read the row array. Exactly one transport is declared by
+/// the manifest schema. The optional fields keep this Rust consumer tolerant,
+/// while `transport()` fails closed if unvalidated data reaches it.
+/// (ADR-002 substrate §14 v78)
 #[derive(Debug, Clone, Deserialize)]
 pub struct QuerySpec {
-    pub endpoint: String,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub mcp_tool: Option<String>,
     #[serde(default = "default_get")]
     pub method: String,
     /// Key or dotted path to the array in the response (`"holdings"` /
     /// `"data.items"`); `""` = the response body IS the array.
     #[serde(default)]
     pub array_at: String,
+}
+
+/// The two governed read transports share one caller-visible Source contract.
+/// (ADR-002 substrate §14 v78)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryTransport<'a> {
+    Http(&'a str),
+    Mcp(&'a str),
+}
+
+impl QuerySpec {
+    pub fn transport(&self) -> Result<QueryTransport<'_>, SourceError> {
+        match (self.endpoint.as_deref(), self.mcp_tool.as_deref()) {
+            (Some(endpoint), None) => Ok(QueryTransport::Http(endpoint)),
+            (None, Some(tool)) => Ok(QueryTransport::Mcp(tool)),
+            _ => Err(SourceError::InvalidSpec(
+                "record_source.query must declare exactly one of endpoint or mcp_tool".into(),
+            )),
+        }
+    }
 }
 
 /// One field's schema + how to read it out of a response item.
@@ -177,6 +208,11 @@ pub enum SourceError {
     Http(String),
     Status(u16),
     Parse(String),
+    InvalidSpec(String),
+    DownstreamUnavailable(String),
+    /// MCP-backed sources are read-only until the governed native write path is
+    /// implemented. (ADR-002 substrate §14 v78)
+    McpReadOnly,
     /// The spec declares no `produce` but a write was attempted.
     NoProduce,
 }
@@ -187,6 +223,11 @@ impl std::fmt::Display for SourceError {
             SourceError::Http(e) => write!(f, "connector request failed: {e}"),
             SourceError::Status(c) => write!(f, "connector returned HTTP {c}"),
             SourceError::Parse(e) => write!(f, "connector response parse failed: {e}"),
+            SourceError::InvalidSpec(e) => write!(f, "invalid record source: {e}"),
+            SourceError::DownstreamUnavailable(message) => write!(f, "{message}"),
+            SourceError::McpReadOnly => {
+                write!(f, "local MCP-backed sources are read-only in this version")
+            }
             SourceError::NoProduce => write!(f, "this source declares no produce (write) verb"),
         }
     }
@@ -240,9 +281,21 @@ pub async fn fetch(
     base_url: &str,
     security_token: &str,
 ) -> Result<ManifestConnectorSource, SourceError> {
+    // HTTP fetch remains transport-specific behind the generic Source contract.
+    // (ADR-002 substrate §14 v78)
+    let endpoint = match spec.query.transport()? {
+        QueryTransport::Http(endpoint) => endpoint,
+        QueryTransport::Mcp(_) => {
+            return Err(SourceError::InvalidSpec(
+                "HTTP fetch cannot execute an mcp_tool query".into(),
+            ))
+        }
+    };
     let client = http_client()?;
     let jwt = bearer(&client, spec, base_url, security_token).await?;
-    let url = join(base_url, &spec.query.endpoint);
+    // The HTTP endpoint is available only after the fail-closed transport split.
+    // (ADR-002 substrate §14 v78)
+    let url = join(base_url, endpoint);
     let resp = client
         .get(&url)
         .header("Authorization", format!("Bearer {jwt}"))
@@ -253,6 +306,61 @@ pub async fn fetch(
         return Err(SourceError::Status(resp.status().as_u16()));
     }
     let body: Value = resp.json().await.map_err(|e| SourceError::Parse(e.to_string()))?;
+    Ok(ManifestConnectorSource::from_json(spec, &body))
+}
+
+/// Convert the private downstream MCP result into the same generic source used
+/// by HTTP connectors. Only one text content block containing JSON is accepted;
+/// tool errors, mixed content, malformed JSON, or a missing declared row array
+/// fail closed instead of becoming an empty-success response.
+/// (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+pub fn from_mcp_result(
+    spec: &RecordSourceSpec,
+    result: &Value,
+) -> Result<ManifestConnectorSource, SourceError> {
+    if result
+        .get("isError")
+        .or_else(|| result.get("is_error"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Err(SourceError::DownstreamUnavailable(
+            spec.unavailable_message
+                .clone()
+                .unwrap_or_else(|| "local source is unavailable or returned an error".into()),
+        ));
+    }
+
+    let content = result
+        .get("content")
+        .and_then(Value::as_array)
+        .ok_or_else(|| SourceError::Parse("MCP result has no content array".into()))?;
+    if content.len() != 1 {
+        return Err(SourceError::Parse(
+            "MCP result must contain exactly one text payload".into(),
+        ));
+    }
+    let block = &content[0];
+    if block.get("type").and_then(Value::as_str) != Some("text") {
+        return Err(SourceError::Parse(
+            "MCP result payload must be text JSON".into(),
+        ));
+    }
+    let text = block
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| SourceError::Parse("MCP text payload is missing text".into()))?;
+    let body: Value = serde_json::from_str(text).map_err(|e| SourceError::Parse(e.to_string()))?;
+    let rows = if spec.query.array_at.is_empty() {
+        Some(&body)
+    } else {
+        dig(&body, &spec.query.array_at)
+    };
+    if !matches!(rows, Some(Value::Array(_))) {
+        return Err(SourceError::Parse(
+            "MCP JSON payload does not contain the declared row array".into(),
+        ));
+    }
     Ok(ManifestConnectorSource::from_json(spec, &body))
 }
 
@@ -267,6 +375,11 @@ pub async fn produce(
     input: &Map<String, Value>,
     secret_of: &(dyn Fn(&str) -> Option<String> + Send + Sync),
 ) -> Result<Value, SourceError> {
+    // The local MCP transport has no native, reviewed write implementation yet.
+    // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+    if matches!(spec.query.transport()?, QueryTransport::Mcp(_)) {
+        return Err(SourceError::McpReadOnly);
+    }
     let ps = spec.produce.as_ref().ok_or(SourceError::NoProduce)?;
     let body = build_produce_body(&ps.body, input, secret_of);
     let client = http_client()?;
@@ -686,7 +799,9 @@ mod tests {
         let manifest: Value = serde_json::from_slice(&bytes).unwrap();
         let spec = spec_from_manifest(&manifest).expect("record_source present");
 
-        assert_eq!(spec.query.endpoint, "/api/v1/portfolio/holdings");
+        // Legacy HTTP manifests remain compatible with the transport union.
+        // (ADR-002 substrate §14 v78)
+        assert_eq!(spec.query.endpoint.as_deref(), Some("/api/v1/portfolio/holdings"));
         assert_eq!(spec.query.array_at, "holdings");
         assert_eq!(spec.fields.len(), 6);
         // token_exchange reused from auth (manifest field names mapped over).
@@ -722,5 +837,85 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let err = fetch(&ghostfolio_spec(), &format!("http://{addr}"), "bad").await.unwrap_err();
         assert!(matches!(err, SourceError::Status(401)));
+    }
+
+    // The private MCP result is parsed through the same Source contract and
+    // rejects unavailable, malformed, and write attempts.
+    // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+    fn mcp_spec() -> RecordSourceSpec {
+        serde_json::from_value(serde_json::json!({
+            "kind": "record",
+            "query": { "mcp_tool": "read_selected_context", "array_at": "rows" },
+            "unavailable_message": "Enable the companion and select content, then retry.",
+            "fields": [
+                { "key": "document_id", "label": "Document", "type": "text" },
+                { "key": "content", "label": "Content", "type": "text" }
+            ]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn mcp_query_spec_parses_and_maps_text_json_through_shared_source() {
+        let spec = mcp_spec();
+        assert_eq!(
+            spec.query.transport().unwrap(),
+            QueryTransport::Mcp("read_selected_context")
+        );
+        let result = serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": "{\"rows\":[{\"document_id\":\"doc-1\",\"content\":\"selected\"}]}"
+            }],
+            "isError": false
+        });
+        let source = from_mcp_result(&spec, &result).unwrap();
+        let out = source
+            .query(
+                &QueryRequest {
+                    filters: vec![Filter {
+                        field: "content".into(),
+                        op: Operator::Contains,
+                        value: "lect".into(),
+                    }],
+                    ..Default::default()
+                },
+                now(),
+            )
+            .unwrap();
+        assert_eq!(out.match_count, 1);
+        assert_eq!(out.rows[0]["document_id"], "doc-1");
+    }
+
+    #[test]
+    fn mcp_errors_and_malformed_payloads_fail_closed() {
+        let spec = mcp_spec();
+        let unavailable = serde_json::json!({
+            "content": [{ "type": "text", "text": "bridge unavailable" }],
+            "isError": true
+        });
+        let error = from_mcp_result(&spec, &unavailable).unwrap_err();
+        assert!(matches!(
+            &error,
+            SourceError::DownstreamUnavailable(message)
+                if message == "Enable the companion and select content, then retry."
+        ));
+        assert!(!error.to_string().contains("bridge unavailable"));
+
+        let malformed = serde_json::json!({
+            "content": [{ "type": "text", "text": "{\"unexpected\":[]}" }]
+        });
+        assert!(matches!(
+            from_mcp_result(&spec, &malformed),
+            Err(SourceError::Parse(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn mcp_backed_source_rejects_produce() {
+        let err = produce(&mcp_spec(), "", "", &Map::new(), &|_| None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, SourceError::McpReadOnly));
     }
 }

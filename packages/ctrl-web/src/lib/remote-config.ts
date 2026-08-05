@@ -1,10 +1,10 @@
 // Remote-window config — which functions a remotely-connected phone may see,
-// and whether it can act or only view (ADR-005 §2 remote co-view + ADR-004 §1
-// capability-scoping). v1 persists client-side (localStorage); the kernel-side
+// and whether it can act or only view (ADR-005 irisy § remote-view v36). v1
+// persists client-side (localStorage); the kernel-side
 // ACL that ENFORCES this for a remote session lands in a later slice (S4). Kept
 // swappable behind load/save so that migration is a one-file change.
 //
-// Design/plan: vault/ctrl/plan-remote-window.md (option B, bao 2026-07-07).
+// Design/plan: vault/ctrl/plans/remote/plan-remote-window.md (option B, bao 2026-07-07).
 
 /** Per-function remote permission. `visible` = shows in the phone's bottom nav;
  *  `canAct` = the phone may trigger writes/actions (else read-only view). */

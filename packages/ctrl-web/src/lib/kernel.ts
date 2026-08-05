@@ -197,6 +197,18 @@ export interface McpSummary {
   icon: Icon | string;
 }
 
+export interface LocalSkill {
+  name: string;
+  description?: string;
+  path: string;
+}
+
+/** Hot-scan the local plain-text skill authority. No UI cache: newly installed
+ * skills appear on the next open. (ADR-003 frontend §8.5 v39;
+ * ADR-003 frontend §8.6 v39) */
+export const listLocalSkills = (query?: string): Promise<LocalSkill[]> =>
+  invoke<LocalSkill[]>('list_local_skills', { query });
+
 export const listMcps = (): Promise<McpSummary[]> =>
   invoke('list_mcps');
 
@@ -755,9 +767,10 @@ export const vaultList = (
 ): Promise<string[]> => gateInvoke('vault_list', { subdir: subdir ?? null });
 
 /** Reset Irisy's engine session so the next turn re-hydrates from the current
- *  transcript (ADR-005 §8.4). Best-effort — no-op in browser dev (no kernel). */
+ * transcript. Reset failure must propagate: callers serialize owner changes
+ * and block dispatch rather than reuse stale scope. (ADR-005 irisy §11 v38) */
 export const resetEngine = (): Promise<void> =>
-  invoke<void>('irisy_reset_engine').catch(() => undefined);
+  invoke<void>('irisy_reset_engine');
 
 export const vaultSearch = (
   query: string,

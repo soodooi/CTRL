@@ -2,7 +2,13 @@
 title: 0004 — 个人知识库架构：地基 + 收集/整理/归纳/应用 闭环
 tags: [strategy, knowledge-base, architecture]
 updated: 2026-06-13
+kind: strategy-snapshot
+status: snapshot
+as_of: 2026-06-13
+authority: ../adrs/002-substrate.md + ../adrs/003-frontend.md
 ---
+
+> **历史策略快照（非权威）**：本文只记录 `as_of` 日期的研究与判断。正文中的“锁定”“必须”“待实现”均为当时语境，不是当前实施要求；当前产品意图见 `PRODUCT.md`，架构见 owning module ADR，范围与进度见 `GOAL.md`。
 
 # 0004 — 个人知识库架构
 

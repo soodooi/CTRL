@@ -151,12 +151,7 @@ pub async fn irisy_chat_stream(
 /// Returns `None` if the skill is not found or unreadable; the caller
 /// falls back to no system prompt so Irisy still works on a stale id.
 async fn load_skill_system_prompt(skill_id: &str) -> Option<String> {
-    let skills =
-        crate::commands::skills::list_local_skills(Some(skill_id.to_string()))
-            .await
-            .ok()?;
-    let skill = skills.into_iter().find(|s| s.name == skill_id)?;
-    std::fs::read_to_string(&skill.path).ok()
+    crate::commands::skills::load_local_skill_by_name(skill_id).await
 }
 
 /// Mode-specific system header. Coding turns name the project dir so a

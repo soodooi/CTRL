@@ -2,7 +2,13 @@
 title: 0009 — Irisy 输入框上方「功能包栏」的业务职责规划
 tags: [strategy, irisy, mcp, action-bar, ambient, information-architecture]
 updated: 2026-06-13
+kind: strategy-snapshot
+status: snapshot
+as_of: 2026-06-13
+authority: ../adrs/003-frontend.md + ../adrs/005-irisy.md
 ---
+
+> **历史策略快照（非权威）**：本文只记录 `as_of` 日期的 action-bar 研究。正文中的“必须”“已锁”和落地顺序均为当时语境，不是当前实施要求；当前 UI 与 Irisy 决定只见 ADR-003/ADR-005，范围与进度见 `GOAL.md`。
 
 # 0009 — 输入框上方「功能包栏」要履行哪些业务
 

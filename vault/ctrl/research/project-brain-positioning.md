@@ -29,4 +29,4 @@ vault 是真相 → 变化时**自动重新派生** AGENTS.md/MCP → agent 读�
 - recall:FTS5 + embeddings 本地 RAG
 - supply:派生 AGENTS.md + vault-knowledge MCP(CTRL 有 mcp.spawn)
 
-> 详见 [decisions/0001](../decisions/0001-ctrl-is-the-project-brain-not-a-coding-tool.md);memory `project-ctrl-is-project-brain-context-layer`。完整调研报告(含 Meta/Gartner/HumanLayer sources)在那条 memory。
+> 详见 [decisions/0001](../history/decisions/0001-ctrl-is-the-project-brain-not-a-coding-tool.md);memory `project-ctrl-is-project-brain-context-layer`。完整调研报告(含 Meta/Gartner/HumanLayer sources)在那条 memory。

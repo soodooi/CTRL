@@ -1,0 +1,1 @@
+Read only the explicit Writer text selection or Calc multi-cell range through CTRL's private authenticated Companion bridge. No document write operation is enabled.

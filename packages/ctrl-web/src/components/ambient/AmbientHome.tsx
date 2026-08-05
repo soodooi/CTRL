@@ -20,7 +20,7 @@
 // UI registry (lib/ui-registry) so the agent / user / content-type can
 // invoke any UI piece on demand.
 
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -41,7 +41,6 @@ import { cleanReplyText, humanizePiError } from '@/lib/irisy-render-filter';
 // the chat box. A role = (persona, toolset, knowledge base); switching swaps
 // the persona WITHOUT resetting the conversation. Linked to the L1 scene.
 import {
-  ROLES,
   DEFAULT_ROLE_ID,
   roleById,
   roleForScene,
@@ -52,15 +51,17 @@ import {
   type RoleId,
   type Role,
 } from '@/lib/roles';
-// ADR-005 irisy §8.6 (unified terminal-essence frontend): the shared agent
-// ("shell") selector — embedded hermes vs a BYO-CLI driver (Codex / Claude
-// Code). ONE component across every surface, backed by the shared active-agent
-// store, so the agent axis is consistent everywhere.
-import { AgentSelector } from '@/components/agent/AgentSelector';
+// Irisy functional roles still compose the Assistant prompt internally. They
+// are not a second user-visible identity axis. (ADR-005 irisy §11 v38)
+import { SessionTabs } from '@/components/irisy/SessionTabs';
+import {
+  deriveSessionLabel,
+  ensureActiveIrisySession,
+  migrateLegacySingleSession,
+  useIrisySessionsStore,
+} from '@/lib/irisy-sessions';
+import { transcriptKey } from '@/lib/transcript-store';
 import { FeedbackButton } from '@/components/ambient/FeedbackButton';
-// ADR-005 irisy §8.4/§8.6 — durable transcript: the ambient conversation
-// survives reload / engine crash and re-hydrates.
-import { loadTranscript, saveTranscript } from '@/lib/transcript-store';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
 import { type Capability } from '@/lib/capability-catalog';
@@ -94,7 +95,7 @@ import {
 import { NotesSurface } from '@/components/notes/NotesSurface';
 import { TablesPanel } from '@/components/tables/TablesPanel';
 import { TodayView } from '@/components/today/TodayView';
-import { CodingScene } from '@/components/coding/CodingScene';
+import { CodingAgentPanel } from '@/components/coding/CodingAgentPanel';
 import { Sidebar, type SidebarSection } from './Sidebar';
 import { WorkspacePanel } from './WorkspacePanel';
 import {
@@ -105,12 +106,13 @@ import {
   resetEngine,
   captureScreenAndOcr,
   listMcps,
+  listLocalSkills,
   gateInvoke,
+  type LocalSkill,
   type IrisySessionTurn,
   type McpSummary,
 } from '@/lib/kernel';
 import { listSmartTables } from '@/lib/smart-tables';
-import { useActiveAgentStore } from '@/lib/active-agent';
 import { platform } from '@/lib/bridge';
 import { SessionHistory } from './SessionHistory';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
@@ -248,6 +250,14 @@ interface SlashCommand {
 }
 
 type Surface = 'empty' | 'chat' | 'chat-part';
+type AgentMode = 'irisy' | 'coding';
+
+const AGENT_MODE_STORAGE_KEY = 'ctrl:active-agent-mode:v1';
+
+function initialAgentMode(): AgentMode {
+  if (typeof window === 'undefined') return 'irisy';
+  return window.localStorage.getItem(AGENT_MODE_STORAGE_KEY) === 'coding' ? 'coding' : 'irisy';
+}
 
 // A sidebar tool click, forwarded from the shell. `nonce` makes each
 // request a fresh object so the effect runs exactly once per click.
@@ -333,21 +343,118 @@ export function AmbientHome({
   activeSection,
   settingUp = false,
 }: AmbientHomeProps): ReactElement {
-  const [input, setInput] = useState('');
-  // Durable transcript (§8.4): the ambient conversation re-hydrates on load.
-  // An empty restore falls through to the greeting; a "new chat" that sets
-  // messages back to [] persists [] via the save effect below (clears storage).
-  const [messages, setMessages] = useState<Msg[]>(() =>
-    loadTranscript<Msg>('ambient', isAmbientMsg),
-  );
+  // One user-visible Irisy, two isolated identity controllers. Internal mode
+  // values preserve storage compatibility; the UI says Assistant/Coding and
+  // never exposes engine brands as identities. (ADR-001 spine §4 v21;
+  // ADR-003 frontend §8.5/§8.6 v39; ADR-005 irisy §8.7/§11 v38)
+  const [agentMode, setAgentMode] = useState<AgentMode>(initialAgentMode);
+  const selectAgentMode = useCallback((nextMode: AgentMode): void => {
+    setAgentMode(nextMode);
+    if (nextMode === 'coding') {
+      setScene(null);
+      setPart(null);
+    }
+  }, []);
   useEffect(() => {
-    saveTranscript('ambient', messages);
-  }, [messages]);
+    window.localStorage.setItem(AGENT_MODE_STORAGE_KEY, agentMode);
+  }, [agentMode]);
+
+  const [localSkills, setLocalSkills] = useState<LocalSkill[]>([]);
+  const [assistantSkillId, setAssistantSkillId] = useState(() =>
+    typeof window === 'undefined'
+      ? ''
+      : window.localStorage.getItem('ctrl:irisy-assistant-skill:v1') ?? '',
+  );
+  const assistantSkillIdRef = useRef(assistantSkillId);
+  const [assistantSkillSwitching, setAssistantSkillSwitching] = useState(false);
+  useEffect(() => {
+    void listLocalSkills().then(setLocalSkills).catch(() => setLocalSkills([]));
+  }, []);
+  useEffect(() => {
+    assistantSkillIdRef.current = assistantSkillId;
+    if (assistantSkillId) {
+      window.localStorage.setItem('ctrl:irisy-assistant-skill:v1', assistantSkillId);
+    } else {
+      window.localStorage.removeItem('ctrl:irisy-assistant-skill:v1');
+    }
+  }, [assistantSkillId]);
+
+  const [input, setInput] = useState('');
+  const sessions = useIrisySessionsStore((state) => state.sessions);
+  const activeSessionId = useIrisySessionsStore((state) => state.activeSessionId);
+  const setSessionMessages = useIrisySessionsStore((state) => state.setMessages);
+  const createSession = useIrisySessionsStore((state) => state.createSession);
+  const renameSession = useIrisySessionsStore((state) => state.renameSession);
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const messages = (activeSession?.messages ?? []).filter(isAmbientMsg);
+  const setMessages = useCallback(
+    (updater: Msg[] | ((previous: Msg[]) => Msg[])): void => {
+      if (!activeSessionId) return;
+      setSessionMessages(activeSessionId, (previous) => {
+        const ambient = previous.filter(isAmbientMsg);
+        return typeof updater === 'function' ? updater(ambient) : updater;
+      });
+    },
+    [activeSessionId, setSessionMessages],
+  );
+
+  useEffect(() => {
+    migrateLegacySingleSession(transcriptKey('ambient'));
+    ensureActiveIrisySession();
+  }, []);
+
   const [streaming, setStreaming] = useState(false);
   // Abort handle for the in-flight turn so the composer's Stop button can cancel
   // streaming WITHOUT locking the textarea. bao (feedback, repeated): never block
   // input while Irisy is responding — see memory feedback-irisy-never-block-input.
   const abortRef = useRef<AbortController | null>(null);
+  // Every transcript-owner change queues one runtime reset. A send awaits the
+  // queue, so a newly visible Irisy transcript can never race the stale ACP
+  // owner from the prior tab. (ADR-005 irisy §8.7/§11 v38)
+  const engineResetRef = useRef<Promise<void>>(Promise.resolve());
+  const queueEngineReset = useCallback((): Promise<void> => {
+    const next = engineResetRef.current
+      .catch(() => undefined)
+      .then(() => resetEngine());
+    engineResetRef.current = next;
+    return next;
+  }, []);
+  const selectAssistantSkill = useCallback((skillId: string): void => {
+    if (skillId === assistantSkillIdRef.current || assistantSkillSwitching) return;
+    setAssistantSkillSwitching(true);
+    abortRef.current?.abort();
+    setStreaming(false);
+    // A pinned playbook primes only a fresh Assistant ACP owner. Commit the
+    // visible selection after reset; Coding's separate owner is untouched.
+    // (ADR-001 spine §4 v21; ADR-005 irisy §11 v38)
+    void queueEngineReset()
+      .then(() => {
+        assistantSkillIdRef.current = skillId;
+        setAssistantSkillId(skillId);
+      })
+      .catch((error: unknown) => {
+        setMessages((previous) => [
+          ...previous,
+          {
+            id: `a-skill-${Date.now()}`,
+            role: 'assistant',
+            content: `I could not change the active skill: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ]);
+      })
+      .finally(() => setAssistantSkillSwitching(false));
+  }, [assistantSkillSwitching, queueEngineReset, setMessages]);
+  // A tab switch changes Irisy's ACP context owner. Abort only Irisy's active
+  // transport and re-prime from the selected durable transcript; Coding's
+  // independent controller is untouched.
+  const previousSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const previous = previousSessionIdRef.current;
+    previousSessionIdRef.current = activeSessionId;
+    if (!activeSessionId || previous === null || previous === activeSessionId) return;
+    abortRef.current?.abort();
+    void queueEngineReset().catch(() => undefined);
+  }, [activeSessionId, queueEngineReset]);
   // Conversation history drawer (reads hermes session store). bao: Irisy must
   // have a history entry — restores what the AmbientHome rewrite dropped.
   const [showHistory, setShowHistory] = useState(false);
@@ -356,17 +463,13 @@ export function AmbientHome({
   // The feature pack shown in the scene panel (right column); Irisy stays in
   // the left column. Independent of `part` (Irisy's own morphed output).
   const [scene, setScene] = useState<
-    FeaturePack | 'today' | 'notes' | 'tables' | 'coding' | 'mobile' | null
+    FeaturePack | 'today' | 'notes' | 'tables' | 'mobile' | null
   >(
     null,
   );
-  // The active Irisy role (ADR-003 §8.6): drives the persona shipped per turn.
-  // Shown + switchable in the switcher above the chat box; switching it never
-  // touches `messages` (conversation persists). Linked to the L1 scene below.
+  // The active internal Assistant role composes prompt/resource defaults. It is
+  // not shown as a competing user identity. (ADR-005 irisy §11 v38)
   const [roleId, setRoleId] = useState<RoleId>(DEFAULT_ROLE_ID);
-  // Role switcher is a dropdown (irisy-roles.md sec.3): collapsed it shows the
-  // active role; open it lists the role pool. `roleMenuOpen` drives that.
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
   // Installed feature packs, shown next to the role dropdown so the role's
   // toolset is visible (bao 2026-06-26: feature packs must show too). The role
   // decides which ones are in scope via packsForRole. Kept in sync on change.
@@ -384,6 +487,36 @@ export function AmbientHome({
   // the user naming the file. Stable callback so TablesPanel's effect is calm.
   const [activeTablePath, setActiveTablePath] = useState<string | null>(null);
   const onActiveTable = useCallback((p: string | null) => setActiveTablePath(p), []);
+  const assistantResourceKey = useMemo(() => {
+    if (scene && typeof scene === 'object') {
+      return `pack:${scene.id}:${scene.kbDir ?? ''}:role:${roleId}`;
+    }
+    const table = scene === 'tables' ? activeTablePath ?? '' : '';
+    return `scene:${scene ?? 'current'}:${table}:role:${roleId}`;
+  }, [activeTablePath, roleId, scene]);
+  const previousAssistantResourceKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (agentMode !== 'irisy') return;
+    const previous = previousAssistantResourceKeyRef.current;
+    previousAssistantResourceKeyRef.current = assistantResourceKey;
+    if (previous === null || previous === assistantResourceKey) return;
+    abortRef.current?.abort();
+    setStreaming(false);
+    // Resource is a real prompt/capability scope. Re-prime only Assistant when
+    // its scene, selected table, pack KB, or internal role binding changes.
+    // Coding's owner remains untouched. (ADR-003 frontend §8.6 v39;
+    // ADR-005 irisy §11 v38)
+    void queueEngineReset().catch((error: unknown) => {
+      setMessages((messages) => [
+        ...messages,
+        {
+          id: `a-resource-${Date.now()}`,
+          role: 'assistant',
+          content: `I could not switch to this resource: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ]);
+    });
+  }, [agentMode, assistantResourceKey, queueEngineReset, setMessages]);
   const [isNarrow, setIsNarrow] = useState(false);
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
@@ -428,14 +561,14 @@ export function AmbientHome({
   }, []);
 
   const newChat = useCallback(() => {
-    setMessages([]);
+    createSession();
     setPart(null);
     setScene(null);
     setInput('');
-    // ADR-005 §8.4 — the engine's memory must follow the UI: a fresh chat gets a
-    // fresh engine session (else it silently carries the old conversation).
-    void resetEngine();
-  }, []);
+    // The new Irisy tab gets a fresh engine session; Coding's singleton and
+    // workspace sessions remain untouched. (ADR-005 irisy §8.7 v37)
+    void queueEngineReset().catch(() => undefined);
+  }, [createSession, queueEngineReset]);
 
   // Load a past hermes session into the conversation view. bao: Irisy must have
   // history. Resetting the engine makes the next turn re-hydrate from THIS loaded
@@ -451,8 +584,8 @@ export function AmbientHome({
     setPart(null);
     setScene(null);
     setShowHistory(false);
-    void resetEngine();
-  }, []);
+    void queueEngineReset().catch(() => undefined);
+  }, [queueEngineReset, setMessages]);
 
   // ADR-005 §8.6.2 fork / checkpoint (Claude /rewind · Gemini /restore): rewind to
   // a past turn and continue in a NEW direction. Truncate the transcript to that
@@ -464,8 +597,8 @@ export function AmbientHome({
       return idx >= 0 ? prev.slice(0, idx + 1) : prev;
     });
     setPart(null);
-    void resetEngine();
-  }, []);
+    void queueEngineReset().catch(() => undefined);
+  }, [queueEngineReset, setMessages]);
 
   // Auto-grow the composer to its content (cheap, works in every webview).
   const autoGrow = useCallback(() => {
@@ -509,12 +642,31 @@ export function AmbientHome({
   const send = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    // Serialize visible transcript ownership with ACP ownership before creating
+    // the turn. A failed reset leaves the draft intact and does not dispatch
+    // against the prior session. (ADR-005 irisy §8.7 v37)
+    try {
+      await engineResetRef.current;
+    } catch (error: unknown) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `a-reset-${Date.now()}`,
+          role: 'assistant',
+          content: `I could not switch Irisy to this session: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ]);
+      return;
+    }
     // ADR-005 irisy § persona-shell v5 (2026-06-09): never block input — if a
     // turn is still streaming, abort it and send the new one (parity with the
     // docked IrisyChat) instead of silently dropping the keystroke.
     abortRef.current?.abort();
     setInput('');
     const userMsg: Msg = { id: `u-${Date.now()}`, role: 'user', content: trimmed };
+    if (activeSessionId && !messages.some((message) => message.role === 'user')) {
+      renameSession(activeSessionId, deriveSessionLabel(trimmed));
+    }
     // Readiness gate (bao 2026-06-12: check the env + guide, don't go silent):
     // with no model wired, don't stream into the void — the user would just
     // see a spinner forever if the backend hangs. Irisy speaks up and opens
@@ -648,7 +800,10 @@ export function AmbientHome({
       // `error`. Surface it (parity with IrisyChat) instead of `continue`-ing
       // past it, which froze the bubble or misreported "No AI provider".
       let streamError = false;
-      for await (const chunk of engineTransport().stream(history, { signal: ctrl.signal })) {
+      for await (const chunk of engineTransport().stream(history, {
+        signal: ctrl.signal,
+        skill_id: assistantSkillIdRef.current || undefined,
+      })) {
         if (typeof chunk !== 'string' && chunk?.error) {
           if (chunk.error === 'aborted') break;
           const { summary } = humanizePiError(String(chunk.error), modelLabel);
@@ -765,7 +920,7 @@ export function AmbientHome({
         abortRef.current = null;
       }
     }
-  }, [messages, streaming, hasProvider, onOpenPicker, scene, roleId, activeTablePath]);
+  }, [messages, streaming, hasProvider, onOpenPicker, scene, roleId, activeTablePath, activeSessionId, renameSession]);
 
   // Stop the in-flight turn (composer Stop button / Esc). Aborts the transport's
   // stream; the textarea stays editable throughout so the user never loses input.
@@ -1031,19 +1186,21 @@ export function AmbientHome({
     if (openTablesNonce > 0) setScene('tables');
   }, [openTablesNonce]);
   useEffect(() => {
-    if (openCodingNonce > 0) setScene('coding');
+    if (openCodingNonce > 0) {
+      setAgentMode('coding');
+      setScene(null);
+      setPart(null);
+    }
   }, [openCodingNonce]);
   useEffect(() => {
     if (openMobileNonce > 0) setScene('mobile');
   }, [openMobileNonce]);
 
-  // L1 ↔ role linkage (ADR-003 §8.6 lock 5): opening an L1 scene auto-selects
-  // its linked role (Notes/Tables -> Knowledge Base, Coding -> Code Companion).
-  // A scene with no linked role leaves the user's manual choice untouched.
-  // Switching the role here does NOT clear `messages` — conversation persists.
+  // L1 ↔ Irisy role linkage applies only to Irisy-owned workspace contexts.
+  // Coding is a separate actor mode, not an Irisy role.
   useEffect(() => {
     let linked: RoleId | null = null;
-    if (scene === 'notes' || scene === 'tables' || scene === 'coding') {
+    if (scene === 'notes' || scene === 'tables') {
       linked = roleForScene(scene);
     } else if (scene && typeof scene === 'object') {
       // A feature pack opened in the scene panel -> switch to the role that
@@ -1063,6 +1220,7 @@ export function AmbientHome({
     // is the dedicated New-chat button's job. (bao 2026-06-21: switching L1 back
     // to Irisy was clearing the chat — over-eager newChat.)
     if (irisyNonce > 0) {
+      setAgentMode('irisy');
       setScene(null);
       setPart(null);
     }
@@ -1158,10 +1316,10 @@ export function AmbientHome({
   // `:` jump-to-module (a terminal go-to). Whole-input token, like the slash menu.
   const jumpTargets: { cmd: string; label: string; go: () => void }[] = [
     // Core module workspaces (the platform's own faces).
-    { cmd: ':chat', label: 'Conversation', go: () => setScene(null) },
+    { cmd: ':chat', label: 'Irisy conversation', go: () => { setAgentMode('irisy'); setScene(null); } },
     { cmd: ':notes', label: 'Notes', go: () => setScene('notes') },
     { cmd: ':tables', label: 'Tables', go: () => setScene('tables') },
-    { cmd: ':coding', label: 'Coding', go: () => setScene('coding') },
+    { cmd: ':coding', label: 'Irisy Coding conversation', go: () => { setAgentMode('coding'); setScene(null); setPart(null); } },
     { cmd: ':today', label: 'Today', go: () => setScene('today') },
     // Installed feature packs are jumpable too (registry-driven, ADR-005 §8.6.2).
     ...installedPacks.map((p) => ({
@@ -1272,142 +1430,130 @@ export function AmbientHome({
           ))}
         </div>
       )}
-      <textarea
-        ref={inputRef}
-        className={styles.input}
-        data-workspace-shortcuts="when-empty"
-        value={input}
-        rows={1}
-        placeholder="Ask Irisy, or pick something above…"
-        onChange={(e) => {
-          setInput(e.target.value);
-          setHistIdx(null);
-          setSlashSel(0);
-          setMentionSel(0);
-          setJumpSel(0);
-          autoGrow();
-        }}
-        onKeyDown={(e) => {
-          if (isImeComposing(e)) return;
-          // `:` jump menu navigation (ADR-005 §8.6.2).
-          if (jumpOpen) {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              setJumpSel((s) => (s + 1) % jumpMatches.length);
-              return;
+      <div className={styles.composerInputRow}>
+        <textarea
+          ref={inputRef}
+          className={styles.input}
+          data-workspace-shortcuts="when-empty"
+          value={input}
+          rows={1}
+          placeholder="Ask Irisy…"
+          onChange={(e) => {
+            setInput(e.target.value);
+            setHistIdx(null);
+            setSlashSel(0);
+            setMentionSel(0);
+            setJumpSel(0);
+            autoGrow();
+          }}
+          onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
+            // `:` jump menu navigation (ADR-005 §8.6.2).
+            if (jumpOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setJumpSel((s) => (s + 1) % jumpMatches.length);
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setJumpSel((s) => (s - 1 + jumpMatches.length) % jumpMatches.length);
+                return;
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                const chosen = jumpMatches[jumpActive];
+                if (chosen) applyJump(chosen);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setInput('');
+                return;
+              }
             }
-            if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              setJumpSel((s) => (s - 1 + jumpMatches.length) % jumpMatches.length);
-              return;
+            // Slash menu navigation (ADR-005 §8.6.2).
+            if (slashOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSlashSel((s) => (s + 1) % slashMatches.length);
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSlashSel((s) => (s - 1 + slashMatches.length) % slashMatches.length);
+                return;
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                const chosen = slashMatches[slashActive];
+                if (chosen) applySlash(chosen);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setInput('');
+                return;
+              }
             }
-            if (e.key === 'Enter' || e.key === 'Tab') {
-              e.preventDefault();
-              const chosen = jumpMatches[jumpActive];
-              if (chosen) applyJump(chosen);
-              return;
+            // `@`-mention menu navigation.
+            if (mentionOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setMentionSel((s) => (s + 1) % mentionMatches.length);
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setMentionSel((s) => (s - 1 + mentionMatches.length) % mentionMatches.length);
+                return;
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                const chosen = mentionMatches[mentionActive];
+                if (chosen) applyMention(chosen.label);
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setInput(input.replace(/@[^\s@]*$/, ''));
+                return;
+              }
             }
-            if (e.key === 'Escape') {
+            // ↑/↓ history recall — walk previous inputs when the caret is at the
+            // very start (so multi-line editing still works normally).
+            const ta = e.currentTarget;
+            const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
+            if (!slashOpen && userHistory.length > 0 && e.key === 'ArrowUp' && (input === '' || atStart)) {
               e.preventDefault();
-              setInput('');
-              return;
-            }
-          }
-          // Slash menu navigation (ADR-005 §8.6.2).
-          if (slashOpen) {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              setSlashSel((s) => (s + 1) % slashMatches.length);
-              return;
-            }
-            if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              setSlashSel((s) => (s - 1 + slashMatches.length) % slashMatches.length);
-              return;
-            }
-            if (e.key === 'Enter' || e.key === 'Tab') {
-              e.preventDefault();
-              const chosen = slashMatches[slashActive];
-              if (chosen) applySlash(chosen);
-              return;
-            }
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              setInput('');
-              return;
-            }
-          }
-          // `@`-mention menu navigation.
-          if (mentionOpen) {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault();
-              setMentionSel((s) => (s + 1) % mentionMatches.length);
-              return;
-            }
-            if (e.key === 'ArrowUp') {
-              e.preventDefault();
-              setMentionSel((s) => (s - 1 + mentionMatches.length) % mentionMatches.length);
-              return;
-            }
-            if (e.key === 'Enter' || e.key === 'Tab') {
-              e.preventDefault();
-              const chosen = mentionMatches[mentionActive];
-              if (chosen) applyMention(chosen.label);
-              return;
-            }
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              setInput(input.replace(/@[^\s@]*$/, ''));
-              return;
-            }
-          }
-          // ↑/↓ history recall — walk previous inputs when the caret is at the
-          // very start (so multi-line editing still works normally).
-          const ta = e.currentTarget;
-          const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
-          if (!slashOpen && userHistory.length > 0 && e.key === 'ArrowUp' && (input === '' || atStart)) {
-            e.preventDefault();
-            const next = histIdx === null ? userHistory.length - 1 : Math.max(0, histIdx - 1);
-            setHistIdx(next);
-            setInput(userHistory[next] ?? '');
-            requestAnimationFrame(autoGrow);
-            return;
-          }
-          if (!slashOpen && histIdx !== null && e.key === 'ArrowDown') {
-            e.preventDefault();
-            if (histIdx >= userHistory.length - 1) {
-              setHistIdx(null);
-              setInput('');
-            } else {
-              const next = histIdx + 1;
+              const next = histIdx === null ? userHistory.length - 1 : Math.max(0, histIdx - 1);
               setHistIdx(next);
               setInput(userHistory[next] ?? '');
+              requestAnimationFrame(autoGrow);
+              return;
             }
-            requestAnimationFrame(autoGrow);
-            return;
-          }
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            setHistIdx(null);
-            void send(input);
-          }
-        }}
-      />
-      {streaming ? (
-        <button
-          type="button"
-          className={styles.send}
-          onClick={stopGeneration}
-          title="Stop generating"
-          aria-label="Stop generating"
-        >
-          ■
-        </button>
-      ) : (
-        <button type="submit" className={styles.send} disabled={!input.trim()}>
-          ↑
-        </button>
-      )}
+            if (!slashOpen && histIdx !== null && e.key === 'ArrowDown') {
+              e.preventDefault();
+              if (histIdx >= userHistory.length - 1) {
+                setHistIdx(null);
+                setInput('');
+              } else {
+                const next = histIdx + 1;
+                setHistIdx(next);
+                setInput(userHistory[next] ?? '');
+              }
+              requestAnimationFrame(autoGrow);
+              return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              setHistIdx(null);
+              void send(input);
+            }
+          }}
+        />
+      </div>
+      <PersonaRow />
       </form>
     </div>
   );
@@ -1598,68 +1744,51 @@ export function AmbientHome({
       : activeRole.toolset.length === 0
       ? []
       : installedPacks.filter((p) => activeRole.toolset.includes(p.id));
-  const personaRow = (
-    // Order (bao 2026-06-28): agent FIRST, then persona, then feature packs.
-    <div className={styles.quickRow} role="group" aria-label="Irisy agent, persona, and feature packs">
-      <AgentSelector showNote={false} />
-      <div className={styles.roleSwitch}>
-        <button
-          type="button"
-          className={styles.roleChip}
-          aria-haspopup="menu"
-          aria-expanded={roleMenuOpen}
-          onClick={() => setRoleMenuOpen((o) => !o)}
-          title={activeRole.hint}
-        >
-          <span className={styles.modelDot} data-on />
-          <span className={styles.roleChipLabel}>{activeRole.label}</span>
-          <span className={styles.roleCaret}>▾</span>
-        </button>
-        {roleMenuOpen && (
-          <>
-            <div
-              className={styles.roleBackdrop}
-              onClick={() => setRoleMenuOpen(false)}
-            />
-            <div className={styles.roleMenu} role="menu">
-              {ROLES.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={r.id === roleId}
-                  className={`${styles.roleItem} ${
-                    r.id === roleId ? styles.roleItemActive : ''
-                  }`}
-                  onClick={() => {
-                    setRoleId(r.id);
-                    setRoleMenuOpen(false);
-                  }}
-                >
-                  <span className={styles.roleItemLabel}>{r.label}</span>
-                  <span className={styles.roleItemHint}>{r.hint}</span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-      {contextPacks.length > 0 && (
-        <div className={styles.packChips} aria-label="Feature packs for this L1">
-          {contextPacks.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={styles.packChip}
-              onClick={() => setScene(p)}
-              title={p.summary ?? p.name}
-            >
-              {p.icon ? <span className={styles.packIcon}>{p.icon}</span> : null}
-              <span className={styles.packChipLabel}>{p.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
+  const assistantResourceLabel =
+    contextPacks[0]?.name
+    ?? (scene === 'today'
+      ? 'Today'
+      : scene === 'notes'
+      ? 'Notes'
+      : scene === 'tables'
+      ? 'Smart Tables'
+      : scene === 'mobile'
+      ? 'Mobile'
+      : 'Current context');
+  function PersonaRow(): ReactElement {
+    return (
+    // Identity, Resource, Skill are real runtime axes. Engine/persona names are
+    // deliberately absent from ordinary chrome. (ADR-003 frontend §8.6 v39)
+    <div className={styles.quickRow} role="group" aria-label="Irisy identity, resource, and skill">
+      <select
+        className={styles.agentModeSelect}
+        aria-label="Irisy identity"
+        value="irisy"
+        onChange={(event) => selectAgentMode(event.target.value as AgentMode)}
+      >
+        <option value="irisy">Assistant</option>
+        <option value="coding">Coding</option>
+      </select>
+      <span className={styles.contextChip} title="Resource is derived from the active content and explicit selection">
+        Resource: {assistantResourceLabel}
+      </span>
+      <select
+        className={styles.agentModeSelect}
+        aria-label="Skill"
+        value={assistantSkillId}
+        disabled={assistantSkillSwitching}
+        title={
+          assistantSkillId
+            ? localSkills.find((skill) => skill.name === assistantSkillId)?.description
+            : 'Let Irisy choose a skill for each request'
+        }
+        onChange={(event) => selectAssistantSkill(event.target.value)}
+      >
+        <option value="">Skill: Auto</option>
+        {localSkills.map((skill) => (
+          <option key={skill.name} value={skill.name}>{skill.name}</option>
+        ))}
+      </select>
       {/* State on this same single line, pushed right (bao 2026-07-07: only one
           line above the input). Version lives on the CTRL wordmark. */}
       <span className={styles.statusGrow} />
@@ -1668,8 +1797,24 @@ export function AmbientHome({
         <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
         {streaming ? 'Working' : 'Ready'}
       </span>
+      {streaming ? (
+        <button
+          type="button"
+          className={styles.send}
+          onClick={stopGeneration}
+          title="Stop generating"
+          aria-label="Stop generating"
+        >
+          ■
+        </button>
+      ) : (
+        <button type="submit" className={styles.send} disabled={!input.trim()} aria-label="Send">
+          ↑
+        </button>
+      )}
     </div>
-  );
+    );
+  }
 
   // Running version lives on the first line next to the CTRL wordmark — one
   // place, visible at a glance for "is this build fresh" (bao 2026-06-13: was
@@ -1711,8 +1856,6 @@ export function AmbientHome({
       ? 'Notes'
       : scene === 'tables'
       ? 'Smart Tables'
-      : scene === 'coding'
-      ? 'Coding'
       : scene === 'mobile'
       ? 'Mobile'
       : scene
@@ -1769,27 +1912,25 @@ export function AmbientHome({
           data-tauri-drag-region
           style={isNarrow ? undefined : { width: irisyWidth }}
         >
-          <span className={styles.irisyName} data-tauri-drag-region>
-            <span className={styles.irisyDot} data-on={hasProvider || undefined} />
-            Irisy
-          </span>
           <div className={styles.statusActions}>
             {/* Persona switcher moved above the composer (bao 2026-06-26) —
                 see `personaRow`. The status bar keeps only chrome actions. */}
-            <button
-              type="button"
-              className={styles.statusBtn}
-              onClick={() => setShowHistory(true)}
-              title="Conversation history"
-              aria-label="Conversation history"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                <path d="M3 3v5h5" />
-                <path d="M12 7v5l3 2" />
-              </svg>
-            </button>
-            {view === 'chat' && messages.length > 0 && (
+            {agentMode === 'irisy' && (
+              <button
+                type="button"
+                className={styles.statusBtn}
+                onClick={() => setShowHistory(true)}
+                title="Conversation history"
+                aria-label="Conversation history"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+              </button>
+            )}
+            {agentMode === 'irisy' && view === 'chat' && messages.length > 0 && (
               <>
                 <button
                   type="button"
@@ -1900,18 +2041,7 @@ export function AmbientHome({
                     </button>
                     <TablesPanel onActiveTable={onActiveTable} />
                   </div>
-                ) : scene === 'coding' ? (
-                  <div className={styles.scenePane}>
-                    <button
-                      type="button"
-                      className={styles.sceneClose}
-                      onClick={() => setScene(null)}
-                      aria-label="Close Coding"
-                    >
-                      ✕
-                    </button>
-                    <CodingScene />
-                  </div>
+
                 ) : scene === 'mobile' ? (
                   <div className={styles.scenePane}>
                     <button
@@ -2023,21 +2153,32 @@ export function AmbientHome({
                   </div>
                 ) : (
                   <div className={styles.welcome}>
-                    <h1 className={styles.greeting}>Hi, I&rsquo;m Irisy.</h1>
-                    {settingUp && (
-                      <p className={styles.setupHint} role="status">
-                        Setting up CTRL… updating your tools.
+                    <h1 className={styles.greeting}>
+                      {agentMode === 'coding' ? 'Irisy is ready to code.' : 'Hi, I’m Irisy.'}
+                    </h1>
+                    {agentMode === 'coding' ? (
+                      <p className={styles.setupHint}>
+                        The selected workspace, Coding sessions, attachments, and the governed
+                        create-feature-pack skill stay isolated in the dialog on the right.
                       </p>
+                    ) : (
+                      <>
+                        {settingUp && (
+                          <p className={styles.setupHint} role="status">
+                            Setting up CTRL… updating your tools.
+                          </p>
+                        )}
+                        {!hasProvider && (
+                          <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
+                            Connect your AI to start →
+                          </button>
+                        )}
+                        <WorkspacePanel
+                          onRun={runWorkspaceAction}
+                          onConnectTools={() => onView('discover')}
+                        />
+                      </>
                     )}
-                    {!hasProvider && (
-                      <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
-                        Connect your AI to start →
-                      </button>
-                    )}
-                    <WorkspacePanel
-                      onRun={runWorkspaceAction}
-                      onConnectTools={() => onView('discover')}
-                    />
                   </div>
                 )}
               </div>
@@ -2063,12 +2204,17 @@ export function AmbientHome({
             <div
               className={styles.irisyCol}
               style={isNarrow ? undefined : { width: irisyWidth }}
+              aria-label="Persistent agent dialog"
             >
-              <div className={styles.chatPane}>
+              <div className={styles.chatPane} hidden={agentMode !== 'irisy'}>
+                <SessionTabs />
                 {conversation}
-                {personaRow}
                 {composer}
               </div>
+              <CodingAgentPanel
+                active={agentMode === 'coding'}
+                onAgentModeChange={selectAgentMode}
+              />
             </div>
           </div>
         </motion.div>

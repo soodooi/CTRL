@@ -463,7 +463,7 @@ python3 scripts/validate-skill-workflow.py
 python3 scripts/smoke-editable-decks.py
 ```
 
-详见 [`docs/preset-previews/README.md`](docs/preset-previews/README.md)。维护说明与 `CHROME_PATH`、`PREVIEW_VIEWPORT` 见该文件。
+The preview directory is generated at `docs/preset-previews/`; maintenance controls such as `CHROME_PATH` and `PREVIEW_VIEWPORT` are documented in the capture scripts.
 
 ### 深色主题 · Dark themes
 

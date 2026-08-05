@@ -17,11 +17,11 @@
 // store) — this store only carries the PER-SESSION message list attachments end
 // up rendered into, not a duplicate of either.
 //
-// Coding mode (`forceMode='coding'`) is explicitly OUT of this store — Coding's
-// own workspace-keyed conversation state already lives in CodingScene.tsx's
-// `messagesByWorkspace` and is untouched by this change. Only the Personal
-// ("assistant") mode Irisy surface gains multi-session tabs.
-// (ADR-005 irisy §8.7 v32; ADR-003 frontend §8.6 v36)
+// Coding mode is explicitly OUT of this store. Coding's workspace-keyed
+// conversation state lives in coding-sessions.ts and CodingAgentPanel.tsx.
+// Only Irisy's persistent dialog mode uses this store.
+// (ADR-003 frontend §8.5 v38) (ADR-003 frontend §8.6 v38)
+// (ADR-005 irisy §8.7 v37) (ADR-005 irisy §11 v37)
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -31,14 +31,20 @@ export interface IrisyTextMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  streaming: boolean;
+  /** Persisted messages are always restored as non-streaming. Older ambient
+   *  transcripts predate this display hint, so it remains optional.
+   *  (ADR-003 frontend §8.6 v38) */
+  streaming?: boolean;
 }
 
 export interface IrisyCustomDisplayMessage {
   id: string;
   role: 'custom';
   custom: IrisyCustomMessage;
-  streaming: boolean;
+  /** Persisted messages are always restored as non-streaming. Older ambient
+   *  transcripts predate this display hint, so it remains optional.
+   *  (ADR-003 frontend §8.6 v38) */
+  streaming?: boolean;
 }
 
 export type IrisySessionMessage = IrisyTextMessage | IrisyCustomDisplayMessage;

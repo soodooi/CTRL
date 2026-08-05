@@ -325,10 +325,10 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
 
   // A visible session tab and the ACP engine must move together. Resetting
   // here makes the next prompt re-prime from the newly active transcript
-  // instead of leaking context from the previous tab. (ADR-005 irisy §8.7 v32)
+  // instead of leaking context from the previous tab. (ADR-005 irisy §8.7 v38)
   useEffect(() => {
     if (!sessionsEnabled || !activeSessionId) return;
-    void resetEngine();
+    void resetEngine().catch(() => undefined);
   }, [activeSessionId, sessionsEnabled]);
 
   const [status, setStatus] = useState<IrisyStatus | null>(null);

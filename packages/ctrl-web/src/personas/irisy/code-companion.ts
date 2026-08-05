@@ -5,9 +5,10 @@
 // prompt is English-only; runnable commands MUST be emitted as fenced
 // ```bash / ```sh blocks so the UI can offer one-click send-to-terminal.
 //
-// This persona was born TS-side first to avoid blocking the initial ship on a
-// parallel document edit. Promote it to
-// `vault/ctrl/specs/personas/irisy/code-companion.md` when it stabilizes.
+// The accepted Irisy role and coding-engine boundaries own this persona;
+// keep this prompt aligned there rather than creating a parallel specification.
+// (ADR-005 irisy § role-boundary v36) (ADR-005 irisy §
+// terminal-essence-dialog v36).
 
 import type { LLMMessage } from '@/lib/llm-transport';
 

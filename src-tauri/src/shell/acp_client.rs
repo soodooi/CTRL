@@ -404,7 +404,12 @@ mcp_pack_provision with mcp_id=<pack-id> (the 'Set up' button), which brings the
 app up in Docker AND auto-authenticates, one click, no manual URL or token. So \
 when the user asks whether you can use such a pack, offer to Set it up; never \
 demand an instance URL or API token — that manual path is only a last-resort \
-fallback for an instance they already run themselves. \
+fallback for an instance they already run themselves. LibreOffice is different \
+under the Companion contract (ADR-005 irisy §10 v35): call source_describe first \
+with source_id=\"ctrl-libreoffice\" and, if the source is unavailable, relay its \
+manifest-owned unavailable_message exactly. \
+NEVER request or suggest a bridge URL, bridge token, environment variable, or \
+manual credential setup for LibreOffice. \
 You also have web_search(query) for facts / news / research you don't already \
 hold — call it instead of guessing. It uses any BYOK keyed provider you have \
 configured (Tavily / Brave / Serper / Exa) and otherwise a keyless full-web \
@@ -618,30 +623,28 @@ fn ensure_hermes_soul() {
     let _ = std::fs::write(&soul, HERMES_SOUL);
 }
 
-/// MCP-bus passthrough (ADR-002 substrate §1.8 v23): expose CTRL's kernel MCP server
-/// (:17873, streamable-http + bearer) to hermes so the 3 faces (MCP / API /
-/// Skills) reach the agent. Gated on the kernel having published its port +
-/// token (set by kernel_supervisor); absent in unit tests -> no passthrough.
-fn build_mcp_servers(caller: &str) -> Vec<Value> {
+/// MCP-bus passthrough (ADR-001 spine §4 v21; ADR-010 communication
+/// § trust-domains v11): expose CTRL's governed kernel MCP server to an ACP
+/// owner with an explicit caller and optional capability intent. Assistant and
+/// Coding share transport only; their gate projections remain distinct.
+fn build_mcp_servers(caller: &str, intent: Option<&str>) -> Vec<Value> {
     let token = match std::env::var("CTRL_KERNEL_MCP_TOKEN") {
         Ok(t) if !t.is_empty() => t,
         _ => return Vec::new(),
     };
     let port = std::env::var("CTRL_KERNEL_MCP_PORT").unwrap_or_else(|_| "17873".to_string());
+    let mut headers = vec![
+        json!({ "name": "Authorization", "value": format!("Bearer {token}") }),
+        json!({ "name": "x-ctrl-caller", "value": caller }),
+    ];
+    if let Some(intent) = intent.filter(|value| !value.is_empty()) {
+        headers.push(json!({ "name": "x-ctrl-intent", "value": intent }));
+    }
     vec![json!({
         "type": "http",
         "name": "ctrl",
         "url": format!("http://127.0.0.1:{port}/mcp"),
-        // Stamp the caller so the gate recognizes it as first-party and
-        // projects the matching toolset. Without this header the gate
-        // normalizes the caller to "external" and applies the minimal scope
-        // (system tools only), so the engine could not reach vault.*/coding
-        // tools at all (ADR-010 communication § trust-domains v3, SC3 —
-        // intent-scoped projection; visibility::default_for_caller).
-        "headers": [
-            { "name": "Authorization", "value": format!("Bearer {token}") },
-            { "name": "x-ctrl-caller", "value": caller }
-        ]
+        "headers": headers
     })]
 }
 
@@ -696,7 +699,9 @@ fn select_allow_outcome(req: &Value) -> Value {
 /// `session/prompt`, streaming `agent_thought_chunk` / `agent_message_chunk`
 /// exactly like hermes/codex/claude-code) — so it needs no wrapper adapter.
 fn engine_argv(engine: &str) -> Result<Vec<String>> {
-    use crate::shell::agent_installer::{read_manifest, AgentName, HERMES_PYTHON};
+    use crate::shell::agent_installer::{
+        read_manifest, AgentName, HERMES_MCP_SPEC, HERMES_PYTHON,
+    };
     match engine {
         "" | "hermes" => {
             let manifest =
@@ -710,19 +715,25 @@ fn engine_argv(engine: &str) -> Result<Vec<String>> {
             if argv[0].ends_with("uvx") && !argv.iter().any(|a| a == "--python") {
                 argv.splice(1..1, ["--python".to_string(), HERMES_PYTHON.to_string()]);
             }
-            // CRITICAL: `hermes-agent[acp]` does NOT depend on the `mcp` package, so
-            // in the spawned environment hermes's `_MCP_AVAILABLE` is False and
-            // `register_mcp_servers` SILENTLY returns [] — the CTRL gate we pass via
-            // `session/new.mcpServers` never connects and the brain sees ZERO CTRL
-            // tools. Inject `--with mcp>=1.24` so the ephemeral uvx env has the MCP
-            // client SDK (streamable-http API, `_MCP_NEW_HTTP`). Verified end-to-end
-            // 2026-06-28: without it register returns 0 tools; with it all 24 load.
-            if argv[0].ends_with("uvx")
-                && !argv
-                    .windows(2)
-                    .any(|w| w[0] == "--with" && w[1].starts_with("mcp"))
-            {
-                argv.splice(1..1, ["--with".to_string(), "mcp>=1.24".to_string()]);
+            // CRITICAL: `hermes-agent[acp]` does NOT depend on the `mcp` package.
+            // Normalize stale manifests as well as inject missing dependencies:
+            // Hermes 0.18 checks `streamablehttp_client`, which MCP 2.x removed,
+            // and otherwise silently registers zero CTRL tools.
+            // (ADR-002 substrate §1.8 v23)
+            let mcp_spec_index = argv.windows(2).position(|w| {
+                w[0] == "--with"
+                    && (w[1] == "mcp"
+                        || w[1].starts_with("mcp<")
+                        || w[1].starts_with("mcp>")
+                        || w[1].starts_with("mcp="))
+            });
+            if let Some(index) = mcp_spec_index {
+                argv[index + 1] = HERMES_MCP_SPEC.to_string();
+            } else if argv[0].ends_with("uvx") {
+                argv.splice(
+                    1..1,
+                    ["--with".to_string(), HERMES_MCP_SPEC.to_string()],
+                );
             }
             Ok(argv)
         }
@@ -804,16 +815,19 @@ impl AcpClient {
     /// into the adapter subprocess env below so Codex / Claude reuse the key the
     /// user already configured in CTRL instead of a second sign-in (§8.8).
     pub async fn start(engine: &str, provider_env: &BTreeMap<String, String>) -> Result<Self> {
-        Self::start_in(engine, provider_env, None).await
+        Self::start_in_scoped(engine, provider_env, None, "hermes", None).await
     }
 
-    /// Like `start`, but with an explicit working directory instead of the
-    /// vault root — the Coding module's `opencode` engine runs in whichever
-    /// workspace the user selected (ADR-001 spine §4 v16), not Irisy's vault dir.
-    pub async fn start_in(
+    /// Start an ACP owner with an explicit gate projection. Runtime/session
+    /// ownership and capability visibility remain actor-specific even though
+    /// all owners use the same ACP transport and :17873 gate.
+    /// (ADR-001 spine §4 v21; ADR-005 irisy §11 v38)
+    pub async fn start_in_scoped(
         engine: &str,
         provider_env: &BTreeMap<String, String>,
         cwd_override: Option<&std::path::Path>,
+        gate_caller: &str,
+        gate_intent: Option<&str>,
     ) -> Result<Self> {
         let engine = if engine.is_empty() { "hermes" } else { engine };
         set_diagnostics_state(AcpDiagnosticsState::Starting);
@@ -968,18 +982,11 @@ impl AcpClient {
             }
         }
 
-        // §1.8 (ADR-002 substrate §1.8 v23): try with the MCP-bus passthrough;
-        // if hermes rejects the entry (format / transport), retry WITHOUT it
-        // so the agent still runs (worst case = no CTRL tools, never a
-        // disabled hermes).
-        // Caller stamp for gate visibility scoping (ADR-010 § trust-domains v3
-        // SC3): every ACP-driven engine (hermes/codex/claude-code/opencode,
-        // ADR-001 spine §4 v16) gets the SAME "hermes" stamp, granting
-        // `FIRST_PARTY_DOMAINS` — this is a superset of the Coding-specific
-        // `OPENCODE_CODING_INTENT` used by the file-projected
-        // `.mcp.json`/`opencode.json` path (ADR-002 §1B.1), so opencode-over-
-        // ACP needs no new first-party caller id.
-        let mcp_servers = build_mcp_servers("hermes");
+        // Project the actor-specific gate scope into the fresh ACP session.
+        // The selected cwd, caller, and intent are immutable for this owner;
+        // changing Resource or Skill resets the owner before another prompt.
+        // (ADR-001 spine §4 v21; ADR-005 irisy §11 v38)
+        let mcp_servers = build_mcp_servers(gate_caller, gate_intent);
         let had_mcp = !mcp_servers.is_empty();
         let cwd_str = cwd.to_string_lossy().to_string();
         let ns = match s
@@ -1046,14 +1053,6 @@ impl AcpClient {
     /// it to the selected engine and resets the singleton on a switch.
     pub fn engine(&self) -> &str {
         &self.engine_id
-    }
-
-    /// The connected engine's negotiated multi-modal prompt capabilities
-    /// (ADR-002 substrate §1.8.6 v75) — a caller UI (e.g. CodingScene's
-    /// drag-drop) may use this to decide whether to even offer an attachment
-    /// affordance, though `prompt()` degrades gracefully regardless.
-    pub fn prompt_caps(&self) -> PromptCapsSnapshot {
-        self.prompt_caps
     }
 
     /// Run one prompt turn; `on_event` receives streamed events as they arrive.
@@ -1963,6 +1962,42 @@ done"#,
         }
     }
 
+    // LibreOffice is an application Companion, not a manually configured
+    // connector. Irisy must give only manifest-owned user action and must never
+    // expose the private transport boundary. (ADR-005 irisy §11 v37;
+    // ADR-010 communication § transports v13)
+    #[test]
+    fn libreoffice_brief_uses_companion_guidance_without_private_credentials() {
+        for required in [
+            "source_id=\"ctrl-libreoffice\"",
+            "source_describe",
+            "manifest-owned unavailable_message",
+        ] {
+            assert!(CTRL_CAPABILITY_BRIEF.contains(required), "missing {required}");
+        }
+        let manifest: serde_json::Value = serde_json::from_slice(
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../packages/ctrl-mcps/optional/ctrl-libreoffice/manifest.json"
+            )),
+        )
+        .unwrap();
+        let public_guidance = manifest
+            .pointer("/record_source/unavailable_message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap();
+        assert!(
+            !CTRL_CAPABILITY_BRIEF.contains(public_guidance),
+            "manifest guidance must not be duplicated in the compiled brief"
+        );
+        for forbidden in [
+            "CTRL_LIBREOFFICE_BRIDGE_URL",
+            "CTRL_LIBREOFFICE_BRIDGE_TOKEN",
+        ] {
+            assert!(!CTRL_CAPABILITY_BRIEF.contains(forbidden), "leaked {forbidden}");
+        }
+    }
+
     /// Real end-to-end: spawn `opencode acp` via the kernel client (the SAME
     /// AcpClient::start_in path coding_chat.rs uses), run one streamed prompt
     /// turn in a temp workspace. Requires `opencode` on PATH + a configured
@@ -1970,15 +2005,21 @@ done"#,
     /// test was written (initialize -> session/new -> session/prompt streamed
     /// agent_thought_chunk then agent_message_chunk then stopReason=end_turn).
     /// Run: `cargo test opencode_acp_smoke -- --ignored --nocapture`
-    // (ADR-001 spine §4 v16; ADR-003 frontend §8.5 v32; ADR-005 irisy §8.7 v30)
+    // (ADR-001 spine §4 v21; ADR-003 frontend §8.5 v39; ADR-005 irisy §11 v38)
     #[tokio::test]
     #[ignore]
     async fn opencode_acp_smoke() {
         let dir = tempfile::TempDir::new().expect("tempdir");
         let env = BTreeMap::new();
-        let mut client = AcpClient::start_in("opencode", &env, Some(dir.path()))
-            .await
-            .expect("start opencode acp");
+        let mut client = AcpClient::start_in_scoped(
+            "opencode",
+            &env,
+            Some(dir.path()),
+            "coding",
+            Some(crate::kernel::projector::OPENCODE_CODING_INTENT),
+        )
+        .await
+        .expect("start opencode acp");
         let mut answer = String::new();
         let turns = vec![(
             "user".to_string(),

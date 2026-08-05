@@ -108,6 +108,11 @@ impl AgentName {
 pub const HERMES_VERSION: &str = "0.18.0";
 pub const HERMES_ACP_SPEC: &str = "hermes-agent[acp]==0.18.0";
 pub const HERMES_ONESHOT_SPEC: &str = "hermes-agent==0.18.0";
+/// Hermes 0.18 checks the legacy `streamablehttp_client` export that MCP 2.x
+/// removed before it considers Streamable HTTP available. Keep this runtime
+/// dependency on the latest compatible 1.x line until Hermes adopts MCP 2.x.
+/// (ADR-002 substrate §1.8 v23)
+pub const HERMES_MCP_SPEC: &str = "mcp>=1.24,<2";
 /// hermes-agent requires Python >=3.11,<3.14; pin one so uv fetches a managed
 /// CPython instead of the system Python (3.9 on macOS). See HERMES_ACP_SPEC use.
 pub const HERMES_PYTHON: &str = "3.12";
@@ -289,18 +294,18 @@ fn install_via_uvx(name: &AgentName) -> Result<AgentManifest> {
         // to resolve. uv fetches a managed CPython on first run. Verified via
         // scripts/probes/hermes-acp-probe.mjs 2026-06-17 (ADR-002 §1.8.4).
         //
-        // `--with mcp>=1.24`: hermes-agent[acp] does NOT declare the `mcp` client
-        // SDK as a dependency, so without this the spawned env has
-        // `_MCP_AVAILABLE=False` and hermes silently drops the CTRL gate we pass
-        // via session/new.mcpServers — the brain sees ZERO CTRL tools (verified
-        // end-to-end 2026-06-28). acp_client re-injects this at spawn too, for
-        // stale manifests; keep both in sync.
+        // `--with mcp>=1.24,<2`: hermes-agent[acp] does NOT declare the `mcp`
+        // client SDK as a dependency. Hermes 0.18 also checks the legacy
+        // `streamablehttp_client` export removed by MCP 2.x, so an open upper
+        // bound silently drops the CTRL gate. Keep this synchronized with the
+        // spawn-time normalization for stale manifests.
+        // (ADR-002 substrate §1.8 v23)
         entry_cmd: vec![
             uvx.display().to_string(),
             "--python".into(),
             HERMES_PYTHON.into(),
             "--with".into(),
-            "mcp>=1.24".into(),
+            HERMES_MCP_SPEC.into(),
             "--from".into(),
             HERMES_ACP_SPEC.into(),
             "hermes-acp".into(),

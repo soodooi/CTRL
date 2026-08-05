@@ -101,6 +101,13 @@
     "provision": { "type": "object" },
     "auth": { "type": "object" },
     "record_source": { "$ref": "#/$defs/recordSource" },
+    "projection": {
+      "type": "object",
+      "properties": {
+        "coding_workspace": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
     "knowledge_base": { "type": "string", "minLength": 1 },
     "tools": { "type": "array", "items": { "type": "object" } }
   },
@@ -232,12 +239,28 @@
         "kind": { "enum": ["record", "text", "blob"], "default": "record" },
         "query": {
           "type": "object",
-          "required": ["endpoint"],
           "properties": {
             "endpoint": { "type": "string", "minLength": 1 },
+            "mcp_tool": { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
             "method": { "enum": ["GET", "POST"], "default": "GET" },
             "array_at": { "type": "string", "default": "" }
           },
+          "oneOf": [
+            {
+              "required": ["endpoint"],
+              "properties": {
+                "endpoint": true,
+                "mcp_tool": false
+              }
+            },
+            {
+              "required": ["mcp_tool"],
+              "properties": {
+                "endpoint": false,
+                "mcp_tool": true
+              }
+            }
+          ],
           "additionalProperties": true
         },
         "fields": {
@@ -258,6 +281,11 @@
         "operators": {
           "type": "array",
           "items": { "enum": ["eq", "neq", "contains", "gt", "lt", "gte", "lte", "before", "after", "within", "is", "has_tag"] }
+        },
+        "unavailable_message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
         },
         "produce": {
           "type": "object",

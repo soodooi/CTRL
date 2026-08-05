@@ -64,9 +64,16 @@ export interface McpManifest {
   description?: string | { short: string; long?: string };
   variant?: McpVariant;
   pattern?: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
-  server?: { type?: 'local'; command: string; args?: string[] };
+  server?: {
+    type?: 'local';
+    command: string;
+    args?: string[];
+  };
   actions?: Array<Record<string, unknown>>;
   record_source?: Record<string, unknown>;
+  projection?: {
+    coding_workspace?: boolean;
+  };
   ui_surface?: UiSurface;
   [key: string]: unknown;
 }

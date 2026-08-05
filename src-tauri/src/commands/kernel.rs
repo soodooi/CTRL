@@ -74,13 +74,10 @@ fn manifest_to_summary(manifest: &serde_json::Value, id: &str) -> McpSummary {
     }
 }
 
-/// Scan a mcp directory and return summaries for every well-formed
-/// child. Malformed entries (missing manifest.json, bad JSON, missing id)
-/// are skipped silently — they'll surface in trace logs but shouldn't
-/// crash the keyboard render.
-///
-/// pub(crate) so kernel::provider::http_endpoint /tool/<name>
-/// dispatcher reuses it (ADR-002 substrate § brain v7 §1.1, 2026-06-04).
+/// Scan the install directory using each child directory basename as the
+/// authoritative pack id. A malformed or missing manifest still yields a
+/// removable fallback entry so PWA uninstall can stop orphaned Actors.
+/// (ADR-004 cap §1 v13)
 pub(crate) fn list_installed_in(dir: &Path) -> Vec<McpSummary> {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -92,26 +89,32 @@ pub(crate) fn list_installed_in(dir: &Path) -> Vec<McpSummary> {
         if !path.is_dir() {
             continue;
         }
+        // Directory identity, not mutable manifest metadata, owns lifecycle.
+        // (ADR-004 cap §1 v13)
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if validate_mcp_id(&id).is_err() {
+            tracing::warn!(?path, "skipping installed directory with unsafe id");
+            continue;
+        }
         let manifest_path = path.join("manifest.json");
-        let bytes = match fs::read(&manifest_path) {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-        let manifest: serde_json::Value = match serde_json::from_slice(&bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(?path, error = %e, "skipping mcp with malformed manifest");
-                continue;
+        let manifest = fs::read(&manifest_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+        // Parsed metadata may enrich the card but cannot replace the directory
+        // identity; malformed metadata still leaves an uninstallable card.
+        // (ADR-004 cap §1 v13)
+        match manifest {
+            Some(manifest) => {
+                if manifest.get("id").and_then(|value| value.as_str()) != Some(id.as_str()) {
+                    tracing::warn!(?path, %id, "installed manifest id drifted from directory authority");
+                }
+                out.push(manifest_to_summary(&manifest, &id));
             }
-        };
-        let id = match manifest.get("id").and_then(|v| v.as_str()) {
-            Some(s) => s.to_string(),
             None => {
-                tracing::warn!(?path, "skipping mcp with missing manifest.id");
-                continue;
+                tracing::warn!(?path, %id, "installed manifest unavailable; exposing removable fallback");
+                out.push(manifest_to_summary(&serde_json::json!({}), &id));
             }
-        };
-        out.push(manifest_to_summary(&manifest, &id));
+        }
     }
     out
 }
@@ -1146,8 +1149,10 @@ async fn run_mcp_invoke(
 
     let host = kernel.runtime.mcp_host.clone();
     let invoke_args = args.input.clone();
+    // Tauri/PWA callers share the public proxy boundary; private adapter
+    // children remain internal. (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
     let result = host
-        .invoke(server_id, tool_name, invoke_args)
+        .proxy_invoke(server_id, tool_name, invoke_args)
         .await
         .map_err(|e| format!("mcp invoke failed (server={server_id}, tool={tool_name}): {e}"))?;
 
@@ -1188,10 +1193,12 @@ pub async fn mcp_call(
     args: McpCallArgs,
     kernel: State<'_, KernelHandle>,
 ) -> Result<serde_json::Value, String> {
+    // Direct Tauri calls obey the same public proxy boundary as :17873.
+    // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
     kernel
         .runtime
         .mcp_host
-        .invoke(&args.server_id, &args.tool_name, args.args)
+        .proxy_invoke(&args.server_id, &args.tool_name, args.args)
         .await
         .map_err(|e| format!("mcp_call failed: {e}"))
 }
@@ -1200,7 +1207,9 @@ pub async fn mcp_call(
 pub async fn list_mcp_servers(
     kernel: State<'_, KernelHandle>,
 ) -> Result<Vec<crate::kernel::mcp_host::McpServerDescriptor>, String> {
-    Ok(kernel.runtime.mcp_host.list_installed().await)
+    // Private adapter Actors are not a PWA-discoverable MCP surface.
+    // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13)
+    Ok(kernel.runtime.mcp_host.list_proxy_installed().await)
 }
 
 /// Open the dedicated workspace window for a mcp activation.
@@ -1303,9 +1312,19 @@ pub(crate) fn write_pack_file(
 #[tauri::command]
 pub async fn uninstall_mcp(
     args: UninstallMcpArgs,
-    _kernel: State<'_, KernelHandle>,
+    kernel: State<'_, KernelHandle>,
 ) -> Result<(), String> {
     let dir = mcp_dir()?;
+    // PWA uninstall owns the same stop-before-delete lifecycle as the gate and
+    // does not trust mutable manifest contents. (ADR-004 cap §1 v13)
+    for server_id in crate::kernel::mcp_host::installed_pack_actor_ids(&args.mcp_id) {
+        kernel
+            .runtime
+            .mcp_host
+            .unregister(&server_id)
+            .await
+            .map_err(|e| format!("stop managed pack server: {e}"))?;
+    }
     uninstall_from(&dir, &args.mcp_id)?;
     tracing::info!(mcp_id = %args.mcp_id, "uninstall_mcp ok");
     Ok(())
@@ -1613,25 +1632,40 @@ mod tests {
         assert!(err.contains("illegal"), "expected illegal-chars error, got: {err}");
     }
 
+    // Directory authority keeps uninstall able to stop drifted private Actors.
+    // (ADR-004 cap §1 v13)
     #[test]
-    fn list_installed_skips_malformed_dirs() {
+    fn list_installed_uses_directory_ids_and_keeps_malformed_entries_removable() {
         let dir = fresh_tmp("malformed");
         fs::create_dir_all(&dir).unwrap();
-        // Empty dir (no manifest)
+        // Empty dir (no manifest).
         fs::create_dir_all(dir.join("no-manifest")).unwrap();
-        // Malformed JSON
+        // Malformed JSON.
         fs::create_dir_all(dir.join("bad-json")).unwrap();
         fs::write(dir.join("bad-json/manifest.json"), b"not valid json").unwrap();
-        // Missing id
+        // Missing id.
         fs::create_dir_all(dir.join("no-id")).unwrap();
+        fs::write(dir.join("no-id/manifest.json"), b"{\"name\":\"orphan\"}").unwrap();
+        // Drifted id must not replace the immutable install-directory identity.
+        // (ADR-004 cap §1 v13)
+        fs::create_dir_all(dir.join("ctrl-libreoffice")).unwrap();
         fs::write(
-            dir.join("no-id/manifest.json"),
-            b"{\"name\":\"orphan\"}",
+            dir.join("ctrl-libreoffice/manifest.json"),
+            b"{\"id\":\"drifted-id\",\"name\":\"LibreOffice\"}",
         )
         .unwrap();
 
-        let listed = list_installed_in(&dir);
-        assert_eq!(listed.len(), 0, "all three are malformed; expected empty");
+        // Every directory remains addressable by its authoritative basename.
+        // (ADR-004 cap §1 v13)
+        let mut ids: Vec<String> = list_installed_in(&dir)
+            .into_iter()
+            .map(|summary| summary.id)
+            .collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            vec!["bad-json", "ctrl-libreoffice", "no-id", "no-manifest"]
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

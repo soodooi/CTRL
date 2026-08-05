@@ -28,9 +28,8 @@ export const ROUTE_TAB_COMPONENTS: Record<string, LazyExoticComponent<ComponentT
   '/workbench': lazy(() =>
     import('@/routes/workbench').then((m) => ({ default: m.WorkbenchRoute })),
   ),
-  '/coding': lazy(() =>
-    import('@/routes/coding').then((m) => ({ default: m.CodingRoute })),
-  ),
+  // Coding is selected inside AmbientHome's persistent dialog, never rendered
+  // as a workspace-tab route. (ADR-003 frontend §8.5/§8.6 v38)
 };
 
 export function resolveRouteComponent(

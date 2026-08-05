@@ -1,29 +1,9 @@
-// NotesApp — composition root for the Notes workspace tab body.
+// NotesApp — composition root for CTRL's native Notes workspace.
 //
-// (ADR-002 substrate § vault v1 §8.6 v6, 2026-06-05 — bao 1:1 kairo
-// UI fidelity revert; supersedes the 2026-06-02 v4 + 2026-06-03 v5
-// kairo-parity batch that drifted away from upstream kairo v0.1.0
-// by adding Daily / Health / Kanban / Diagram / Git views and a
-// horizontal top action bar.)
-//
-// Sidebar-first 2-column shell matching the kairo v0.1.0 screenshot:
-//
-//   ┌──────────────────────────────────────────────────────┐
-//   │ ┌────────────────┐ ┌───────────────────────┐ ┌─────┐ │
-//   │ │ Vault: <root>  │ │ Editor (tab strip +   │ │Back │ │
-//   │ │ [search ⌘K]    │ │ body)                 │ │links│ │
-//   │ │ [Notes][Graph] │ │                       │ │     │ │
-//   │ │ + New Note     │ │                       │ │     │ │
-//   │ │ Vault Health ▸ │ │                       │ │     │ │
-//   │ │ [Files][Tags]  │ │                       │ │     │ │
-//   │ │ - note1.md     │ │                       │ │     │ │
-//   │ │ - note2.md     │ │                       │ │     │ │
-//   │ └────────────────┘ └───────────────────────┘ └─────┘ │
-//   └──────────────────────────────────────────────────────┘
-//
-// Today / Review buttons (CTRL-specific quick actions) removed from
-// UI per bao 2026-06-05 — Irisy can still trigger those flows via
-// the underlying vault_* / vault_sourcing_* MCP tools.
+// The on-disk vault remains plain Markdown and the CTRL kernel remains the only
+// backend. The vendored Tolaria frontend supplies the native PKM interaction
+// surface; Obsidian compatibility does not create a connector or runtime owner
+// (ADR-002 substrate § vault v77). Full-native Notes ownership and the Tolaria/Obsidian transition were accepted in §1.9 v46/v47.
 
 import {
   useCallback,
@@ -55,10 +35,10 @@ import { VaultHealthFold } from './VaultHealthFold';
 import { VaultSetup } from '@/components/VaultSetup';
 import styles from './Notes.module.css';
 
-// Notes is a THIN KB layer (vault/ctrl/notes-module-plan.md + ADR-003 v9): a
-// viewer + navigation over the plain-markdown vault, not an Obsidian clone.
-// Graph view + a command palette belong to Obsidian (open-in-Obsidian), so they
-// are deliberately not reimplemented here.
+// Notes is CTRL's full native PKM surface over the local plain-markdown vault.
+// The vendored Tolaria frontend maps onto the CTRL kernel as its only backend;
+// Obsidian is a format-compatible neighbor with no connector or handoff
+// (ADR-002 substrate § vault v77). Full-native Notes ownership and the Tolaria/Obsidian transition were accepted in §1.9 v46/v47.
 
 const renderDailyTemplate = (raw: string): string => {
   const d = new Date();

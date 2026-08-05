@@ -5,7 +5,7 @@ Public marketing landing for CTRL — deploys to `ctrlapplab.com` via Cloudflare
 - Stack: Astro 5 + native CSS (no React, no Tailwind)
 - Bundle target: ≤ 30 KB gzip first-paint (system fonts; no woff2 self-host yet)
 - Functions: `functions/api/waitlist.ts` (CF Pages Function, no DB binding v0)
-- Tokens: vendored from `doc/visual-identity/brand-tokens.md` (single source of truth)
+- Tokens: vendored from `brand/brand-tokens.md` (single source of truth)
 
 ## Local
 

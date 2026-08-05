@@ -243,7 +243,15 @@ pub async fn connect_agent_mcp(
         version: manifest.version.clone(),
         description: format!("{} agent (3-agent aggregator)", agent.as_str()),
         tools: Vec::new(),
-        source: McpServerSource::Local { command, args },
+        // Agent MCP children do not need private bridge configuration.
+        // (ADR-004 cap §1 v13)
+        source: McpServerSource::Local {
+            command,
+            args,
+            trusted_libreoffice_adapter: false,
+            sandbox_pack_dir: None,
+            allow_loopback_network: false,
+        },
     })
     .await;
     host.connect(&server_id).await.map_err(|e| e.to_string())?;

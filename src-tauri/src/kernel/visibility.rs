@@ -88,12 +88,12 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     "diagnostics",
 ];
 
-/// Callers treated as first-party (in-process app surfaces). The PWA bridge
-/// stamps `pwa`; the embedded assistant may stamp `irisy`/`hermes`. Also used
-/// by the review gate (ADR-002 §264) to scope human-approval to EXTERNAL
-/// callers (the BYO-CLI brain) — first-party app surfaces are CTRL's own.
+/// Callers treated as first-party app-owned surfaces. Assistant and Coding
+/// remain separate autonomous brains: both use the governed gate, while Coding
+/// carries an explicit narrower intent and is never a user-surface approval
+/// bypass. (ADR-001 spine §4 v21; ADR-010 communication § trust-domains v13)
 pub fn is_first_party(caller: &str) -> bool {
-    matches!(caller, "pwa" | "irisy" | "hermes")
+    matches!(caller, "pwa" | "irisy" | "hermes" | "coding")
 }
 
 /// User-driven surfaces — the human acting directly through the app. Their gate
@@ -102,7 +102,7 @@ pub fn is_first_party(caller: &str) -> bool {
 /// BYO CLIs) whose high-blast writes ARE reviewed (ADR-002 §264 / ADR-006 §4,
 /// amended 2026-07-04 — bao chose B: the moat covers hermes too, since it is an
 /// LLM that can be prompt-injected via notes/web/connector data). Distinct from
-/// `is_first_party` (which stays {pwa,irisy,hermes} for intent projection + net
+/// `is_first_party` (which includes `coding` for intent projection and the net
 /// allowlist); only the review gate uses THIS narrower user-surface predicate.
 pub fn is_user_surface(caller: &str) -> bool {
     matches!(caller, "pwa" | "irisy")
@@ -532,10 +532,13 @@ mod tests {
         assert!(intent.allows_tool("market_screen"));
         assert!(intent.allows_tool("web_search"));
         assert!(intent.allows_tool("diagnostics_status")); // (ADR-010 communication § diagnostics v11)
-        // Irisy/hermes are first-party too.
+        // Assistant and Coding are first-party autonomous brains with separate
+        // runtime scopes; neither is a direct user-surface approval bypass.
         assert!(Intent::default_for_caller("irisy").allows_tool("vault_read"));
         assert!(Intent::default_for_caller("hermes").allows_tool("market_quote"));
         assert!(Intent::default_for_caller("hermes").allows_tool("web_search"));
+        assert!(Intent::default_for_caller("coding").allows_tool("skill_read"));
+        assert!(!is_user_surface("coding"));
         // Even first-party never gets raw net by default.
         assert!(!Intent::default_for_caller("hermes").allows_tool("http_get"));
     }

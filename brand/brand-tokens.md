@@ -15,7 +15,7 @@
 |---|---|---|
 | Primary wordmark | `logo.svg` | App splash, marketing, README header |
 | Mark only | `logo-mark.svg` | Favicon, tray icon, installer icon base, social avatar |
-| Reference (raster) | `../reference/logo-reference.png` | bao-supplied original |
+| Reference (raster) | `../docs/reference/logo-reference.png` | bao-supplied original |
 
 **Clear-space rule**: no element within 1× LED-bar height of the logo bounding box.
 **Minimum size**: wordmark 80 px wide, mark 16 px square.
@@ -392,7 +392,7 @@ Mandatory per `web/testing.md` §2.
 
 ## 13. References
 
-- `doc/reference/logo-reference.png` — bao 's hand-off logo
+- `../docs/reference/logo-reference.png` — bao 's hand-off logo
 - ADR-001 §2 — visual direction lock (Linear / Cursor / OP-1 / Braun)
 - ADR-002 §5 — PWA stack + anti-template guardrails
 - `.kiro/steering/development-philosophy.md` — system-design-first development contract
