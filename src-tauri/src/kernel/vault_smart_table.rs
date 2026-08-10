@@ -31,13 +31,25 @@ pub struct SmartTable {
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RelationKind {
-    Reference { target_table: String, display: String },
-    Lookup { via: String, target: String },
-    Rollup { via: String, target: String, func: String },
+    Reference {
+        target_table: String,
+        display: String,
+    },
+    Lookup {
+        via: String,
+        target: String,
+    },
+    Rollup {
+        via: String,
+        target: String,
+        func: String,
+    },
     /// A cross-field arithmetic formula (slice 5). `expr` references other
     /// columns by `{field}` or bare name and combines them with + - * / ( ).
     /// Computed per row at query time; read-only, never written to markdown.
-    Formula { expr: String },
+    Formula {
+        expr: String,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
@@ -54,7 +66,9 @@ impl RelationField {
     pub fn is_read_only(&self) -> bool {
         matches!(
             self.kind,
-            RelationKind::Lookup { .. } | RelationKind::Rollup { .. } | RelationKind::Formula { .. }
+            RelationKind::Lookup { .. }
+                | RelationKind::Rollup { .. }
+                | RelationKind::Formula { .. }
         )
     }
 }
@@ -70,7 +84,12 @@ impl SmartTable {
             .and_then(Value::as_str)
             .map(str::to_string);
         let rows = parse_table(body, &fields);
-        SmartTable { title, fields, rows, relations }
+        SmartTable {
+            title,
+            fields,
+            rows,
+            relations,
+        }
     }
 
     /// Is `field` a read-only computed column (Lookup / Rollup)? The gate uses
@@ -97,13 +116,23 @@ impl SmartTable {
             .collect::<Vec<_>>()
             .join(" | ");
         out.push_str(&format!("| {header} |\n"));
-        let sep = self.fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
+        let sep = self
+            .fields
+            .iter()
+            .map(|_| "---")
+            .collect::<Vec<_>>()
+            .join("|");
         out.push_str(&format!("|{sep}|\n"));
         for row in &self.rows {
             let cells = self
                 .fields
                 .iter()
-                .map(|f| row.get(&f.key).cloned().unwrap_or_default().replace('|', "\\|"))
+                .map(|f| {
+                    row.get(&f.key)
+                        .cloned()
+                        .unwrap_or_default()
+                        .replace('|', "\\|")
+                })
                 .collect::<Vec<_>>()
                 .join(" | ");
             out.push_str(&format!("| {cells} |\n"));
@@ -115,13 +144,64 @@ impl SmartTable {
     pub fn append_row(&mut self, values: Row) {
         let mut row = Row::new();
         for f in &self.fields {
-            row.insert(f.key.clone(), values.get(&f.key).cloned().unwrap_or_default());
+            row.insert(
+                f.key.clone(),
+                values.get(&f.key).cloned().unwrap_or_default(),
+            );
         }
         self.rows.push(row);
     }
 
     /// Set a single cell by row index + field key. Returns false if the index
     /// or field is out of range (the caller surfaces a structured error).
+    /// The value a cell will actually hold after `set_cell` stores it, or `None`
+    /// for a value this format cannot store at all.
+    ///
+    /// A markdown table row is one LINE with pipe-separated cells, so the format
+    /// is lossy in two ways a caller cannot see: each cell is trimmed on read, so
+    /// surrounding whitespace does not survive, and a newline ends the row, so a
+    /// multi-line value truncates the cell AND leaves the remainder as a stray
+    /// line that corrupts the table.
+    ///
+    /// Computed by actually storing it — set the cell, serialize, parse back — so
+    /// this cannot drift from the store, because it IS the store. A caller that
+    /// verified a write against its own raw input would report a correct write as
+    /// a failure, and one that skipped the `None` case would corrupt the table.
+    /// (ADR-002 substrate §15.5.2 v86)
+    pub fn normalized_cell_value(&self, row_index: usize, field: &str, value: &str) -> Option<String> {
+        let mut probe = SmartTable {
+            title: self.title.clone(),
+            fields: self.fields.clone(),
+            rows: self.rows.clone(),
+            relations: self.relations.clone(),
+        };
+        if !probe.update_cell(row_index, field, value) {
+            return None;
+        }
+        let mut frontmatter = serde_json::Map::new();
+        frontmatter.insert("schema".to_owned(), Value::Array(probe.serialize_schema()));
+        let reparsed = SmartTable::parse(&Value::Object(frontmatter), &probe.serialize_body());
+        // The row count changing means the value broke the table's shape — a
+        // newline turning one row into two. Reporting the truncated reading would
+        // make a corrupting write verify.
+        if reparsed.rows.len() != probe.rows.len() {
+            return None;
+        }
+        let stored = reparsed.rows.get(row_index)?.get(field)?.clone();
+        // Every OTHER cell in this row must be untouched, or the value leaked
+        // across a cell boundary.
+        let before = probe.rows.get(row_index)?;
+        let after = reparsed.rows.get(row_index)?;
+        if self
+            .fields
+            .iter()
+            .any(|spec| spec.key != field && before.get(&spec.key) != after.get(&spec.key))
+        {
+            return None;
+        }
+        Some(stored)
+    }
+
     pub fn update_cell(&mut self, row_index: usize, field: &str, value: &str) -> bool {
         if !self.fields.iter().any(|f| f.key == field) {
             return false;
@@ -159,7 +239,11 @@ impl SmartTable {
     /// in descending order so earlier removals don't shift later indices;
     /// out-of-range + duplicate indices are ignored. Returns how many were deleted.
     pub fn delete_rows(&mut self, indices: &[usize]) -> usize {
-        let mut idx: Vec<usize> = indices.iter().copied().filter(|&i| i < self.rows.len()).collect();
+        let mut idx: Vec<usize> = indices
+            .iter()
+            .copied()
+            .filter(|&i| i < self.rows.len())
+            .collect();
         idx.sort_unstable_by(|a, b| b.cmp(a)); // descending
         idx.dedup();
         let n = idx.len();
@@ -233,15 +317,26 @@ impl SmartTable {
     /// type to preserve) or a legacy flow-string fallback — an existing object
     /// item is patched key-by-key so its render-level type survives.
     pub fn serialize_field(&self, key: &str) -> Option<Value> {
-        self.fields.iter().find(|f| f.key == key).map(|f| self.serialize_field_spec(f))
+        self.fields
+            .iter()
+            .find(|f| f.key == key)
+            .map(|f| self.serialize_field_spec(f))
     }
 
     fn serialize_field_spec(&self, f: &FieldSpec) -> Value {
         let mut item = serde_json::Map::new();
         item.insert("key".into(), Value::String(f.key.clone()));
         item.insert("label".into(), Value::String(f.label.clone()));
-        match self.relations.iter().find(|r| r.field_key == f.key).map(|r| &r.kind) {
-            Some(RelationKind::Reference { target_table, display }) => {
+        match self
+            .relations
+            .iter()
+            .find(|r| r.field_key == f.key)
+            .map(|r| &r.kind)
+        {
+            Some(RelationKind::Reference {
+                target_table,
+                display,
+            }) => {
                 item.insert("type".into(), Value::String("reference".into()));
                 item.insert("table".into(), Value::String(target_table.clone()));
                 item.insert("display".into(), Value::String(display.clone()));
@@ -280,13 +375,23 @@ impl SmartTable {
     /// render-level types). Round-trips losslessly through `parse` for tables
     /// without render-level type sugar.
     pub fn serialize_schema(&self) -> Vec<Value> {
-        self.fields.iter().map(|f| self.serialize_field_spec(f)).collect()
+        self.fields
+            .iter()
+            .map(|f| self.serialize_field_spec(f))
+            .collect()
     }
 }
 
 impl RecordSink for SmartTable {
     fn supported_ops(&self) -> Vec<&'static str> {
-        vec!["set_cell", "upsert_rows", "delete_rows", "add_field", "update_field", "delete_field"]
+        vec![
+            "set_cell",
+            "upsert_rows",
+            "delete_rows",
+            "add_field",
+            "update_field",
+            "delete_field",
+        ]
     }
 
     fn produce(&mut self, op: ProduceOp) -> Result<(), ProduceError> {
@@ -301,7 +406,9 @@ impl RecordSink for SmartTable {
                     return Err(ProduceError::UnknownField { field });
                 }
                 if !self.update_cell(row, &field, &value) {
-                    return Err(ProduceError::OutOfRange { what: format!("row {row}") });
+                    return Err(ProduceError::OutOfRange {
+                        what: format!("row {row}"),
+                    });
                 }
                 Ok(())
             }
@@ -313,28 +420,50 @@ impl RecordSink for SmartTable {
                 self.delete_rows(&indices);
                 Ok(())
             }
-            ProduceOp::AddField { key, label, cell_type, options, relation } => {
+            ProduceOp::AddField {
+                key,
+                label,
+                cell_type,
+                options,
+                relation,
+            } => {
                 if self.has_field(&key) {
                     return Err(ProduceError::Conflict {
                         message: format!("field '{key}' already exists"),
                     });
                 }
-                self.add_field(FieldSpec { key: key.clone(), label, cell_type, options });
+                self.add_field(FieldSpec {
+                    key: key.clone(),
+                    label,
+                    cell_type,
+                    options,
+                });
                 if let Some(rel) = relation {
                     let kind = match rel {
-                        RelationSpec::Reference { table, display } => {
-                            RelationKind::Reference { target_table: table, display }
+                        RelationSpec::Reference { table, display } => RelationKind::Reference {
+                            target_table: table,
+                            display,
+                        },
+                        RelationSpec::Lookup { via, target } => {
+                            RelationKind::Lookup { via, target }
                         }
-                        RelationSpec::Lookup { via, target } => RelationKind::Lookup { via, target },
                         RelationSpec::Rollup { via, target, func } => {
                             RelationKind::Rollup { via, target, func }
                         }
                     };
-                    self.relations.push(RelationField { field_key: key, kind });
+                    self.relations.push(RelationField {
+                        field_key: key,
+                        kind,
+                    });
                 }
                 Ok(())
             }
-            ProduceOp::UpdateField { key, label, cell_type, options } => {
+            ProduceOp::UpdateField {
+                key,
+                label,
+                cell_type,
+                options,
+            } => {
                 if self.update_field(&key, label, cell_type, options) {
                     Ok(())
                 } else {
@@ -379,7 +508,10 @@ pub fn seed_table(title: &str, fields: &[FieldSpec]) -> (Value, String) {
             let mut item = serde_json::Map::new();
             item.insert("key".into(), Value::String(f.key.clone()));
             item.insert("label".into(), Value::String(f.label.clone()));
-            item.insert("type".into(), serde_json::to_value(f.cell_type).unwrap_or(Value::Null));
+            item.insert(
+                "type".into(),
+                serde_json::to_value(f.cell_type).unwrap_or(Value::Null),
+            );
             if let Some(opts) = &f.options {
                 item.insert("options".into(), serde_json::json!(opts));
             }
@@ -387,7 +519,11 @@ pub fn seed_table(title: &str, fields: &[FieldSpec]) -> (Value, String) {
         })
         .collect();
     let frontmatter = serde_json::json!({ "title": title, "schema": schema });
-    let header = fields.iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" | ");
+    let header = fields
+        .iter()
+        .map(|f| f.label.as_str())
+        .collect::<Vec<_>>()
+        .join(" | ");
     let sep = fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
     let body = format!("| {header} |\n|{sep}|\n");
     (frontmatter, body)
@@ -421,7 +557,14 @@ impl SmartTable {
     /// path; the hash fully captures content, mtime is for the future watch path).
     pub fn reindex_into(&self, index: &SmartTableIndex, path: &str) {
         let hash = content_hash(&self.serialize_body());
-        let _ = index.reindex_table(path, self.title.as_deref(), &self.fields, &self.rows, 0, &hash);
+        let _ = index.reindex_table(
+            path,
+            self.title.as_deref(),
+            &self.fields,
+            &self.rows,
+            0,
+            &hash,
+        );
     }
 
     /// Read through the SQLite index when the table is large enough, else the
@@ -444,7 +587,14 @@ impl SmartTable {
         let hash = content_hash(&self.serialize_body());
         if !idx.is_fresh(path, 0, &hash).unwrap_or(false)
             && idx
-                .reindex_table(path, self.title.as_deref(), &self.fields, &self.rows, 0, &hash)
+                .reindex_table(
+                    path,
+                    self.title.as_deref(),
+                    &self.fields,
+                    &self.rows,
+                    0,
+                    &hash,
+                )
                 .is_err()
         {
             return run_query(&self.fields, &self.rows, req, now);
@@ -460,7 +610,9 @@ impl SmartTable {
 /// Operators a RecordSource advertises (ADR-002 §14.3 — the record profile).
 fn record_operators() -> Vec<Operator> {
     use Operator::*;
-    vec![Eq, Neq, Contains, Gt, Lt, Gte, Lte, Before, After, Within, Is, HasTag]
+    vec![
+        Eq, Neq, Contains, Gt, Lt, Gte, Lte, Before, After, Within, Is, HasTag,
+    ]
 }
 
 /// A formula token: a resolved numeric value, an operator, or a paren. Field
@@ -480,7 +632,10 @@ enum FTok {
 /// anti-hallucination stance of the query engine.
 pub fn eval_formula(expr: &str, row: &Row) -> Option<f64> {
     let tokens = tokenize_formula(expr, row)?;
-    let mut p = FormulaParser { tokens: &tokens, pos: 0 };
+    let mut p = FormulaParser {
+        tokens: &tokens,
+        pos: 0,
+    };
     let v = p.parse_expr()?;
     if p.pos == p.tokens.len() {
         Some(v)
@@ -636,22 +791,36 @@ fn parse_relations(frontmatter: &Value) -> Vec<RelationField> {
                     target_table: get("table"),
                     display: {
                         let d = get("display");
-                        if d.is_empty() { "name".to_string() } else { d }
+                        if d.is_empty() {
+                            "name".to_string()
+                        } else {
+                            d
+                        }
                     },
                 },
-                Some("lookup") => RelationKind::Lookup { via: get("via"), target: get("target") },
+                Some("lookup") => RelationKind::Lookup {
+                    via: get("via"),
+                    target: get("target"),
+                },
                 Some("rollup") => RelationKind::Rollup {
                     via: get("via"),
                     target: get("target"),
                     func: {
                         let f = get("fn");
-                        if f.is_empty() { "count".to_string() } else { f }
+                        if f.is_empty() {
+                            "count".to_string()
+                        } else {
+                            f
+                        }
                     },
                 },
                 Some("formula") => RelationKind::Formula { expr: get("expr") },
                 _ => return None,
             };
-            Some(RelationField { field_key: key, kind })
+            Some(RelationField {
+                field_key: key,
+                kind,
+            })
         })
         .collect()
 }
@@ -670,7 +839,9 @@ fn item_fields(item: &Value) -> Option<std::collections::HashMap<String, String>
             let inner = s.trim().strip_prefix('{')?.strip_suffix('}')?;
             let mut m = std::collections::HashMap::new();
             for pair in split_top_level(inner, ',') {
-                let Some(colon) = pair.find(':') else { continue };
+                let Some(colon) = pair.find(':') else {
+                    continue;
+                };
                 let k = unquote(pair[..colon].trim()).to_string();
                 let v = pair[colon + 1..].trim();
                 // Skip list values; relations only use scalar params.
@@ -688,12 +859,23 @@ fn item_fields(item: &Value) -> Option<std::collections::HashMap<String, String>
 /// Field from a structured JSON object.
 fn parse_object_field(item: &Value) -> Option<FieldSpec> {
     let key = item.get("key").and_then(Value::as_str)?.to_string();
-    let label = item.get("label").and_then(Value::as_str).unwrap_or(&key).to_string();
+    let label = item
+        .get("label")
+        .and_then(Value::as_str)
+        .unwrap_or(&key)
+        .to_string();
     let cell_type = CellType::parse(item.get("type").and_then(Value::as_str).unwrap_or("text"));
     let options = item.get("options").and_then(Value::as_array).map(|a| {
-        a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
+        a.iter()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect()
     });
-    Some(FieldSpec { key, label, cell_type, options })
+    Some(FieldSpec {
+        key,
+        label,
+        cell_type,
+        options,
+    })
 }
 
 /// Field from a YAML flow-mapping string `{ key: x, label: y, type: z, options: [a, b] }`.
@@ -704,7 +886,9 @@ fn parse_inline_field(s: &str) -> Option<FieldSpec> {
     let mut cell_type = CellType::Text;
     let mut options: Option<Vec<String>> = None;
     for pair in split_top_level(inner, ',') {
-        let Some(colon) = pair.find(':') else { continue };
+        let Some(colon) = pair.find(':') else {
+            continue;
+        };
         // Keys may be bare (`key:` from hand-written YAML flow) or quoted
         // (`"key":` from the emitter's JSON Display of an object) — unquote both.
         let k = unquote(pair[..colon].trim());
@@ -729,7 +913,12 @@ fn parse_inline_field(s: &str) -> Option<FieldSpec> {
     }
     let key = key?;
     let label = label.unwrap_or_else(|| key.clone());
-    Some(FieldSpec { key, label, cell_type, options })
+    Some(FieldSpec {
+        key,
+        label,
+        cell_type,
+        options,
+    })
 }
 
 fn unquote(s: &str) -> &str {
@@ -936,10 +1125,18 @@ mod tests {
         assert!(t.is_read_only_field("c_total"));
         assert!(!t.is_read_only_field("title"));
         // The rollup carries its aggregate fn.
-        let rollup = t.relations.iter().find(|r| r.field_key == "c_total").unwrap();
+        let rollup = t
+            .relations
+            .iter()
+            .find(|r| r.field_key == "c_total")
+            .unwrap();
         assert_eq!(
             rollup.kind,
-            RelationKind::Rollup { via: "contact".into(), target: "spend".into(), func: "sum".into() }
+            RelationKind::Rollup {
+                via: "contact".into(),
+                target: "spend".into(),
+                func: "sum".into()
+            }
         );
         // Computed columns still appear as fields (so they filter/sort) — 4 cols.
         assert_eq!(t.fields.len(), 4);
@@ -958,7 +1155,10 @@ mod tests {
         assert_eq!(t.relations.len(), 2);
         assert!(t.is_read_only_field("c_email"));
         match &t.relations[0].kind {
-            RelationKind::Reference { target_table, display } => {
+            RelationKind::Reference {
+                target_table,
+                display,
+            } => {
                 assert_eq!(target_table, "contacts.md");
                 assert_eq!(display, "name");
             }
@@ -976,21 +1176,28 @@ mod tests {
         assert_eq!(eval_formula("(amount - cost) * 2", &r), Some(140.0));
         assert_eq!(eval_formula("amount / qty", &r), Some(25.0));
         assert_eq!(eval_formula("-cost + amount", &r), Some(70.0)); // unary minus
-        // bad inputs render blank (None), never a wrong number.
+                                                                    // bad inputs render blank (None), never a wrong number.
         assert_eq!(eval_formula("amount / 0", &r), None); // div by zero
         assert_eq!(eval_formula("amount + missing", &r), None); // unknown field
         assert_eq!(eval_formula("amount +", &r), None); // trailing op
     }
 
     fn row(pairs: &[(&str, &str)]) -> Row {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
     fn query_through_the_shared_engine() {
         let t = SmartTable::parse(&frontmatter(), BODY);
         let req = QueryRequest {
-            filters: vec![Filter { field: "amount".into(), op: Operator::Gt, value: "60".into() }],
+            filters: vec![Filter {
+                field: "amount".into(),
+                op: Operator::Gt,
+                value: "60".into(),
+            }],
             ..Default::default()
         };
         let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
@@ -1009,7 +1216,10 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.subsec_nanos())
             .unwrap_or(0);
-        p.push(format!("ctrl-st-vt-{label}-{}-{nanos}.db", std::process::id()));
+        p.push(format!(
+            "ctrl-st-vt-{label}-{}-{nanos}.db",
+            std::process::id()
+        ));
         let idx = SmartTableIndex::open(&p).expect("open index");
         (p, idx)
     }
@@ -1017,17 +1227,35 @@ mod tests {
     /// A table with `n` rows so it crosses INDEX_QUERY_THRESHOLD.
     fn big_table(n: usize) -> SmartTable {
         let fields = vec![
-            FieldSpec { key: "name".into(), label: "Name".into(), cell_type: CellType::Text, options: None },
-            FieldSpec { key: "amount".into(), label: "Amount".into(), cell_type: CellType::Number, options: None },
+            FieldSpec {
+                key: "name".into(),
+                label: "Name".into(),
+                cell_type: CellType::Text,
+                options: None,
+            },
+            FieldSpec {
+                key: "amount".into(),
+                label: "Amount".into(),
+                cell_type: CellType::Number,
+                options: None,
+            },
         ];
         let rows = (0..n)
             .map(|i| {
-                [("name".to_string(), format!("r{i}")), ("amount".to_string(), (i % 200).to_string())]
-                    .into_iter()
-                    .collect::<Row>()
+                [
+                    ("name".to_string(), format!("r{i}")),
+                    ("amount".to_string(), (i % 200).to_string()),
+                ]
+                .into_iter()
+                .collect::<Row>()
             })
             .collect();
-        SmartTable { title: Some("Big".into()), fields, rows, relations: Vec::new() }
+        SmartTable {
+            title: Some("Big".into()),
+            fields,
+            rows,
+            relations: Vec::new(),
+        }
     }
 
     #[test]
@@ -1036,13 +1264,22 @@ mod tests {
         let t = big_table(INDEX_QUERY_THRESHOLD + 50); // crosses the threshold
         let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
         let req = QueryRequest {
-            filters: vec![Filter { field: "amount".into(), op: Operator::Gte, value: "150".into() }],
-            sort: vec![crate::kernel::query::SortKey { field: "amount".into(), desc: true }],
+            filters: vec![Filter {
+                field: "amount".into(),
+                op: Operator::Gte,
+                value: "150".into(),
+            }],
+            sort: vec![crate::kernel::query::SortKey {
+                field: "amount".into(),
+                desc: true,
+            }],
             limit: Some(10),
             ..Default::default()
         };
         let mem = t.query(&req, now).unwrap();
-        let via = t.query_via_index(Some(&idx), "tables/big.md", &req, now).unwrap();
+        let via = t
+            .query_via_index(Some(&idx), "tables/big.md", &req, now)
+            .unwrap();
         assert_eq!(via.match_count, mem.match_count);
         assert_eq!(via.rows, mem.rows);
         // The index was built by the read (stale → reindex), so it now exists.
@@ -1056,15 +1293,23 @@ mod tests {
         let t = SmartTable::parse(&frontmatter(), BODY); // 2 rows, below threshold
         let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
         let req = QueryRequest {
-            filters: vec![Filter { field: "amount".into(), op: Operator::Gt, value: "60".into() }],
+            filters: vec![Filter {
+                field: "amount".into(),
+                op: Operator::Gt,
+                value: "60".into(),
+            }],
             ..Default::default()
         };
         // Below threshold: index untouched, memory result correct.
-        let via = t.query_via_index(Some(&idx), "tables/leads.md", &req, now).unwrap();
+        let via = t
+            .query_via_index(Some(&idx), "tables/leads.md", &req, now)
+            .unwrap();
         assert_eq!(via.rows[0]["name"], "Acme");
         assert_eq!(idx.table_count().unwrap(), 0);
         // No index at all → memory.
-        let none = t.query_via_index(None, "tables/leads.md", &req, now).unwrap();
+        let none = t
+            .query_via_index(None, "tables/leads.md", &req, now)
+            .unwrap();
         assert_eq!(none.rows[0]["name"], "Acme");
         let _ = std::fs::remove_file(&path);
     }
@@ -1080,7 +1325,11 @@ mod tests {
         crate::kernel::vault::write(root, "leads.md", BODY, &frontmatter()).unwrap();
         let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
         let req = QueryRequest {
-            filters: vec![Filter { field: "amount".into(), op: Operator::Gt, value: "60".into() }],
+            filters: vec![Filter {
+                field: "amount".into(),
+                op: Operator::Gt,
+                value: "60".into(),
+            }],
             ..Default::default()
         };
         let (table, via_core) = query_smart_table(None, root, "leads.md", &req, now).unwrap();
@@ -1100,7 +1349,9 @@ mod tests {
         // A subsequent read finds it fresh (same content hash) and still matches.
         let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
         let req = QueryRequest::default();
-        let via = t.query_via_index(Some(&idx), "tables/big.md", &req, now).unwrap();
+        let via = t
+            .query_via_index(Some(&idx), "tables/big.md", &req, now)
+            .unwrap();
         assert_eq!(via.match_count, t.rows.len());
         let _ = std::fs::remove_file(&path);
     }
@@ -1197,7 +1448,10 @@ mod tests {
         assert_eq!(t.rows.len(), base + 3 - 2);
         // The surviving middle rows kept their identity (row 0 and last gone).
         assert_eq!(t.rows.first().unwrap()["name"], names_before[1]);
-        assert_eq!(t.rows.last().unwrap()["name"], names_before[names_before.len() - 2]);
+        assert_eq!(
+            t.rows.last().unwrap()["name"],
+            names_before[names_before.len() - 2]
+        );
     }
 
     #[test]
@@ -1214,7 +1468,10 @@ mod tests {
         assert!(t.has_field("stage"));
         // Every existing row got an empty cell for the new column.
         assert_eq!(t.rows.len(), rows_before);
-        assert!(t.rows.iter().all(|r| r.get("stage").map(String::as_str) == Some("")));
+        assert!(t
+            .rows
+            .iter()
+            .all(|r| r.get("stage").map(String::as_str) == Some("")));
         // serialize_body now emits the new column (last, schema order).
         assert!(t.fields.last().unwrap().key == "stage");
     }
@@ -1228,7 +1485,10 @@ mod tests {
                 "{ key: contact, label: Contact, type: reference, table: contacts.md, display: name }"
             ]
         });
-        let mut t = SmartTable::parse(&fm, "| name | contact |\n|---|---|\n| Acme | [[contacts/acme]] |\n");
+        let mut t = SmartTable::parse(
+            &fm,
+            "| name | contact |\n|---|---|\n| Acme | [[contacts/acme]] |\n",
+        );
         assert!(t.has_field("name") && t.has_field("contact"));
         assert_eq!(t.relations.len(), 1);
         // Delete the PLAIN field — the relational field + its metadata survive.
@@ -1246,8 +1506,18 @@ mod tests {
     #[test]
     fn seed_table_round_trips_to_empty_table_with_schema() {
         let fields = vec![
-            FieldSpec { key: "name".into(), label: "Name".into(), cell_type: CellType::Text, options: None },
-            FieldSpec { key: "amount".into(), label: "Amount".into(), cell_type: CellType::Number, options: None },
+            FieldSpec {
+                key: "name".into(),
+                label: "Name".into(),
+                cell_type: CellType::Text,
+                options: None,
+            },
+            FieldSpec {
+                key: "amount".into(),
+                label: "Amount".into(),
+                cell_type: CellType::Number,
+                options: None,
+            },
         ];
         let (fm, body) = seed_table("My CRM", &fields);
         assert_eq!(fm["title"], "My CRM");
@@ -1310,7 +1580,11 @@ mod tests {
 
         let entry2 = vault::read(&dir, rel).unwrap();
         let t2 = SmartTable::parse(&entry2.frontmatter, &entry2.content);
-        assert_eq!(t2.fields.len(), 3, "schema still intact after a produce write");
+        assert_eq!(
+            t2.fields.len(),
+            3,
+            "schema still intact after a produce write"
+        );
         assert_eq!(t2.rows[0]["amount"], "777");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1338,12 +1612,23 @@ mod tests {
         assert_eq!(t2.relations.len(), 3, "reference + lookup + rollup survive");
         // Options survive on the plain select.
         let stage = t2.fields.iter().find(|f| f.key == "stage").unwrap();
-        assert_eq!(stage.options.as_deref(), Some(&["new".to_string(), "won".to_string()][..]));
+        assert_eq!(
+            stage.options.as_deref(),
+            Some(&["new".to_string(), "won".to_string()][..])
+        );
         // Rollup keeps its aggregate fn through the round-trip.
-        let rollup = t2.relations.iter().find(|r| r.field_key == "c_total").unwrap();
+        let rollup = t2
+            .relations
+            .iter()
+            .find(|r| r.field_key == "c_total")
+            .unwrap();
         assert_eq!(
             rollup.kind,
-            RelationKind::Rollup { via: "contact".into(), target: "spend".into(), func: "sum".into() }
+            RelationKind::Rollup {
+                via: "contact".into(),
+                target: "spend".into(),
+                func: "sum".into()
+            }
         );
         assert!(t2.is_read_only_field("c_email"));
     }
@@ -1370,7 +1655,8 @@ mod tests {
         assert_eq!(t.rows.len(), 3);
 
         // delete_rows
-        t.produce(ProduceOp::DeleteRows { indices: vec![1] }).unwrap();
+        t.produce(ProduceOp::DeleteRows { indices: vec![1] })
+            .unwrap();
         assert_eq!(t.rows.len(), 2);
 
         // add_field (plain) then the column exists + is writable
@@ -1406,10 +1692,16 @@ mod tests {
             options: None,
         })
         .unwrap();
-        assert_eq!(t.fields.iter().find(|f| f.key == "owner").unwrap().label, "Account Owner");
+        assert_eq!(
+            t.fields.iter().find(|f| f.key == "owner").unwrap().label,
+            "Account Owner"
+        );
 
         // delete_field drops the relational column + its relation metadata
-        t.produce(ProduceOp::DeleteField { key: "contact".into() }).unwrap();
+        t.produce(ProduceOp::DeleteField {
+            key: "contact".into(),
+        })
+        .unwrap();
         assert!(!t.has_field("contact"));
         assert!(!t.relations.iter().any(|r| r.field_key == "contact"));
     }
@@ -1419,12 +1711,20 @@ mod tests {
         let mut t = SmartTable::parse(&frontmatter(), BODY);
         // set_cell unknown field
         assert!(matches!(
-            t.produce(ProduceOp::SetCell { row: 0, field: "nope".into(), value: "x".into() }),
+            t.produce(ProduceOp::SetCell {
+                row: 0,
+                field: "nope".into(),
+                value: "x".into()
+            }),
             Err(ProduceError::UnknownField { .. })
         ));
         // set_cell out of range
         assert!(matches!(
-            t.produce(ProduceOp::SetCell { row: 99, field: "amount".into(), value: "x".into() }),
+            t.produce(ProduceOp::SetCell {
+                row: 99,
+                field: "amount".into(),
+                value: "x".into()
+            }),
             Err(ProduceError::OutOfRange { .. })
         ));
         // add_field duplicate
@@ -1440,7 +1740,12 @@ mod tests {
         ));
         // update / delete unknown field
         assert!(matches!(
-            t.produce(ProduceOp::UpdateField { key: "nope".into(), label: None, cell_type: None, options: None }),
+            t.produce(ProduceOp::UpdateField {
+                key: "nope".into(),
+                label: None,
+                cell_type: None,
+                options: None
+            }),
             Err(ProduceError::UnknownField { .. })
         ));
         assert!(matches!(
@@ -1461,7 +1766,11 @@ mod tests {
         let mut t = SmartTable::parse(&fm, "");
         // A lookup column is a read-only derivative — set_cell must be refused.
         assert!(matches!(
-            t.produce(ProduceOp::SetCell { row: 0, field: "c_email".into(), value: "x".into() }),
+            t.produce(ProduceOp::SetCell {
+                row: 0,
+                field: "c_email".into(),
+                value: "x".into()
+            }),
             Err(ProduceError::Conflict { .. })
         ));
     }

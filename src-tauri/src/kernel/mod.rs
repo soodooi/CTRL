@@ -21,6 +21,7 @@ pub mod actor;
 pub mod ai_column;
 pub mod audit;
 pub mod cache;
+pub mod calendar_resource;
 pub mod calendar_source;
 pub mod capability;
 pub mod capability_resolver;
@@ -40,6 +41,7 @@ pub mod note_resource;
 pub mod pack_sandbox;
 pub mod persistence;
 pub mod project_resource;
+pub mod record_write;
 pub mod resource;
 pub mod resource_fs;
 pub mod review_gate;
@@ -56,6 +58,8 @@ pub mod scheduler;
 // Vault embeddings substrate (ADR-002 v5 §10) — local Ollama
 // nomic-embed-text + SQLite BLOB flat cosine search. Memory
 // `decision_vault_adr_002_section_8`.
+pub mod table_resource;
+pub mod task_resource;
 pub mod vault_embeddings;
 // Mcp output capture (ADR-002 v5 §9) — single SmartTable per mcp.
 pub mod mcp_capture;

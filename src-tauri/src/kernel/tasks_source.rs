@@ -16,8 +16,8 @@
 //! substrate is inline markdown, which passes the vim test by construction.
 
 use crate::kernel::query::{
-    CellType, Describe, FieldSpec, Operator, ProduceError, ProduceOp, QuerySource, RecordSink,
-    Row, SourceKind,
+    CellType, Describe, FieldSpec, Operator, ProduceError, ProduceOp, QuerySource, RecordSink, Row,
+    SourceKind,
 };
 use crate::kernel::vault;
 use chrono::NaiveDate;
@@ -67,12 +67,18 @@ impl TaskSource {
         let paths = vault::list(vault_root, subdir).unwrap_or_default();
         let mut rows = Vec::new();
         for path in paths {
-            let Ok(entry) = vault::read(vault_root, &path) else { continue };
+            let Ok(entry) = vault::read(vault_root, &path) else {
+                continue;
+            };
             for item in scan_tasks(&path, &entry.content) {
                 rows.push(item_to_row(&item));
             }
         }
-        TaskSource { rows, root: vault_root.to_path_buf(), today: None }
+        TaskSource {
+            rows,
+            root: vault_root.to_path_buf(),
+            today: None,
+        }
     }
 
     /// Inject the server clock so `produce` can stamp done-dates + resolve the
@@ -90,7 +96,11 @@ impl TaskSource {
             field("path", "Note", CellType::Text),
             field("line", "Line", CellType::Number),
             field("title", "Title", CellType::Text),
-            select("status", "Status", &[STATUS_TODO, STATUS_DOING, STATUS_DONE]),
+            select(
+                "status",
+                "Status",
+                &[STATUS_TODO, STATUS_DOING, STATUS_DONE],
+            ),
             field("due", "Due", CellType::Date),
             field("done", "Done", CellType::Date),
             field("tags", "Tags", CellType::Tags),
@@ -100,7 +110,9 @@ impl TaskSource {
     /// Operators a task RecordSource supports (mirrors the KB / smart-table set).
     pub fn operators() -> Vec<Operator> {
         use Operator::*;
-        vec![Eq, Neq, Contains, Gt, Lt, Gte, Lte, Before, After, Within, Is, HasTag]
+        vec![
+            Eq, Neq, Contains, Gt, Lt, Gte, Lte, Before, After, Within, Is, HasTag,
+        ]
     }
 }
 
@@ -154,7 +166,10 @@ pub fn create(
     // an empty object so the write layer accepts it.
     let (mut body, frontmatter) = match vault::read(vault_root, &rel) {
         Ok(entry) => (entry.content, object_or_empty(entry.frontmatter)),
-        Err(_) => (String::new(), serde_json::json!({ "type": "journal", "tags": ["daily"] })),
+        Err(_) => (
+            String::new(),
+            serde_json::json!({ "type": "journal", "tags": ["daily"] }),
+        ),
     };
 
     let line = render_task_line(title, due, tags);
@@ -181,7 +196,10 @@ pub fn update(
     today: NaiveDate,
 ) -> Result<(), TaskError> {
     let entry = vault::read(vault_root, note).map_err(TaskError::Vault)?;
-    let mut lines: Vec<String> = entry.content.lines().map(str::to_string).collect();
+    // Line lookup only: the edit itself splices one line back into the original
+    // bytes rather than rejoining this vector, so untouched lines keep their own
+    // terminators. (ADR-002 substrate §15.2 v87 clause 4)
+    let lines: Vec<String> = entry.content.lines().map(str::to_string).collect();
     let target = lines.get(line).ok_or(TaskError::LineOutOfRange(line))?;
     let mut item = parse_task_line(note, line, target).ok_or(TaskError::NotATask(line))?;
 
@@ -204,25 +222,135 @@ pub fn update(
             }
             item.title = t.to_string();
         }
-        "tags" => {
-            item.tags = value
-                .split(',')
-                .map(|s| s.trim().trim_start_matches('#').to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-        }
+        "tags" => item.tags = parse_tag_list(value),
         other => return Err(TaskError::UnknownField(other.to_string())),
     }
 
     let indent = leading_ws(target);
-    lines[line] = format!("{indent}{}", render_item(&item));
-    let mut body = lines.join("\n");
-    if entry.content.ends_with('\n') {
-        body.push('\n');
-    }
-    vault::write(vault_root, note, &body, &object_or_empty(entry.frontmatter))
-        .map_err(TaskError::Vault)?;
+    let rewritten = format!("{indent}{}", render_item(&item));
+    let body = splice_line(&entry.content, line, &rewritten)
+        .ok_or(TaskError::LineOutOfRange(line))?;
+    // Body-only rewrite: the frontmatter block keeps its exact bytes, so a note
+    // with none stays that way and one with comments or a hand-chosen key order
+    // keeps them. Writing through `vault::write` re-emitted the block from parsed
+    // JSON, which turned a one-field task edit into a whole-file reformat.
+    // (ADR-002 substrate §15.2 v87 clause 4)
+    vault::write_body(vault_root, note, &body).map_err(TaskError::Vault)?;
     Ok(())
+}
+
+/// The terminator a body line ends with — `\r\n`, `\n`, or nothing at the end of
+/// a file that has no final newline.
+fn terminator_of(piece: &str) -> &str {
+    let content_len = piece.trim_end_matches(['\r', '\n']).len();
+    &piece[content_len..]
+}
+
+/// Replace one body line, leaving every other byte exactly as it was — including
+/// each line's own terminator.
+///
+/// Splitting the body into lines and rejoining it looks equivalent and is not:
+/// `str::lines` drops the `\r` of a CRLF pair, so a one-field edit silently
+/// rewrote every line ending in the file, and any rejoin has to guess one
+/// terminator for a note that mixes them. Editing in place cannot: a line the
+/// caller did not address is copied through untouched.
+fn splice_line(original: &str, index: usize, replacement: &str) -> Option<String> {
+    let mut out = String::with_capacity(original.len() + replacement.len());
+    let mut spliced = false;
+    for (position, piece) in original.split_inclusive('\n').enumerate() {
+        if position == index {
+            out.push_str(replacement);
+            out.push_str(terminator_of(piece));
+            spliced = true;
+        } else {
+            out.push_str(piece);
+        }
+    }
+    spliced.then_some(out)
+}
+
+/// Remove one body line, leaving every other byte as it was.
+fn remove_line(original: &str, index: usize) -> Option<String> {
+    let mut out = String::with_capacity(original.len());
+    let mut removed = false;
+    for (position, piece) in original.split_inclusive('\n').enumerate() {
+        if position == index {
+            removed = true;
+        } else {
+            out.push_str(piece);
+        }
+    }
+    removed.then_some(out)
+}
+
+/// The value a field will actually hold after `update` stores it.
+///
+/// `update` normalizes what it is given — status synonyms collapse to one word,
+/// tags are split on commas and lose a leading `#` — so a caller that verifies a
+/// write by comparing its own input against the stored value reports a correct
+/// write as a failure.
+///
+/// This is that comparison's other operand, and it is computed by ACTUALLY
+/// storing the value: apply the field to a task, render the line, parse it back.
+/// Restating the normalization rules here instead looked equivalent and was not,
+/// because the rendered markers are whitespace-delimited — a `due` of
+/// `"2026-08-10 maybe"` renders as `📅 2026-08-10 maybe` and reads back with the
+/// stray word absorbed into the title, which no reimplementation of the trimming
+/// rules would predict. Round-tripping cannot drift from the store because it IS
+/// the store.
+///
+/// Returns `None` for a field this source does not store, and for a value that
+/// does not survive the round trip at all.
+pub fn normalized_field_value(field: &str, value: &str) -> Option<String> {
+    // A probe task the value is applied to. The title is a placeholder that the
+    // round trip preserves, so overflow from another field is visible as a change
+    // to it rather than silently accepted.
+    let mut probe = TaskItem {
+        path: String::new(),
+        line: 0,
+        title: "probe".to_owned(),
+        status: STATUS_TODO.to_owned(),
+        due: String::new(),
+        done: String::new(),
+        tags: Vec::new(),
+    };
+    match field {
+        "status" => probe.status = normalize_status_word(value),
+        "due" => probe.due = value.trim().to_string(),
+        "title" => probe.title = value.trim().to_string(),
+        "tags" => probe.tags = parse_tag_list(value),
+        _ => return None,
+    }
+    let stored = parse_task_line("", 0, &render_item(&probe))?;
+    // Require the WHOLE task to survive the round trip, not just the field being
+    // set. A checkbox line is whitespace-delimited and its markers are ambiguous in
+    // both directions: a `due` carrying a space leaks into the title, and a title
+    // carrying `📅 2026-12-01` leaks into `due`. Checking only the addressed field
+    // would let the second case through, and reporting a leaked reading as the
+    // stored value would make a corrupting write verify.
+    if stored.title != probe.title
+        || stored.due != probe.due
+        || stored.tags != probe.tags
+        || stored.status != probe.status
+    {
+        return None;
+    }
+    Some(match field {
+        "status" => stored.status,
+        "due" => stored.due,
+        "title" => stored.title,
+        "tags" => stored.tags.join(" "),
+        _ => return None,
+    })
+}
+
+/// The one reading of a tags argument: comma-separated, `#` optional.
+fn parse_tag_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|tag| tag.trim().trim_start_matches('#').to_string())
+        .filter(|tag| !tag.is_empty())
+        .collect()
 }
 
 /// Produce (delete) a task (ADR-002 §14 `produce`): remove the checkbox line at
@@ -230,18 +358,18 @@ pub fn update(
 /// delete a non-task line (guards against a stale index deleting real content).
 pub fn delete(vault_root: &Path, note: &str, line: usize) -> Result<(), TaskError> {
     let entry = vault::read(vault_root, note).map_err(TaskError::Vault)?;
-    let mut lines: Vec<String> = entry.content.lines().map(str::to_string).collect();
+    // Line lookup only; the removal works on the original bytes.
+    // (ADR-002 substrate §15.2 v87 clause 4)
+    let lines: Vec<String> = entry.content.lines().map(str::to_string).collect();
     let target = lines.get(line).ok_or(TaskError::LineOutOfRange(line))?;
     if parse_task_line(note, line, target).is_none() {
         return Err(TaskError::NotATask(line));
     }
-    lines.remove(line);
-    let mut body = lines.join("\n");
-    if entry.content.ends_with('\n') && !body.is_empty() {
-        body.push('\n');
-    }
-    vault::write(vault_root, note, &body, &object_or_empty(entry.frontmatter))
-        .map_err(TaskError::Vault)?;
+    let body = remove_line(&entry.content, line).ok_or(TaskError::LineOutOfRange(line))?;
+    // Body-only, for the same reason as `update`: removing one line must not
+    // reformat the frontmatter or the line endings.
+    // (ADR-002 substrate §15.2 v87 clause 4)
+    vault::write_body(vault_root, note, &body).map_err(TaskError::Vault)?;
     Ok(())
 }
 
@@ -310,16 +438,21 @@ impl TaskSource {
     /// op errors in `produce` before any write). Mirrors `produce`'s addressing.
     pub fn affected_notes(&self, op: &ProduceOp, today: NaiveDate) -> Vec<String> {
         match op {
-            ProduceOp::SetCell { row, .. } => {
-                self.row_address(*row).map(|(n, _)| vec![n]).unwrap_or_default()
-            }
+            ProduceOp::SetCell { row, .. } => self
+                .row_address(*row)
+                .map(|(n, _)| vec![n])
+                .unwrap_or_default(),
             ProduceOp::DeleteRows { indices } => indices
                 .iter()
                 .filter_map(|&i| self.row_address(i).ok().map(|(n, _)| n))
                 .collect(),
             ProduceOp::UpsertRows { rows } => rows
                 .iter()
-                .map(|r| r.get("path").cloned().unwrap_or_else(|| daily_note_path(today)))
+                .map(|r| {
+                    r.get("path")
+                        .cloned()
+                        .unwrap_or_else(|| daily_note_path(today))
+                })
                 .collect(),
             _ => Vec::new(),
         }
@@ -327,18 +460,21 @@ impl TaskSource {
 
     /// The (note, line) a scanned row addresses — the checkbox `produce` targets.
     fn row_address(&self, row: usize) -> Result<(String, usize), ProduceError> {
-        let r = self
-            .rows
-            .get(row)
-            .ok_or_else(|| ProduceError::OutOfRange { what: format!("row {row}") })?;
+        let r = self.rows.get(row).ok_or_else(|| ProduceError::OutOfRange {
+            what: format!("row {row}"),
+        })?;
         let note = r
             .get("path")
             .cloned()
-            .ok_or_else(|| ProduceError::UnknownField { field: "path".into() })?;
+            .ok_or_else(|| ProduceError::UnknownField {
+                field: "path".into(),
+            })?;
         let line = r
             .get("line")
             .and_then(|s| s.parse::<usize>().ok())
-            .ok_or_else(|| ProduceError::OutOfRange { what: format!("row {row} line") })?;
+            .ok_or_else(|| ProduceError::OutOfRange {
+                what: format!("row {row} line"),
+            })?;
         Ok((note, line))
     }
 
@@ -352,11 +488,19 @@ impl TaskSource {
 /// Map a task-layer error onto the unified `ProduceError` shape (§14.11).
 fn map_task_err(e: TaskError) -> ProduceError {
     match &e {
-        TaskError::MissingTitle => ProduceError::Conflict { message: e.to_string() },
-        TaskError::LineOutOfRange(n) => ProduceError::OutOfRange { what: format!("line {n}") },
-        TaskError::NotATask(n) => ProduceError::Conflict { message: format!("line {n} is not a task") },
+        TaskError::MissingTitle => ProduceError::Conflict {
+            message: e.to_string(),
+        },
+        TaskError::LineOutOfRange(n) => ProduceError::OutOfRange {
+            what: format!("line {n}"),
+        },
+        TaskError::NotATask(n) => ProduceError::Conflict {
+            message: format!("line {n} is not a task"),
+        },
         TaskError::UnknownField(k) => ProduceError::UnknownField { field: k.clone() },
-        TaskError::Vault(_) => ProduceError::Conflict { message: e.to_string() },
+        TaskError::Vault(_) => ProduceError::Conflict {
+            message: e.to_string(),
+        },
     }
 }
 
@@ -377,7 +521,10 @@ impl std::fmt::Display for TaskError {
             TaskError::LineOutOfRange(n) => write!(f, "line {n} is out of range"),
             TaskError::NotATask(n) => write!(f, "line {n} is not a checkbox task"),
             TaskError::UnknownField(k) => {
-                write!(f, "field '{k}' is not updatable (use status/due/title/tags)")
+                write!(
+                    f,
+                    "field '{k}' is not updatable (use status/due/title/tags)"
+                )
             }
             TaskError::Vault(e) => write!(f, "{e:?}"),
         }
@@ -399,7 +546,9 @@ pub fn scan_tasks(path: &str, body: &str) -> Vec<TaskItem> {
 /// remaining text (tokens stripped) is the title used to match on update.
 pub fn parse_task_line(path: &str, line: usize, raw: &str) -> Option<TaskItem> {
     let trimmed = raw.trim_start();
-    let rest = trimmed.strip_prefix("- [").or_else(|| trimmed.strip_prefix("* ["))?;
+    let rest = trimmed
+        .strip_prefix("- [")
+        .or_else(|| trimmed.strip_prefix("* ["))?;
     let mark = rest.chars().next()?;
     let after = rest.strip_prefix(mark)?.strip_prefix(']')?;
     let status = match mark {
@@ -417,7 +566,10 @@ pub fn parse_task_line(path: &str, line: usize, raw: &str) -> Option<TaskItem> {
     let mut title_tokens = Vec::new();
 
     // A marker whose date is either glued (`📅2026-07-05`) or the next token.
-    let take_date = |tok: &str, marker: char, toks: &mut std::iter::Peekable<std::str::SplitWhitespace>| -> String {
+    let take_date = |tok: &str,
+                     marker: char,
+                     toks: &mut std::iter::Peekable<std::str::SplitWhitespace>|
+     -> String {
         let inline = tok.trim_start_matches(marker).trim().to_string();
         if !inline.is_empty() {
             inline
@@ -449,12 +601,26 @@ pub fn parse_task_line(path: &str, line: usize, raw: &str) -> Option<TaskItem> {
     if title.is_empty() {
         return None;
     }
-    Some(TaskItem { path: path.to_string(), line, title, status, due, done, tags })
+    Some(TaskItem {
+        path: path.to_string(),
+        line,
+        title,
+        status,
+        due,
+        done,
+        tags,
+    })
 }
 
 /// Render a full checkbox line (no leading indent) from an item.
 fn render_item(item: &TaskItem) -> String {
-    render_task_line_status(&item.title, &item.status, opt(&item.due), opt(&item.done), &item.tags)
+    render_task_line_status(
+        &item.title,
+        &item.status,
+        opt(&item.due),
+        opt(&item.done),
+        &item.tags,
+    )
 }
 
 /// Render a fresh `- [ ] ...` line for `create` (always todo, no done date).
@@ -542,7 +708,12 @@ fn object_or_empty(v: serde_json::Value) -> serde_json::Value {
 }
 
 fn field(key: &str, label: &str, cell_type: CellType) -> FieldSpec {
-    FieldSpec { key: key.to_string(), label: label.to_string(), cell_type, options: None }
+    FieldSpec {
+        key: key.to_string(),
+        label: label.to_string(),
+        cell_type,
+        options: None,
+    }
 }
 
 fn select(key: &str, label: &str, options: &[&str]) -> FieldSpec {
@@ -576,15 +747,22 @@ mod tests {
 
     #[test]
     fn parse_recognizes_checkbox_states_due_and_tags() {
-        let t = parse_task_line("daily/x.md", 3, "  - [ ] Call Bob 📅 2026-07-05 #work #p1").unwrap();
+        let t =
+            parse_task_line("daily/x.md", 3, "  - [ ] Call Bob 📅 2026-07-05 #work #p1").unwrap();
         assert_eq!(t.title, "Call Bob");
         assert_eq!(t.status, "todo");
         assert_eq!(t.due, "2026-07-05");
         assert_eq!(t.tags, vec!["work", "p1"]);
         assert_eq!(t.line, 3);
 
-        assert_eq!(parse_task_line("n.md", 0, "- [x] done one").unwrap().status, "done");
-        assert_eq!(parse_task_line("n.md", 0, "- [/] wip").unwrap().status, "doing");
+        assert_eq!(
+            parse_task_line("n.md", 0, "- [x] done one").unwrap().status,
+            "done"
+        );
+        assert_eq!(
+            parse_task_line("n.md", 0, "- [/] wip").unwrap().status,
+            "doing"
+        );
         // Not a task.
         assert!(parse_task_line("n.md", 0, "just a bullet - point").is_none());
         assert!(parse_task_line("n.md", 0, "- [ ]   ").is_none());
@@ -595,18 +773,108 @@ mod tests {
         // vim test: the created task is a plain `- [ ]` line in a real note.
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        let rel = create(root, None, "Ship the LifeOS layer", Some("2026-07-05"), &["ctrl".into()], today()).unwrap();
+        let rel = create(
+            root,
+            None,
+            "Ship the LifeOS layer",
+            Some("2026-07-05"),
+            &["ctrl".into()],
+            today(),
+        )
+        .unwrap();
         assert_eq!(rel, "daily/2026-06-30.md");
         let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
         assert!(raw.contains("- [ ] Ship the LifeOS layer 📅 2026-07-05 #ctrl"));
+    }
+
+    /// `normalized_field_value` is the operand a canonical write verifies against,
+    /// so it must equal what `update` actually stores — for awkward values as well
+    /// as tidy ones. Restating the normalization rules instead of round-tripping
+    /// through the store diverged exactly here.
+    /// (ADR-002 substrate §15.5.2 v86)
+    #[test]
+    fn the_normalized_value_is_what_update_actually_stores() {
+        for (field, value) in [
+            ("status", "x"),
+            ("status", "DONE"),
+            ("status", "completed"),
+            ("status", "doing"),
+            ("due", "2026-08-10"),
+            ("due", "  2026-08-10  "),
+            ("due", ""),
+            ("title", "Pay the invoice"),
+            ("tags", "work"),
+            ("tags", "#work, home"),
+            ("tags", "work,home"),
+            ("tags", ""),
+        ] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let root = dir.path();
+            vault::write(root, "n.md", "- [ ] probe", &serde_json::json!({})).unwrap();
+            update(root, "n.md", 0, field, value, today()).expect("update ok");
+
+            let raw = std::fs::read_to_string(root.join("n.md")).unwrap();
+            let line = raw
+                .lines()
+                .find(|line| line.trim_start().starts_with("- ["))
+                .expect("a task line");
+            let stored = parse_task_line("n.md", 0, line).expect("parses back");
+            let observed = match field {
+                "status" => stored.status.clone(),
+                "due" => stored.due.clone(),
+                "title" => stored.title.clone(),
+                "tags" => stored.tags.join(" "),
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                normalized_field_value(field, value).as_deref(),
+                Some(observed.as_str()),
+                "{field}={value:?} stored as {observed:?}"
+            );
+        }
+    }
+
+    /// A checkbox line separates its parts with spaces, so a value carrying one
+    /// cannot be stored in that field — it would run into the title. Reporting that
+    /// as unstorable lets the caller refuse before writing, instead of corrupting
+    /// the title and depending on a rollback to undo it.
+    #[test]
+    fn a_value_that_cannot_survive_a_task_line_is_reported_as_unstorable() {
+        for (field, value) in [
+            ("due", "2026-08-10 maybe"),
+            ("tags", "two words, ok"),
+            ("tags", "#two words"),
+        ] {
+            assert_eq!(
+                normalized_field_value(field, value),
+                None,
+                "{field}={value:?} must be refused, not silently mangled"
+            );
+        }
+        // A field this source does not store is also None.
+        assert_eq!(normalized_field_value("priority", "high"), None);
     }
 
     #[test]
     fn create_appends_to_existing_note_preserving_content() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        vault::write(root, "projects/acme.md", "# Acme\n\n- [ ] existing", &serde_json::json!({})).unwrap();
-        create(root, Some("projects/acme.md"), "New task", None, &[], today()).unwrap();
+        vault::write(
+            root,
+            "projects/acme.md",
+            "# Acme\n\n- [ ] existing",
+            &serde_json::json!({}),
+        )
+        .unwrap();
+        create(
+            root,
+            Some("projects/acme.md"),
+            "New task",
+            None,
+            &[],
+            today(),
+        )
+        .unwrap();
         let raw = std::fs::read_to_string(root.join("projects/acme.md")).unwrap();
         assert!(raw.contains("- [ ] existing"));
         assert!(raw.contains("- [ ] New task"));
@@ -625,8 +893,20 @@ mod tests {
     fn load_and_query_across_notes() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        vault::write(root, "daily/2026-06-30.md", "# Today\n- [ ] Due today 📅 2026-06-30 #a\n- [x] Done thing", &serde_json::json!({})).unwrap();
-        vault::write(root, "projects/p.md", "- [ ] Later 📅 2026-12-01", &serde_json::json!({})).unwrap();
+        vault::write(
+            root,
+            "daily/2026-06-30.md",
+            "# Today\n- [ ] Due today 📅 2026-06-30 #a\n- [x] Done thing",
+            &serde_json::json!({}),
+        )
+        .unwrap();
+        vault::write(
+            root,
+            "projects/p.md",
+            "- [ ] Later 📅 2026-12-01",
+            &serde_json::json!({}),
+        )
+        .unwrap();
 
         let src = TaskSource::load(root, None);
         // 3 tasks scanned across 2 notes.
@@ -634,7 +914,11 @@ mod tests {
 
         // Open (todo) tasks only.
         let req = QueryRequest {
-            filters: vec![Filter { field: "status".into(), op: Operator::Eq, value: "todo".into() }],
+            filters: vec![Filter {
+                field: "status".into(),
+                op: Operator::Eq,
+                value: "todo".into(),
+            }],
             ..Default::default()
         };
         let out = src.query(&req, today()).unwrap();
@@ -642,7 +926,11 @@ mod tests {
 
         // Due within today.
         let req = QueryRequest {
-            filters: vec![Filter { field: "due".into(), op: Operator::Within, value: "today".into() }],
+            filters: vec![Filter {
+                field: "due".into(),
+                op: Operator::Within,
+                value: "today".into(),
+            }],
             ..Default::default()
         };
         let out = src.query(&req, today()).unwrap();
@@ -654,7 +942,13 @@ mod tests {
     fn update_toggles_and_edits_by_line() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        vault::write(root, "daily/d.md", "# Head\n- [ ] one\n- [ ] two 📅 2026-07-01 #x\nplain tail", &serde_json::json!({})).unwrap();
+        vault::write(
+            root,
+            "daily/d.md",
+            "# Head\n- [ ] one\n- [ ] two 📅 2026-07-01 #x\nplain tail",
+            &serde_json::json!({}),
+        )
+        .unwrap();
         update(root, "daily/d.md", 2, "status", "done", today()).unwrap();
         let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
         // Completed: checkbox flipped, due/tags kept, and an Obsidian-Tasks
@@ -678,7 +972,8 @@ mod tests {
 
     #[test]
     fn parse_reads_done_date() {
-        let t = parse_task_line("n.md", 0, "- [x] shipped 📅 2026-07-01 ✅ 2026-07-02 #rel").unwrap();
+        let t =
+            parse_task_line("n.md", 0, "- [x] shipped 📅 2026-07-01 ✅ 2026-07-02 #rel").unwrap();
         assert_eq!(t.status, "done");
         assert_eq!(t.due, "2026-07-01");
         assert_eq!(t.done, "2026-07-02");
@@ -690,10 +985,25 @@ mod tests {
     fn update_rejects_non_task_line_and_bad_field() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        vault::write(root, "n.md", "- [ ] real\nnot a task", &serde_json::json!({})).unwrap();
-        assert!(matches!(update(root, "n.md", 1, "status", "done", today()), Err(TaskError::NotATask(_))));
-        assert!(matches!(update(root, "n.md", 0, "bogus", "x", today()), Err(TaskError::UnknownField(_))));
-        assert!(matches!(update(root, "n.md", 99, "status", "done", today()), Err(TaskError::LineOutOfRange(_))));
+        vault::write(
+            root,
+            "n.md",
+            "- [ ] real\nnot a task",
+            &serde_json::json!({}),
+        )
+        .unwrap();
+        assert!(matches!(
+            update(root, "n.md", 1, "status", "done", today()),
+            Err(TaskError::NotATask(_))
+        ));
+        assert!(matches!(
+            update(root, "n.md", 0, "bogus", "x", today()),
+            Err(TaskError::UnknownField(_))
+        ));
+        assert!(matches!(
+            update(root, "n.md", 99, "status", "done", today()),
+            Err(TaskError::LineOutOfRange(_))
+        ));
     }
 
     #[test]
@@ -703,7 +1013,11 @@ mod tests {
         vault::write(root, "n.md", "- [ ] x", &serde_json::json!({})).unwrap();
         let src = TaskSource::load(root, None);
         let req = QueryRequest {
-            filters: vec![Filter { field: "nope".into(), op: Operator::Eq, value: "1".into() }],
+            filters: vec![Filter {
+                field: "nope".into(),
+                op: Operator::Eq,
+                value: "1".into(),
+            }],
             ..Default::default()
         };
         assert!(src.query(&req, today()).is_err());
@@ -722,11 +1036,21 @@ mod tests {
     fn produce_set_cell_completes_task_by_scan_index() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        vault::write(root, "daily/d.md", "# H\n- [ ] one\n- [ ] two 📅 2026-07-01", &serde_json::json!({})).unwrap();
+        vault::write(
+            root,
+            "daily/d.md",
+            "# H\n- [ ] one\n- [ ] two 📅 2026-07-01",
+            &serde_json::json!({}),
+        )
+        .unwrap();
         let mut src = TaskSource::load(root, None).with_today(today());
         let idx = src.rows().iter().position(|r| r["title"] == "two").unwrap();
-        src.produce(ProduceOp::SetCell { row: idx, field: "status".into(), value: "done".into() })
-            .unwrap();
+        src.produce(ProduceOp::SetCell {
+            row: idx,
+            field: "status".into(),
+            value: "done".into(),
+        })
+        .unwrap();
         let raw = std::fs::read_to_string(root.join("daily/d.md")).unwrap();
         assert!(raw.contains("- [x] two 📅 2026-07-01 ✅ 2026-06-30"));
         assert!(raw.contains("- [ ] one")); // sibling untouched
@@ -738,7 +1062,10 @@ mod tests {
         let root = dir.path();
         let mut src = TaskSource::load(root, None).with_today(today());
         src.produce(ProduceOp::UpsertRows {
-            rows: vec![row_of("New one", "projects/p.md"), row_of("New two", "projects/p.md")],
+            rows: vec![
+                row_of("New one", "projects/p.md"),
+                row_of("New two", "projects/p.md"),
+            ],
         })
         .unwrap();
         let raw = std::fs::read_to_string(root.join("projects/p.md")).unwrap();
@@ -751,11 +1078,20 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         // a=line1, b=line2, c=line3 in one note; delete a + c, keep b + non-tasks.
-        vault::write(root, "n.md", "# H\n- [ ] a\n- [ ] b\n- [ ] c\ntail", &serde_json::json!({})).unwrap();
+        vault::write(
+            root,
+            "n.md",
+            "# H\n- [ ] a\n- [ ] b\n- [ ] c\ntail",
+            &serde_json::json!({}),
+        )
+        .unwrap();
         let mut src = TaskSource::load(root, None).with_today(today());
         let ia = src.rows().iter().position(|r| r["title"] == "a").unwrap();
         let ic = src.rows().iter().position(|r| r["title"] == "c").unwrap();
-        src.produce(ProduceOp::DeleteRows { indices: vec![ia, ic] }).unwrap();
+        src.produce(ProduceOp::DeleteRows {
+            indices: vec![ia, ic],
+        })
+        .unwrap();
         let raw = std::fs::read_to_string(root.join("n.md")).unwrap();
         assert!(!raw.contains("- [ ] a"));
         assert!(!raw.contains("- [ ] c"));
@@ -793,7 +1129,11 @@ mod tests {
         vault::write(root, "n.md", "- [ ] x", &serde_json::json!({})).unwrap();
         let mut src = TaskSource::load(root, None); // no with_today
         let err = src
-            .produce(ProduceOp::SetCell { row: 0, field: "status".into(), value: "done".into() })
+            .produce(ProduceOp::SetCell {
+                row: 0,
+                field: "status".into(),
+                value: "done".into(),
+            })
             .unwrap_err();
         assert!(matches!(err, ProduceError::Conflict { .. }));
     }

@@ -10,8 +10,8 @@
 //! vault reads as-is. Filenames are `calendar/<date>-<slug>.md`.
 
 use crate::kernel::query::{
-    CellType, Describe, FieldSpec, Operator, ProduceError, ProduceOp, QuerySource, RecordSink,
-    Row, SourceKind,
+    CellType, Describe, FieldSpec, Operator, ProduceError, ProduceOp, QuerySource, RecordSink, Row,
+    SourceKind,
 };
 use crate::kernel::vault;
 use serde_json::Value;
@@ -35,10 +35,15 @@ impl CalendarSource {
         let paths = vault::list(vault_root, Some(CALENDAR_DIR)).unwrap_or_default();
         let mut rows = Vec::new();
         for path in paths {
-            let Ok(entry) = vault::read(vault_root, &path) else { continue };
+            let Ok(entry) = vault::read(vault_root, &path) else {
+                continue;
+            };
             rows.push(event_to_row(&path, &entry.frontmatter));
         }
-        CalendarSource { rows, root: vault_root.to_path_buf() }
+        CalendarSource {
+            rows,
+            root: vault_root.to_path_buf(),
+        }
     }
 
     /// The stable schema the calendar advertises via `describe`. `path` is the
@@ -69,9 +74,10 @@ impl CalendarSource {
             ProduceOp::SetCell { row, .. } => {
                 self.row_path(*row).map(|p| vec![p]).unwrap_or_default()
             }
-            ProduceOp::DeleteRows { indices } => {
-                indices.iter().filter_map(|&i| self.row_path(i).ok()).collect()
-            }
+            ProduceOp::DeleteRows { indices } => indices
+                .iter()
+                .filter_map(|&i| self.row_path(i).ok())
+                .collect(),
             // Locks the BASE path; `create_event` may write a deduped `-2` name
             // outside the lock set. Concurrent same-base creates still serialize
             // on the base lock (covers the dedup race); a collision on the
@@ -95,7 +101,9 @@ impl CalendarSource {
         self.rows
             .get(row)
             .and_then(|r| r.get("path").cloned())
-            .ok_or_else(|| ProduceError::OutOfRange { what: format!("row {row}") })
+            .ok_or_else(|| ProduceError::OutOfRange {
+                what: format!("row {row}"),
+            })
     }
 }
 
@@ -144,8 +152,10 @@ impl RecordSink for CalendarSource {
                 Ok(())
             }
             ProduceOp::DeleteRows { indices } => {
-                let mut paths: Vec<String> =
-                    indices.iter().filter_map(|&i| self.row_path(i).ok()).collect();
+                let mut paths: Vec<String> = indices
+                    .iter()
+                    .filter_map(|&i| self.row_path(i).ok())
+                    .collect();
                 paths.sort();
                 paths.dedup();
                 for p in paths {
@@ -166,14 +176,11 @@ const EVENT_FIELDS: [&str; 6] = ["title", "date", "start", "end", "location", "t
 
 /// Produce (update): set one frontmatter field of an event note in place,
 /// preserving the body + every other frontmatter key verbatim.
-fn set_event_field(
-    root: &Path,
-    path: &str,
-    field: &str,
-    value: &str,
-) -> Result<(), ProduceError> {
+fn set_event_field(root: &Path, path: &str, field: &str, value: &str) -> Result<(), ProduceError> {
     if !EVENT_FIELDS.contains(&field) {
-        return Err(ProduceError::UnknownField { field: field.to_string() });
+        return Err(ProduceError::UnknownField {
+            field: field.to_string(),
+        });
     }
     if field == "date" && parse_date(value).is_none() {
         return Err(ProduceError::Conflict {
@@ -182,7 +189,9 @@ fn set_event_field(
     }
     let entry = vault::read(root, path).map_err(map_vault_err)?;
     let mut fm = object_or_empty(entry.frontmatter);
-    let obj = fm.as_object_mut().expect("object_or_empty returns an object");
+    let obj = fm
+        .as_object_mut()
+        .expect("object_or_empty returns an object");
     if field == "tags" {
         obj.insert(field.into(), tags_value(value));
     } else {
@@ -198,7 +207,9 @@ fn set_event_field(
 fn create_event(root: &Path, row: &Row) -> Result<(), ProduceError> {
     let title = row.get("title").map(String::as_str).unwrap_or("").trim();
     if title.is_empty() {
-        return Err(ProduceError::Conflict { message: "event requires a non-empty title".into() });
+        return Err(ProduceError::Conflict {
+            message: "event requires a non-empty title".into(),
+        });
     }
     let date = row.get("date").map(String::as_str).unwrap_or("").trim();
     if parse_date(date).is_none() {
@@ -267,6 +278,26 @@ fn slugify(title: &str) -> String {
 }
 
 /// Comma-separated tags → frontmatter array (matching the notes convention).
+/// The value a field will actually hold in a row after `set_cell` stores it.
+///
+/// `set_event_field` normalizes what it is given — a tags argument becomes a
+/// frontmatter array and reads back joined — so a caller that verifies a write by
+/// comparing its own input against the stored value reports a correct write as a
+/// failure. Composed from the same two functions that store and project it, so
+/// the two cannot drift. `None` for a field the calendar does not store.
+/// (ADR-002 substrate §15.5.2 v86)
+pub fn normalized_field_value(field: &str, value: &str) -> Option<String> {
+    match field {
+        "tags" => {
+            let mut frontmatter = serde_json::Map::new();
+            frontmatter.insert("tags".to_owned(), tags_value(value));
+            Some(tags_of(&Value::Object(frontmatter)))
+        }
+        "title" | "date" | "start" | "end" | "location" => Some(value.trim().to_string()),
+        _ => None,
+    }
+}
+
 fn tags_value(s: &str) -> Value {
     Value::Array(
         s.split(',')
@@ -290,7 +321,9 @@ fn object_or_empty(v: Value) -> Value {
 }
 
 fn map_vault_err(e: vault::VaultError) -> ProduceError {
-    ProduceError::Conflict { message: format!("{e:?}") }
+    ProduceError::Conflict {
+        message: format!("{e:?}"),
+    }
 }
 
 /// Project one event note (path + frontmatter) into a queryable row.
@@ -355,7 +388,10 @@ mod tests {
     fn describe_is_record_with_date_operators() {
         let d = describe();
         assert_eq!(d.source_kind, SourceKind::Record);
-        assert!(d.fields.iter().any(|f| f.key == "date" && f.cell_type == CellType::Date));
+        assert!(d
+            .fields
+            .iter()
+            .any(|f| f.key == "date" && f.cell_type == CellType::Date));
         assert!(d.operators.contains(&Operator::Within));
         assert!(d.operators.contains(&Operator::HasTag));
     }
@@ -403,14 +439,18 @@ mod tests {
         r.insert("start".into(), "14:00".into());
         r.insert("end".into(), "15:00".into());
         r.insert("tags".into(), "work, sync".into());
-        src.produce(ProduceOp::UpsertRows { rows: vec![r] }).unwrap();
+        src.produce(ProduceOp::UpsertRows { rows: vec![r] })
+            .unwrap();
 
         // vim test: a plain markdown note with YAML frontmatter exists on disk.
-        let raw =
-            std::fs::read_to_string(root.join("calendar/2026-07-10-team-sync.md")).unwrap();
+        let raw = std::fs::read_to_string(root.join("calendar/2026-07-10-team-sync.md")).unwrap();
         assert!(raw.contains("title: Team Sync"));
         assert!(raw.contains("date: 2026-07-10"));
-        assert!(raw.contains("start: '14:00'") || raw.contains("start: \"14:00\"") || raw.contains("start: 14:00"));
+        assert!(
+            raw.contains("start: '14:00'")
+                || raw.contains("start: \"14:00\"")
+                || raw.contains("start: 14:00")
+        );
 
         // And it scans back as a row.
         let src2 = CalendarSource::load(root);
@@ -427,7 +467,10 @@ mod tests {
         let mut r = Row::new();
         r.insert("title".into(), "Standup".into());
         r.insert("date".into(), "2026-07-10".into());
-        src.produce(ProduceOp::UpsertRows { rows: vec![r.clone(), r] }).unwrap();
+        src.produce(ProduceOp::UpsertRows {
+            rows: vec![r.clone(), r],
+        })
+        .unwrap();
         let src2 = CalendarSource::load(root);
         assert_eq!(src2.rows().len(), 2, "two same-title events are two notes");
     }
@@ -442,11 +485,18 @@ mod tests {
             serde_json::json!({ "title": "Standup", "date": "2026-07-02", "custom_key": "kept" }),
         );
         let mut src = CalendarSource::load(root);
-        src.produce(ProduceOp::SetCell { row: 0, field: "location".into(), value: "Room 4".into() })
-            .unwrap();
+        src.produce(ProduceOp::SetCell {
+            row: 0,
+            field: "location".into(),
+            value: "Room 4".into(),
+        })
+        .unwrap();
         let entry = vault::read(root, "calendar/2026-07-02-standup.md").unwrap();
         assert_eq!(entry.frontmatter["location"], "Room 4");
-        assert_eq!(entry.frontmatter["custom_key"], "kept", "unknown fm keys survive");
+        assert_eq!(
+            entry.frontmatter["custom_key"], "kept",
+            "unknown fm keys survive"
+        );
         assert_eq!(entry.content.trim(), "notes body", "body untouched");
     }
 
@@ -461,15 +511,27 @@ mod tests {
         );
         let mut src = CalendarSource::load(root);
         assert!(matches!(
-            src.produce(ProduceOp::SetCell { row: 0, field: "nope".into(), value: "x".into() }),
+            src.produce(ProduceOp::SetCell {
+                row: 0,
+                field: "nope".into(),
+                value: "x".into()
+            }),
             Err(ProduceError::UnknownField { .. })
         ));
         assert!(matches!(
-            src.produce(ProduceOp::SetCell { row: 0, field: "date".into(), value: "tomorrow".into() }),
+            src.produce(ProduceOp::SetCell {
+                row: 0,
+                field: "date".into(),
+                value: "tomorrow".into()
+            }),
             Err(ProduceError::Conflict { .. })
         ));
         assert!(matches!(
-            src.produce(ProduceOp::SetCell { row: 9, field: "title".into(), value: "x".into() }),
+            src.produce(ProduceOp::SetCell {
+                row: 9,
+                field: "title".into(),
+                value: "x".into()
+            }),
             Err(ProduceError::OutOfRange { .. })
         ));
     }
@@ -478,11 +540,20 @@ mod tests {
     fn produce_delete_rows_removes_event_notes() {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
-        seed_event(root, "calendar/2026-07-02-a.md", serde_json::json!({ "title": "A", "date": "2026-07-02" }));
-        seed_event(root, "calendar/2026-07-03-b.md", serde_json::json!({ "title": "B", "date": "2026-07-03" }));
+        seed_event(
+            root,
+            "calendar/2026-07-02-a.md",
+            serde_json::json!({ "title": "A", "date": "2026-07-02" }),
+        );
+        seed_event(
+            root,
+            "calendar/2026-07-03-b.md",
+            serde_json::json!({ "title": "B", "date": "2026-07-03" }),
+        );
         let mut src = CalendarSource::load(root);
         let ia = src.rows().iter().position(|r| r["title"] == "A").unwrap();
-        src.produce(ProduceOp::DeleteRows { indices: vec![ia] }).unwrap();
+        src.produce(ProduceOp::DeleteRows { indices: vec![ia] })
+            .unwrap();
         let src2 = CalendarSource::load(root);
         assert_eq!(src2.rows().len(), 1);
         assert_eq!(src2.rows()[0]["title"], "B");
@@ -492,7 +563,9 @@ mod tests {
     fn produce_field_ops_are_unsupported() {
         let dir = tempfile::TempDir::new().unwrap();
         let mut src = CalendarSource::load(dir.path());
-        let err = src.produce(ProduceOp::DeleteField { key: "x".into() }).unwrap_err();
+        let err = src
+            .produce(ProduceOp::DeleteField { key: "x".into() })
+            .unwrap_err();
         match err {
             ProduceError::Unsupported { op, supported } => {
                 assert_eq!(op, "delete_field");
@@ -509,14 +582,18 @@ mod tests {
         let mut no_title = Row::new();
         no_title.insert("date".into(), "2026-07-10".into());
         assert!(matches!(
-            src.produce(ProduceOp::UpsertRows { rows: vec![no_title] }),
+            src.produce(ProduceOp::UpsertRows {
+                rows: vec![no_title]
+            }),
             Err(ProduceError::Conflict { .. })
         ));
         let mut bad_date = Row::new();
         bad_date.insert("title".into(), "X".into());
         bad_date.insert("date".into(), "July 10".into());
         assert!(matches!(
-            src.produce(ProduceOp::UpsertRows { rows: vec![bad_date] }),
+            src.produce(ProduceOp::UpsertRows {
+                rows: vec![bad_date]
+            }),
             Err(ProduceError::Conflict { .. })
         ));
     }
