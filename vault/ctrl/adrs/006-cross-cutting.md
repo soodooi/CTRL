@@ -1,18 +1,21 @@
 ---
 adr_id: 006
 module: cross-cutting
-title: CTRL cross-cutting — BYOK aggregator-first + global English first + plain-text philosophy + policy envelope
-version: 12
+title: CTRL cross-cutting — BYOK + global English + plain text + policy envelope + optional cloud discovery
+version: 14
 status: accepted
-last_updated: 2026-07-25
+last_updated: 2026-08-05
 deciders: [bao, zeus]
 sections:
   - { id: byok-aggregator,   source: orig-005 + H-2026-06-09-002 校准 }
-  - { id: global-english,    source: orig-014 }
+  - { id: global-english,    source: orig-014, note: "v14: static frontend source is English; FCT is the exact unexpanded reusable-unit label; dynamic user-created names may retain source language." }
   - { id: plain-text,        source: orig-015 }
   - { id: policy-envelope,   source: new-2026-06-04, note: "L3/L4/L5 autonomy ladder + blast-radius limit + typed-ISA validation — invariants reused across all 6 self-evolution loops (ADR-001 §8)." }
   - { id: cold-start-loop,   source: new-2026-06-19, note: "End-to-end download→install→first-run→BYOK→first-value loop. Aggregates §1 onboarding + ADR-003 §8 home + ADR-004 §2 distribution into one verified line; fixes the §1 ADR-vs-impl drift (misleading 'Irisy is connecting' stub)." }
+  - { id: cloud-discovery, source: migrated-adr-007-retired-v3, note: "v14 §7 optional normalized FCT search only; internal source kinds/install refs preserved; never content/storage/install execution." }
 changelog:
+  - v14 2026-08-05: **§2/§5.1/§7 FCT vocabulary amendment (bao confirmed; PRJ cancelled).** All static frontend source remains English, and FCT is the sole product-facing reusable-capability noun without an expanded form. Cloud discovery returns normalized FCT results while retaining internal source kinds and install references; local package names, manifests, MCP/pack APIs, paths, and the MIT `ctrl-<name>` licensing boundary remain unchanged. Dynamic user-authored names may retain their source language.
+  - v13 2026-08-05: **NEW §7 cloud discovery policy migrated from deprecated ADR-007.** `ctrl-cloud` may return normalized capability/Skill search results only. It never stores user content or performs local install execution. Provider tokens remain server-only; CORS uses explicit origins with no wildcard; cache and rate limits are bounded. The anonymous local installer and hot-scanned local registry continue without cloud. Adds non-release Design Acceptance.
   - v12 2026-07-25: **§1 provider cold start reconciles the v3 `none` lock with the erroneous v8 automatic Ollama fallback (bao:「有没有 Ollama 是系统问题」「重整」).** First launch has no primary and no fallback binding. A bundled/local-runtime manifest is catalogue data, not evidence that software, daemon, or model exists on the machine. Ollama remains a BYOK/local privacy option and may become available only after its adapter probes the configured daemon and selected model; it becomes primary or fallback only after explicit activation passes the production trial. CTRL does not silently install, start, pull, bind, or route to it. If CTRL later owns an Ollama bootstrap, that installer remains a separate consented system capability and successful installation still does not imply role binding. This supersedes v8's claim that `hermes3:8b` ships universally and pairs ADR-002 §3 v70.
   - v11 2026-07-02: **§5.1.1 NEW — scoped AGPL-vendoring exception: Tolaria notes frontend (bao「前端就用 tolaria」).** The §5.1 "AGPL deps reference-only" rule gets ONE contained exception: vendor the Tolaria FRONTEND (AGPL-3.0, refactoringhq/tolaria) as `packages/ctrl-notes-ui` — the notes-module UI; CTRL kernel stays the only backend (adapter over its ~49-command surface; its Rust/CLI layer NOT taken). Cost accepted: that one package is permanently AGPL (no dual-license option for it); containment: never spreads to kernel / other packages / MIT packs; upstream LICENSE + notices kept, trademarks stripped, UPSTREAM.md pins the forked commit; snapshot + cherry-pick posture. Pairs ADR-002 §1.9 v47.
   - v10 2026-07-02: **§5 correction — Feishu is the incumbent CTRL REPLACES, NOT a connect target (bao 2026-07-02「我们是飞书而非集成飞书吧?」).** CTRL IS the local/private/AI-native Feishu — its core (Bitable/docs) is CTRL's NATIVE Smart-table + Notes; you do not integrate the incumbent whose core capability you natively provide. Connect targets = the OPC's OWN products CTRL does NOT replace (CRM/ERP/Ghostfolio/Twenty). **Fixed**: §5 body line "The CRM/ERP/**Feishu** examples are connectors an OPC plugs in" → dropped Feishu + added the correction note; §5.1 naming example `ctrl-feishu` → `ctrl-twenty`. **Kept (correct as-is)**: Feishu as the COMPETITOR/incumbent CONTRAST (moat "Feishu structurally can't be local", "Feishu's shell is ByteDance's cloud", "vs Feishu/Coze where data lives in their cloud") — that framing is right and stays. **Distinct legit axis (kept)**: §2 Integration-priority "CN IM (微信/企微/钉钉/飞书) via hermes gateway" = IM-REACH to contacts on their platform (you reach people where they are; you cannot replace where the OTHER person is) — a separate axis from replacing Feishu-the-data-app, so it is NOT the same error and stays. Root cause of the recurring mistake (I autocompleted to the industry-default "integrate the SaaS" instead of CTRL's anti-default "BE the local sovereign alternative"): memories `feedback-ctrl-is-feishu-not-integrate-feishu` + `feedback-connectors-built-by-irisy-not-dev` (corrected) + `feedback-jump-to-industry-default-not-ctrl-moat`. Vault docs `capability-pack-map.md` + `feishu-mcp-research.md` corrected in the same pass. No architecture change — a positioning/framing correction, single source of truth.
@@ -55,7 +58,7 @@ CTRL = **global product launched in English**. Chinese (and other locales) = i18
 
 | Rule | Detail |
 |---|---|
-| UX text | Every string in `packages/ctrl-web/` is English source. Chinese loaded via `react-i18next` from `locales/zh-CN.json` (never inline) |
+| UX text | Every static string in `packages/ctrl-web/` is English source. FCT is written exactly as `FCT` and is never expanded or replaced by PRJ, Project, Feature Pack, Function, Fiction, Skill, Resource, or capability as the reusable-unit label. Dynamic user-created names may retain their source language. Chinese is loaded only via `react-i18next` from `locales/zh-CN.json` (never inline) |
 | Marketing | `ctrlapplab.com` English. CN copy = translation, not source |
 | Mcp priority | Global creator+agent ecosystem reach (hermes-agent skills, MCP marketplace, Claude Code/Cursor MCP host adoption, agentskills.io) — NOT CN user count |
 | Integration priority | Global = hermes / MCP marketplace / agentskills.io / GitHub / Linear / Notion. CN IM (微信/企微/钉钉/飞书) = **hermes 网关自带能力经 gate 暴露, 非 CTRL 自建 adapter** (v7 2026-06-25 — 上游 hermes messaging gateway 已原生支持 Weixin/WeCom/DingTalk/Lark; 成本只在 UI wizard + gate 接线). 仍非 v1 核心优先级, 但「自建 CN adapter」的旧成本假设已废. Coze / Doubao 等仍 = CN-only regional, lower priority |
@@ -125,16 +128,14 @@ Write-ops to connected products still gate (intent → review → approve → ex
 
 Aligns with §1 (BYOK aggregator-first — "sell tools + platform, not models") and §3 (local-is-truth). Memory `project-ctrl-local-ai-frontend-over-business-systems`.
 
-### §5.1 Open-source & license model (NEW v9, bao 2026-06-25)
+### §5.1 Open-source & license model (v14 terminology; licensing unchanged from v9, bao 2026-06-25)
 
-bao 2026-06-25: CTRL and its feature packs go open-source. This is the
-**open-core form** of the §5 "monetize the substrate, commons free" lock —
-NOT a reversal of it. The license choice fixes the moat's shape:
+CTRL core and shareable `ctrl-<name>` FCT packages are open-source. FCT is the product noun; package and repository remain technical identities. This is the **open-core form** of the §5 "monetize the substrate, commons free" lock — NOT a reversal of it. The license choice fixes the moat's shape:
 
 | Surface | License | Why |
 |---|---|---|
 | **CTRL core** | **AGPL-3.0** | Copyleft IS the moat: anyone who modifies CTRL and offers it as a service must open-source their changes — a cloud vendor can't fork it closed. Self-hosting / personal use stays fully free (same posture as Ghostfolio, GitLab CE). Replaces the old "All Rights Reserved". |
-| **Feature packs** | **MIT** | Packs are commons definitions (§5 share-and-be-shared). Permissive licensing maximizes ecosystem sharing/adoption — no copyleft friction for someone publishing a connector. |
+| **Shareable `ctrl-<name>` FCT packages** | **MIT** | These packages are commons definitions (§5 share-and-be-shared). Permissive licensing maximizes ecosystem sharing/adoption without changing their product-facing FCT identity. |
 
 - **Naming = `ctrl-<name>`** (e.g. `ctrl-ghostfolio`, `ctrl-twenty`), one repo each (`soodooi/ctrl-<name>`) with its own LICENSE. **Non-scoped on purpose**: the npm `@ctrl` scope is taken by a third party, so `ctrl-<name>` keeps repo / Discover-listing / npm-package names aligned and conflict-free.
 - **Monetization unchanged = open-core.** Revenue = the substrate (paid CTRL cloud / hosting / sync / premium), per §5. The open core + the free commons ARE the network-effect moat; copyleft protects the core from being taken closed.
@@ -215,7 +216,7 @@ This section is **aggregation + acceptance, not new direction** — each gate's 
 | **G3 first-run ready** | `system.rs` `detect_first_run_state()` | Rust yes; **no TS mapping** → user sees empty mcps | PWA reads `first_run_state` during builtin-mcp seeding → "Setting up CTRL…", reveal capabilities only on `Ready` |
 | **G4 BYOK key** | §1 (first-launch=none, provider catalogue, BYOK) | **SHIPPED** — home shows inline non-blocking "Connect your AI to start →" CTA (`AmbientHome.tsx:958`) + send-time honest intercept that opens ProviderHub (`:262`). P-2 commit `5c4c3ba` | §1 stands — NO CTRL-paid default brain; first value = user's own key. Gate is unavoidable → painless + honest (done) |
 | **G5 first value** | ADR-003 §8 morphing home (SHIPPED) | **SHIPPED honest on home** — no-provider gives "No AI provider is set up yet → Settings → Providers" (`AmbientHome.tsx:328-344`). Residual: **legacy** `IrisyChat` upgradeStub "Irisy is connecting" (only on `USE_AMBIENT=false` fallback) | Home path locked — do not touch §8.1–§8.4. Legacy IrisyChat is fallback-only debt, not a ship-blocker |
-| **G6 output lands** | §3 plain-text vault | **SHIPPED** — part pane has ✎Edit / ⧉Copy / ↧Share (=`downloadPart` exports a real file, `:485-511`) / ↳Save-to-Notes (commit `8b62dc6`). Residual: `CodingArtifactPane` (coding route) still list-only | Plain-text vault is truth; home artifact export done. Coding-route export = P1 |
+| **G6 output lands** | §3 plain-text vault | **SHIPPED historical evidence** — home artifact export existed in the prior shell. Any former `CodingArtifactPane`/coding-route residual is migration evidence only and must converge to Work under ADR-003 v40. | Plain-text local truth remains; old route is not product authority. |
 
 ### §6.2 Locked decisions (all守约 to existing ADRs)
 
@@ -237,7 +238,7 @@ This section is **aggregation + acceptance, not new direction** — each gate's 
 
 **P1 — loop runs but residual (NOT ship-blockers)**
 - [ ] G5-legacy — legacy `IrisyChat` upgradeStub still says "Irisy is connecting" + disables the textarea (violates memory `feedback-irisy-never-block-input`); only reachable on the `USE_AMBIENT=false` legacy 4-col fallback. Fix or retire when that shell is dropped.
-- [ ] G6-coding — `CodingArtifactPane` (coding route) export/download affordance (home pane already has it).
+- [~] Historical `CodingArtifactPane` route work is retired as product scope; any remaining code is a migration target to Work under ADR-003 v40, not an open feature.
 - [ ] G2 — macOS notarization (`notarytool` + `stapler`) into `scripts/release.sh` (altool dead 2023-11; Sequoia makes it effectively mandatory). **Blocked-on-env**: needs Apple Developer ID + notary credentials on bao's machine.
 - [x] G1 — public landing / download page **BUILT** as a multi-page static site in `website/` (home / product / download / commons / manifesto + shared `styles.css`, keycap母题, brand tokens, copy locked to §5 + §1). bao 2026-06-19 "各页面展开设计". Verified via Playwright/Chrome screenshots. **Deploy to `ctrlapplab.com` is Blocked-on-creds** (needs bao's Cloudflare token + domain DNS) — `website/README.md` has the `wrangler pages deploy website` one-liner. Homebrew Cask still pending.
 - [ ] CD — `.github/workflows` build→sign→notarize→publish (replaces local-only `release.sh`).
@@ -245,6 +246,26 @@ This section is **aggregation + acceptance, not new direction** — each gate's 
 **P2 — cross-platform (already in ADR-004 future work)**
 - [ ] Windows MSI target + OV code-signing (~$200-400/yr, ADR-004 §2).
 - [ ] Three-mirror updater failover (ADR-004 future work).
+
+## §7 Optional cloud FCT discovery augmentation (v14; migrated from ADR-007 retired-v3)
+
+`ctrl-cloud` may expose normalized search for public FCTs. Its response is only the bounded FCT descriptor/result envelope consumed by ADR-002's normalized provider adapter: canonical namespaced ref, display name, summary, internal source kind, provenance, compatibility/install state, and public install reference. Internal package/Skill/capability source kinds remain explicit for resolution and drill-down but never become parallel product nouns. The service is not a Resource owner, content store, package store authority, transcript service, local registry, selection resolver, or install executor.
+
+- **Search only:** the service may query approved upstream catalogues and return normalized identity, summary, provenance, compatibility, and public install reference. It never receives local content, Resource payloads, prompts, transcripts, installed-package inventory, credentials, or local paths.
+- **Install remains local:** selection and install execution occur in the local ADR-002 registry/installer. Public install remains anonymous. If cloud is unavailable, installed discovery, explicit public install references, and the local registry continue to work.
+- **Token boundary:** upstream provider/search tokens are service-side secrets only. They are never returned to a client, embedded in an install reference, logged in response bodies, or projected to Irisy. An optional developer PAT for direct local search remains in the OS keychain and is not sent to `ctrl-cloud`.
+- **CORS:** production and staging use an explicit allowlist of approved CTRL origins and required methods/headers. `Access-Control-Allow-Origin: *` is forbidden, including error responses.
+- **Bounded operation:** query length, page size, upstream fan-out, response size, cache TTL, stale window, and per-origin/per-IP token-bucket budgets are finite and configured. Cache keys exclude secrets and private content. Upstream exhaustion returns a typed degraded/rate-limited result rather than unbounded retry.
+- **No second registry:** cloud search is one provider adapter feeding the same hot-scanned local registry contract; it cannot persist a competing installed/discovery authority.
+
+## Design Acceptance (non-release, v14 migration)
+
+- [ ] With `ctrl-cloud` unreachable, the local registry lists installed FCT projections and anonymous install from an explicit public reference succeeds.
+- [ ] Contract tests prove responses are normalized FCT envelopes, retain internal source kind/install facts, and contain no provider token, user content, local path, selection projection, or install execution result.
+- [ ] CORS tests cover approved origins, rejected origins, preflight, and error responses; no wildcard is emitted.
+- [ ] Cache, input, response, upstream fan-out, and rate-limit bounds are exercised with typed degraded behavior.
+
+These criteria are not release acceptance and are not marked complete by this documentation amendment.
 
 ## Acceptance
 

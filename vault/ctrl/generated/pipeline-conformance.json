@@ -1,0 +1,1060 @@
+{
+  "schemaVersion": 2,
+  "generatedBy": "scripts/gen-pipeline-conformance.mjs",
+  "authority": "ADR-005 §12 owns the intent registry and ADR-002 §17 owns the capability domains. Pipelines are declared in vault/ctrl/pipelines/intent-pipelines.json. This artifact reports which declared stages resolve and never infers status from token matches.",
+  "intents": {
+    "total": 25,
+    "v1": 23,
+    "statusCounts": {
+      "verified": 22,
+      "partial": 1,
+      "declared": 2
+    },
+    "items": [
+      {
+        "intent": "U1",
+        "job": "Ask about what I have open or selected",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/AmbientHome.tsx"
+          ],
+          "domains": [
+            "system",
+            "vault",
+            "notes"
+          ],
+          "operation": [
+            "irisy_chat_stream with explicit Resources"
+          ],
+          "outcomeFacts": [
+            "provenance"
+          ],
+          "rendering": [
+            "transcript"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/irisy-turn.test.ts",
+            "packages/ctrl-web/e2e/grounding.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U2",
+        "job": "Rewrite, summarize, or translate this content",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/viewers/ResourceViewerHost.tsx"
+          ],
+          "domains": [
+            "notes",
+            "vault",
+            "llm"
+          ],
+          "operation": [
+            "llm_chat proposal, then produce(ref, replace_content) on approval"
+          ],
+          "outcomeFacts": [
+            "target",
+            "staged",
+            "precondition",
+            "effect"
+          ],
+          "rendering": [
+            "approval"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/content-rewrite.test.ts",
+            "packages/ctrl-web/src/lib/note-write.test.ts",
+            "packages/ctrl-web/e2e/note-write.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U3",
+        "job": "Answer from my own local knowledge",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/sources/SourcesPanel.tsx"
+          ],
+          "domains": [
+            "vault",
+            "notes",
+            "memory"
+          ],
+          "operation": [
+            "vault_search(with_context) cited back to each note"
+          ],
+          "outcomeFacts": [
+            "provenance"
+          ],
+          "rendering": [
+            "transcript"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/sources.test.ts",
+            "packages/ctrl-web/e2e/sources.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U4",
+        "job": "Find something in my local content",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/sources/SourcesPanel.tsx"
+          ],
+          "domains": [
+            "vault",
+            "notes"
+          ],
+          "operation": [
+            "vault_search then open the hit as a canonical Resource"
+          ],
+          "outcomeFacts": [
+            "provenance"
+          ],
+          "rendering": [
+            "markdown"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/sources.test.ts",
+            "packages/ctrl-web/e2e/sources.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U5",
+        "job": "Turn this into structured records",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/TodayPanel.tsx"
+          ],
+          "domains": [
+            "smart_table",
+            "tasks",
+            "calendar"
+          ],
+          "operation": [
+            "task_query / calendar_query / task_update; produce(smart table, upsert/set-cell)"
+          ],
+          "outcomeFacts": [
+            "target",
+            "effect"
+          ],
+          "rendering": [
+            "smart-table"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/lifeos.test.ts",
+            "packages/ctrl-web/src/lib/smart-table-gate-bridge.test.ts",
+            "packages/ctrl-web/src/modules/smart-table.test.ts",
+            "packages/ctrl-web/e2e/today.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U6",
+        "job": "Change my local content for me",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/viewers/ResourceViewerHost.tsx"
+          ],
+          "domains": [
+            "vault",
+            "notes",
+            "smart_table",
+            "tasks",
+            "calendar"
+          ],
+          "operation": [
+            "produce(ctrl://local/note/..., replace_content) · produce(ctrl://local/task/..., set_field) · produce(ctrl://local/calendar/..., set_field) · produce(ctrl://local/table/..., set_cell)"
+          ],
+          "outcomeFacts": [
+            "resource",
+            "target",
+            "staged.before",
+            "staged.after",
+            "preconditions",
+            "effect.verified_by",
+            "feedback.code",
+            "feedback.retryable"
+          ],
+          "rendering": [
+            "approval"
+          ],
+          "evidence": [
+            "src-tauri/src/kernel/note_resource.rs",
+            "src-tauri/src/kernel/task_resource.rs",
+            "src-tauri/src/kernel/calendar_resource.rs",
+            "src-tauri/src/kernel/table_resource.rs",
+            "src-tauri/src/kernel/record_write.rs",
+            "packages/ctrl-web/src/lib/note-write.test.ts",
+            "packages/ctrl-web/src/lib/record-write.test.ts",
+            "packages/ctrl-web/src/lib/lifeos.test.ts",
+            "packages/ctrl-web/e2e/note-write.spec.ts",
+            "packages/ctrl-web/e2e/today.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [
+          "The smart-table cell edit is verified at the wire level but not at the UI level: the grid renders to a canvas, so there is no DOM cell for a browser test to drive.",
+          "A calendar event has no first-party editing surface yet; its canonical write is exercised but reached through the assistant rather than from the schedule.",
+          "Smart-table row and column operations (add row, delete row, add/retype/drop column) still rewrite the whole file through the bespoke path with no revision precondition, so one of those can still overwrite a concurrent cell write."
+        ],
+        "status": "partial",
+        "failingStages": [
+          "declaredGaps"
+        ]
+      },
+      {
+        "intent": "U7",
+        "job": "Look something up outside my machine",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/sources/SourcesPanel.tsx"
+          ],
+          "domains": [
+            "websearch",
+            "market"
+          ],
+          "operation": [
+            "web_search through the gate, naming the provider that answered"
+          ],
+          "outcomeFacts": [
+            "provenance"
+          ],
+          "rendering": [
+            "transcript"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/sources.test.ts",
+            "packages/ctrl-web/e2e/sources.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U8",
+        "job": "Use data from an application or service I already use",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/LocalApps.tsx"
+          ],
+          "domains": [
+            "source",
+            "mcp"
+          ],
+          "operation": [
+            "source_describe / source_query under a declared source:<id> intent"
+          ],
+          "outcomeFacts": [
+            "provenance",
+            "feedback.retryable"
+          ],
+          "rendering": [
+            "records"
+          ],
+          "evidence": [
+            "src-tauri/src/kernel/visibility.rs",
+            "src-tauri/src/kernel/mcp_server.rs",
+            "packages/ctrl-web/src/lib/local-apps.test.ts",
+            "packages/ctrl-web/e2e/local-apps.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U9",
+        "job": "Work on a specific project",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/viewers/ProjectViewer.tsx"
+          ],
+          "domains": [
+            "project",
+            "vault"
+          ],
+          "operation": [
+            "describe/query(ctrl://local/project/...)"
+          ],
+          "outcomeFacts": [
+            "target",
+            "provenance"
+          ],
+          "rendering": [
+            "project"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/decision-registry.test.ts",
+            "packages/ctrl-web/e2e/project-unavailable.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U10",
+        "job": "Approve or reject a consequential action",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ReviewGateHost.tsx"
+          ],
+          "domains": [
+            "system"
+          ],
+          "operation": [
+            "produce(ref, operation) through ReviewGate"
+          ],
+          "outcomeFacts": [
+            "target",
+            "staged",
+            "precondition"
+          ],
+          "rendering": [
+            "approval"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/decision-registry.test.ts",
+            "src-tauri/src/kernel/resource.rs",
+            "packages/ctrl-web/e2e/review-approval.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U11",
+        "job": "See exactly what happened and where it came from",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/viewers/ProvenanceDrillDown.tsx"
+          ],
+          "domains": [
+            "system",
+            "diagnostics"
+          ],
+          "operation": [
+            "describe(ref) descriptor facts and provenance chain walk"
+          ],
+          "outcomeFacts": [
+            "provenance"
+          ],
+          "rendering": [
+            "transcript"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/provenance.test.ts",
+            "packages/ctrl-web/src/lib/decision-registry.test.ts",
+            "packages/ctrl-web/e2e/provenance-drilldown.spec.ts",
+            "packages/ctrl-web/e2e/decision-surface.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U12",
+        "job": "Recover when something is unavailable or stale",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/AmbientHome.tsx"
+          ],
+          "domains": [
+            "system"
+          ],
+          "operation": [
+            "query(ctrl://local/system/catalog, selection-projection)"
+          ],
+          "outcomeFacts": [
+            "feedback.retryable",
+            "provenance"
+          ],
+          "rendering": [
+            "unavailable"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/decision-registry.test.ts",
+            "packages/ctrl-web/e2e/decision-surface.spec.ts",
+            "packages/ctrl-web/e2e/turn-failure.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U13",
+        "job": "Continue, revisit, or branch earlier work",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/AmbientHome.tsx"
+          ],
+          "domains": [
+            "system"
+          ],
+          "operation": [
+            "produce ctrl://local/session/<id> append_message"
+          ],
+          "outcomeFacts": [
+            "resource",
+            "target",
+            "preconditions",
+            "effect.verified_by",
+            "result.revision",
+            "feedback.code",
+            "feedback.retryable"
+          ],
+          "rendering": [
+            "transcript"
+          ],
+          "evidence": [
+            "src-tauri/src/kernel/transcript_format.rs",
+            "src-tauri/src/kernel/session_resource.rs",
+            "packages/ctrl-web/src/lib/session-transcript.test.ts",
+            "packages/ctrl-web/src/lib/irisy-sessions.test.ts",
+            "packages/ctrl-web/e2e/session-recovery.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U14",
+        "job": "Find a capability for something I cannot do yet",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/Discover.tsx"
+          ],
+          "domains": [
+            "discover",
+            "registry"
+          ],
+          "operation": [
+            "discover_packs / registry query"
+          ],
+          "outcomeFacts": [
+            "provenance",
+            "feedback.retryable"
+          ],
+          "rendering": [
+            "records"
+          ],
+          "evidence": [
+            "packages/ctrl-web/e2e/library-offline.spec.ts",
+            "packages/ctrl-web/e2e/l1-persona.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U15",
+        "job": "Install or enable a capability",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/Discover.tsx"
+          ],
+          "domains": [
+            "mcp",
+            "registry"
+          ],
+          "operation": [
+            "mcp_pack_install; produce(ctrl://local/system/catalog, enable|disable)"
+          ],
+          "outcomeFacts": [
+            "target",
+            "staged",
+            "effect",
+            "feedback.retryable"
+          ],
+          "rendering": [
+            "capture"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/fct.test.ts",
+            "src-tauri/src/kernel/capability_state.rs",
+            "src-tauri/src/kernel/fct_catalog.rs",
+            "packages/ctrl-web/e2e/capability-manage.spec.ts",
+            "packages/ctrl-web/e2e/coding.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U16",
+        "job": "Create a capability I need",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/PackCreator.tsx"
+          ],
+          "domains": [
+            "mcp",
+            "discover",
+            "skill",
+            "vault"
+          ],
+          "operation": [
+            "mcp_pack_scaffold / validate / install; skill_list + skill_read(create-local-app-adapter) in Coding"
+          ],
+          "outcomeFacts": [
+            "target",
+            "effect",
+            "feedback.field"
+          ],
+          "rendering": [
+            "form"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/feature-pack-create.ts",
+            "src-tauri/src/commands/skills.rs",
+            "packages/ctrl-web/e2e/coding.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U17",
+        "job": "Use a specific capability for this session",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/AmbientHome.tsx"
+          ],
+          "domains": [
+            "registry",
+            "skill"
+          ],
+          "operation": [
+            "query(ctrl://local/system/catalog, selection-projection)"
+          ],
+          "outcomeFacts": [
+            "target"
+          ],
+          "rendering": [
+            "choice"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/fct.test.ts",
+            "packages/ctrl-web/e2e/fct-choice.spec.ts",
+            "packages/ctrl-web/e2e/l1-persona.spec.ts",
+            "packages/ctrl-web/e2e/decision-surface.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U18",
+        "job": "Review, disable, or remove what I installed",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/Discover.tsx"
+          ],
+          "domains": [
+            "mcp",
+            "registry",
+            "skill"
+          ],
+          "operation": [
+            "mcp_pack_uninstall; produce(ctrl://local/system/catalog, enable|disable); reveal_capability"
+          ],
+          "outcomeFacts": [
+            "target",
+            "staged",
+            "effect"
+          ],
+          "rendering": [
+            "choice"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/fct.test.ts",
+            "src-tauri/src/kernel/capability_state.rs",
+            "src-tauri/src/kernel/fct_catalog.rs",
+            "src-tauri/src/commands/system.rs",
+            "packages/ctrl-web/e2e/capability-manage.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U19",
+        "job": "Connect an application or credential",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/LocalApps.tsx"
+          ],
+          "domains": [
+            "source",
+            "mcp",
+            "providers"
+          ],
+          "operation": [
+            "connect_local_app then managed local MCP child reconnect"
+          ],
+          "outcomeFacts": [
+            "target",
+            "feedback.retryable"
+          ],
+          "rendering": [
+            "unavailable"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/local-apps.test.ts",
+            "src-tauri/src/shell/builtin_mcps.rs",
+            "packages/ctrl-web/e2e/local-apps.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U20",
+        "job": "Configure how CTRL behaves",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/routes/settings.tsx"
+          ],
+          "domains": [
+            "providers",
+            "system"
+          ],
+          "operation": [
+            "provider_set_active and configuration commands"
+          ],
+          "outcomeFacts": [
+            "target",
+            "effect",
+            "feedback.field"
+          ],
+          "rendering": [
+            "form"
+          ],
+          "evidence": [
+            "packages/ctrl-web/e2e/provider-verification.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U21",
+        "job": "Diagnose CTRL when it misbehaves",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/diagnostics/DiagnosticsPanel.tsx"
+          ],
+          "domains": [
+            "diagnostics"
+          ],
+          "operation": [
+            "app_diagnostics_status / app_diagnostics_smoke / app_diagnostics_trace / diagnostics_capture_* / diagnostics_export_preview"
+          ],
+          "outcomeFacts": [
+            "provenance"
+          ],
+          "rendering": [
+            "records"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/diagnostics-view.test.ts",
+            "packages/ctrl-web/e2e/diagnostics.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U22",
+        "job": "Operate a local application's explicit selection",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/ambient/LocalApps.tsx"
+          ],
+          "domains": [
+            "source",
+            "mcp"
+          ],
+          "operation": [
+            "source_query(record_source.query.mcp_tool)"
+          ],
+          "outcomeFacts": [
+            "target",
+            "precondition",
+            "provenance"
+          ],
+          "rendering": [
+            "records"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/local-apps.test.ts",
+            "packages/ctrl-web/e2e/local-apps.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U23",
+        "job": "Save a behavior that worked so I can reuse it",
+        "scope": "v1",
+        "stages": {
+          "entry": [
+            "packages/ctrl-web/src/components/viewers/ResourceViewerHost.tsx"
+          ],
+          "domains": [
+            "mcp",
+            "registry"
+          ],
+          "operation": [
+            "derive an FCT manifest from a verified Outcome, then mcp_pack_install"
+          ],
+          "outcomeFacts": [
+            "target",
+            "effect"
+          ],
+          "rendering": [
+            "capture"
+          ],
+          "evidence": [
+            "packages/ctrl-web/src/lib/fct-capture.test.ts",
+            "packages/ctrl-web/e2e/note-write.spec.ts"
+          ]
+        },
+        "blockingDomains": [],
+        "missingArtifacts": [],
+        "gaps": [],
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "intent": "U24",
+        "job": "Run a long operation and check on it",
+        "scope": "later",
+        "status": "declared",
+        "failingStages": [
+          "scope"
+        ],
+        "notes": "accepted but deferred scope; must not be presented as available"
+      },
+      {
+        "intent": "U25",
+        "job": "Reach my own machine from another device",
+        "scope": "later",
+        "status": "declared",
+        "failingStages": [
+          "scope"
+        ],
+        "notes": "accepted but deferred scope; must not be presented as available"
+      }
+    ]
+  },
+  "domains": {
+    "total": 20,
+    "statusCounts": {
+      "verified": 20,
+      "partial": 0,
+      "declared": 0
+    },
+    "items": [
+      {
+        "domain": "system",
+        "authorizes": "kernel status, vault root, and the three canonical verbs",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "vault",
+        "authorizes": "vault file read/write/search/index/graph surface",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "notes",
+        "authorizes": "note map/get/periodic/history/open and doc block/frontmatter operations",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "smart_table",
+        "authorizes": "record grid describe/query/produce surface",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "tasks",
+        "authorizes": "inline checkbox task records",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "calendar",
+        "authorizes": "note-per-event calendar records",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "source",
+        "authorizes": "generic installed-connector describe/query/produce",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "project",
+        "authorizes": "explicit Project Resource operations",
+        "classified": false,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": true,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "providers",
+        "authorizes": "provider catalogue and binding reads",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "registry",
+        "authorizes": "installed capability descriptor reads",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "kv",
+        "authorizes": "small internal key/value state",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "llm",
+        "authorizes": "direct completion calls",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "memory",
+        "authorizes": "Irisy persistent-memory read/write",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "mcp",
+        "authorizes": "installed package lifecycle and every downstream `<server>_<tool>`",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "market",
+        "authorizes": "fixed market-data endpoints",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "websearch",
+        "authorizes": "fixed search backends",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "discover",
+        "authorizes": "fixed capability-catalog backends",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "skill",
+        "authorizes": "read-only local `SKILL.md` listing and reading",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "diagnostics",
+        "authorizes": "read-only metadata diagnostics",
+        "classified": true,
+        "grantedByDefault": true,
+        "excludedByDesign": false,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      },
+      {
+        "domain": "net",
+        "authorizes": "raw outbound HTTP",
+        "classified": true,
+        "grantedByDefault": false,
+        "excludedByDesign": true,
+        "ownerSideOnly": false,
+        "status": "verified",
+        "failingStages": []
+      }
+    ]
+  }
+}

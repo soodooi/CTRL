@@ -3,39 +3,60 @@
 > 唯一在跑的目标,锚定所有工作。由 `goal` skill 管理。
 > Plain markdown,local 是 truth,bao 拥有这个文件。
 
-## Status: ACTIVE (2026-07-22, bao「架构重构,涉及模块/资源层/功能包/通讯的整体架构」→ scope change,以 Irisy 5 能力为镜头 reframe;功能包生产线存档)
+## Status: ACTIVE (2026-08-05, bao「不仅是极简界面，还有极简的后端，极简的 Irisy 身份和能力层」→「好，根据你的评估，出重构计划」；正式替换五能力镜头目标)
 
 ## 目标 (Goal)
 
-**Irisy 能力中心架构重构 —— 以 Irisy 的 5 能力域为规划镜头,把现有架构(8 module ADR,按代码归属划分)reframe 成「Irisy 操作什么」的能力边界,收敛各能力债。**
+**CTRL 全栈极简架构重构 —— 把产品、Irisy、能力层和后端收敛为一个模型：一个 Irisy 在显式 Resource 上，经 `:17873` 使用 `describe/query/produce`，结果按内容类型呈现并回到本地文件或原应用。**
 
-5 能力域(异构,非全是 L1 模块):① **md 文档管理**(知识库/笔记/功能包文档 → §14 `text`+`record` 面)· ② **html**(产出 HTML + 前端渲染,viewer registry/morphing)· ③ **coding**(创建功能包 + coding,projection + pack-create)· ④ **通讯**(内部+外部,`:17873` gate 给 Irisy 建端点)· ⑤ **L1/L2**(把能力摆成可导航模块 + role 切换)。
+执行计划：[`plans/architecture/minimal-ctrl-refactor.md`](plans/architecture/minimal-ctrl-refactor.md)。计划规定迁移顺序，不替代 [`adrs/INDEX.md`](adrs/INDEX.md) 指向的 8 module ADR；任何冲突先按 `adrs/PROCESS.md` amendment，再实施代码。
 
-**镜头模式(非替代)**:8 module ADR 是唯一架构权威;能力域只作为跨模块规划/审查镜头,不自行创造决定。实施时按 owning module ADR 原地 amend,不推倒重划。每能力 = (端点 §14/gate) + (前端 surface) + (L1 模块或横切)。
+已确认方向：
 
-- 锁点不动:5 primitives / 三动词 / `:17873` gate / secret 不进 LLM / plain-text / 收敛不推倒(~100 gate 工具 + 134 Tauri 在用)
+1. **唯一 Irisy**：Assistant/Coding 不再是两个用户身份；Coding 是 Project Resource 上的 Skill/Capability scope，BYO CLI 是独立 gate client。
+2. **三动词 agent 面**：canonical product tools 最终只有 `describe(ref)`、`query(ref, request)`、`produce(ref, operation)`；旧工具仅作短期薄 compatibility alias。
+3. **固定人格、动态上下文**：用户可见的可复用能力统一为 FCT；FCT 解析为 Resource + optional Skill + capability scope，role/persona registry 退休。
+4. **一条产品 API**：Shell-only OS 职责走 typed Tauri IPC；所有产品能力走 `:17873`，不保留业务双表面。
+5. **一个前端和事件 authority**：Ambient + viewer registry + Library；typed internal event → authorized Channels/WS projection。
+6. **Workbench 退役方向**：ADR-007 composition canvas 提议 deprecated；组合回到 FCT 或外部 workflow capability。
+
+锁点不动：五 primitives、三动词、`:17873`、plain-text/local truth、secret 不进 LLM、ReviewGate、FCT 对既有 manifest/package/Skill/capability authority 的规范化投影，以及 manifest=data/runtime=generic/新增 FCT 零代码。
 
 ## 成功标准 (Success criteria — 可验证)
 
-1. **Track 0 治理**:GOAL 切换 + 5 能力规划镜头落进 `irisy-architecture.md §能力域`,且明确 module ADR 仍是唯一架构权威。
-2. **Track 2 md §14 写侧收敛**:`RecordSink`/`ProduceOp` + 4 源 impl + 统一 produce 动词**已建(2026-07-02,实测证实)**;真剩 = 退役 5 个冗余 bespoke 脑面写工具(`smart_table_update_cell/append_row/delete_row/add_field/create`→`smart_table_produce`,需 Irisy 真机验证)+ 清漂移设计 doc(`unified-productivity-suite-architecture.md` 标 retired)。
-3. **Track 1 通讯**:endpoint-spec 物化（MCP `tools/list` + §14 `describe` + Rust typed command/external-event schemas + Tauri IPC/Channels/WS binding registry；AsyncAPI 已由 ADR-010 v10 退役）；typed bus 生产接线；§14 produce review gate ADR 漂移消。
-4. **Track 3-5**(地基立稳后):html 渲染统一 / coding 两机制合一 / L1-L2 能力绑定 —— 分别按 owning module ADR 决定并实施。
-- 每片走 dev-loop(cargo + tsc + 测试 + `:17873` harness smoke + Playwright 视觉 + 独立 checker + git diff),无 fresh evidence 不报完成。
+1. **Track 0 治理先行**：按 baseline commit + 完整 path manifest 收口或 park 当前 working tree；ADR-001/002/003/005/006/007/010 作为一个 coordinated amendment set 起草并整组接受，同步 INDEX、PRODUCT、Acceptance 与代码引用；冲突中间态不得作为 checkpoint。
+2. **唯一对象和安全调用链**：ResourceRef grammar/canonicalization、root/symlink containment、稳定句柄或等价 no-follow 的 race-free resolve-to-use、基于实际句柄身份的授权、descriptor/registry/OperationRef lifecycle 成为唯一能力寻址；每个 scheme 只有一个 owner。
+3. **能力面收敛**：Irisy 默认 scope canonical product tools = 3；新增 synthetic manifest-backed FCT 时 CTRL tool、route、id branch diff = 0。
+4. **Irisy 收敛**：用户可见 AI identity = 1；live transcript authority = 1；live role/persona requirement = 0；Skill-specific direct agent spawn = 0。
+5. **后端收敛**：业务 Tauri/MCP 双实现 = 0；raw production event publisher = 0；每个 capability child 只有一个 lifecycle owner；OperationRef 的重启、幂等和保留语义有实测。
+6. **前端收敛**：production shell authority = 1；L1 = Work/Library/Settings；业务 scene switch 和 per-pack id branch = 0。
+7. **真实纵向证据**：Markdown、Record、Blob、Project、App、Operation 各至少一个 vertical 经三动词、gate、review/provenance、viewer 验证；每个 produce vertical 具备 revision/hash 前置条件、写前恢复点、post-write reread、partial-failure 和数据 rollback smoke，无法安全恢复的 App write 保持关闭。
+8. **权威闭环**：ADR-007 canvas 退休前，仍有效的 Skill discovery 决定先迁到明确 owner；live 文档除 historical/changelog/provenance 外不再依赖 retired `irisy-architecture.md`。
+9. 每片按受影响面验证 cargo/tsc/targeted tests、`:17873` harness、适用的 Playwright/真机、独立 reviewer 与 final git diff；无 fresh evidence 不报完成。
 
 ## 非目标 / 范围外 (Non-goals)
 
-- **不推倒 ADR**:不重划模块、不另起 ADR 治理(镜头模式,按能力 amend)。
-- **不动 5 primitives / 三动词 / gate / secret / plain-text**。
-- **不一次性做 6 track**:地基(Track 0/2/1)先,上层(3/4/5)待地基立稳。
-- **不以本目标重定义 macOS shell**:该旁线由 ADR-003 §1.1 v25 独立治理。
+- 不 big-bang；按 Resource vertical 逐片迁移，替代路径实测前不删旧入口。
+- 不改变五 primitives、三动词、gate、用户文件格式、plain-text truth、keychain 或 ReviewGate。
+- 不把 ResourceRef 做成第六 primitive或云端对象数据库。
+- 不让 Irisy 监督 BYO CLI，不把 Skill 变成 agent runtime。
+- 不顺带建设新功能包、远程桌面、Office write 或业务 vertical。
+- 前序 ADR-002/ADR-005/INDEX 与关联产品代码按 Task #1 baseline/path manifest 独立跟踪；禁止用 commit、stash 或回退掩盖其 provenance。
 
-## 切片分派 (zeus 唯一写入者)
+## 当前切片 (zeus 唯一写入者)
 
 | # | 切片 | track | 状态 |
 |---|---|---|---|
-| 1 | 退役 5 个冗余 `smart_table_*` 脑面写工具并验证 `smart_table_produce` 替代路径 | Track 2 | parked(2026-08-02, bao 切换到 LibreOffice Track 1) |
-| 2 | LibreOffice Companion 首切片：generic local MCP-backed §14 Source + JS/TS child + explicit-selection read/unavailable degradation；write 保持关闭 | Track 1 | in-progress(2026-08-02, bao 确认方案 A) |
+| 1 | Preserve existing worktree baseline/path scope; no commit, stash, or product-code mutation in T0.3 | Track 0 | preserved |
+| 2 | Coordinated ADR authority amendment (T0.3): ADR-001/002/003/005/006/007/010 + INDEX/PRODUCT/plan | Track 0 | accepted; authority set consistent |
+| 3 | Run ADR/governance gates and close independent authority review; no implementation completion claim | Track 0 | complete — preserved preceding hunks tracked separately |
+| 4 | Generate implementation inventories/ratchets and begin Resource vertical migration only after Track 0 gates | Track 1 | next |
+
+## 上一目标存档 (2026-07-22 → 2026-08-05, 原 status ACTIVE)
+
+### Irisy 五能力规划镜头
+
+以 Markdown、HTML、Coding、通讯、L1/L2 五能力域跨模块收敛现有架构；module ADR 仍是唯一权威。已完成能力镜头和 LibreOffice/endpoint-spec 等地基设计，但 bao 2026-08-05 明确极简必须同时覆盖后端、Irisy 身份与能力层，故该镜头不足以承载新范围并退休。原规划文档 [`irisy-architecture.md`](irisy-architecture.md) 已标 historical；未完成的 smart-table bespoke tool 退役和 LibreOffice 首切片并入新计划对应 Resource vertical，不再作为并行 active slice。
 
 ## 上一目标存档 (2026-07-11 → 2026-07-22, 原 status ACTIVE)
 

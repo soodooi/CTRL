@@ -1,20 +1,31 @@
 ---
 adr_id: 003
 module: frontend
-title: CTRL frontend — single PWA + 5-chip L1 nav (3-agent aggregator) + Keyboard drag-install + 4-col shell
-version: 39
+title: CTRL frontend — one Ambient shell + Work/Library/Settings + descriptor-driven viewers
+version: 45
 status: accepted
-last_updated: 2026-08-03
+last_updated: 2026-08-05
 deciders: [bao, zeus, daedalus]
 sections:
   - { id: pwa,           source: orig-002 }
-  - { id: nav-l1,        source: H-2026-06-09-002 校准 (replaces nav-keyboard single-Irisy v2) }
+  - { id: nav-l1,        source: bao-2026-08-05-ambient-l1, note: "v40: one Ambient shell; L1 exactly Work/Library/Settings; Irisy resident, not L1." }
   - { id: vault-stack,   source: orig-020 — RETIRED in v5 (kairo replaces) }
   - { id: shell-4col,    source: new-2026-06-01 }
-  - { id: agent-routes,  source: H-2026-06-09-002 + bao-2026-08-03-one-irisy-two-identities }
+  - { id: agent-routes,  source: bao-2026-08-05-one-irisy-resource-scope }
+  - { id: legacy-shell-surfaces, source: retired-v45, note: "v45: the unreachable pre-Ambient surfaces are deleted, not merely unrouted — multi-instance workspace shell, tab strip, route-tab component map, the in-house Notes app, and the /notes /workspace /irisy routes. Provenance retained in this changelog; BlockAiOps survives because the live MarkdownViewer uses it." }
+  - { id: role-switcher, source: retired-v40, note: "Former persona/feature-pack role switcher body removed; provenance retained in changelog and retired section." }
+  - { id: library-discovery, source: migrated-adr-007-retired-v3, note: "v41: Library owns separate FCT Find/Installed management and Create authoring over ADR-002's registry; composer owns active per-session Use, with Library Use only a handoff." }
+  - { id: intent-conformance, source: bao-2026-08-05-single-truth-lists, note: "v42 §8.5: every surface serves and cites a v1 intent from ADR-005 §12; no inventory-as-chrome; approval/provenance/failure surfaces are structurally required." }
+  - { id: decision-registry, source: bao-2026-08-05-option-b, note: "v43 §8.5: one frontend-owned registry renders kernel-typed decision facts by closed kind (approval/unavailable/conflict/progress/choice/capture); no hand-built or degraded decision presentation; no new cross-boundary schema. v44: decision facts are adapted from owner Outcomes and each surface carries its intents' rendering/evidence stages." }
   - { id: macos-shell,   source: bao-2026-07-26-hidden-before-first-order-fullscreen-machine-proof-v29 (amends v28 fixed Accessory shell) }
   - { id: diagnostics-surface, source: new-2026-07-25-v26, note: "Developer-facing local diagnostics client for Irisy/Coding/Notes; typed Tauri only for capture/export controls, no duplicate runtime or raw log console." }
 changelog:
+  - v45 2026-08-05: **Legacy shell surfaces deleted, not merely unrouted (bao: 死代码删除); the ADR becomes the single authority for a removal (bao: 做唯一真相就行).** The governance gate previously demanded a resolvable citation near every substantive change, which a deleted file cannot carry — so uncited legacy code was permanently undeletable and the codebase could only accumulate. `scripts/check-governance.mjs` now authorizes a whole-file deletion from the ADR corpus instead: the change must itself be the retirement amendment, proven by a changed ADR whose `version` increased against the base AND whose frontmatter `sections` block carries a matching `retired-v<version>` entry, exactly as PROCESS.md already requires. The rule is deliberately narrow — an ADR merely touched for another reason, or one whose retirement record predates this work, authorizes nothing, and historical prose describing an old retirement does not count because only the structured `sections` entry is read. Every deletion it authorizes is printed, so a removal is auditable rather than silent. Both directions are verified: with the record present the deletions pass and are listed; with it removed the gate blocks and names the missing record. ADR-003 v40 established one Ambient shell, but the superseded surfaces were left on disk and simply unreferenced: `/notes`, `/workspace`, and `/irisy` were never registered in `src/app.tsx`, so the multi-instance `WorkspaceShell` family, the `TabBar`, the `route-tab-components` map, and the entire in-house Notes app were unreachable code that still read as product. That is worse than absent: a pipeline declaration named `NotesEditor.tsx` as a live user entry when no user could reach it, and a retired-layout e2e spec sat permanently red, training readers to ignore failures. This amendment deletes 44 files — the workspace shell family, the notes app family, the tab strip, the route-tab map, those three routes, and `e2e/shell.spec.ts` whose five cases all assert the retired four-column `[tab l2 l1 irisy]` grid that no longer exists in `src`. `BlockAiOps` and `Notes.module.css` are retained because the live `MarkdownViewer` uses them. Deliberately NOT deleted: the hosted remote entry (`routes/remote.tsx`, `RemoteLanding`, `MobileLocalPreview`, `remote-*.ts`), which is the deferred scope of ADR-005 §12 U25 and an explicitly preserved invariant — unreachable-by-design is not dead. `scripts/find-unreachable-frontend.mjs` is added as the reachability analysis that produced this list, so the question is answered from the real import graph rather than by grepping symbol names; it still reports 60 further candidates that require the same dead-versus-deferred classification before any of them is touched.
+  - v44 2026-08-05: **§8.5 amendment — decision facts come from owner Outcomes, and a surface carries its intents' rendering and evidence stages (bao: 每个清单的逐条意图和能力都得有可验证的管线).** A user-angle review of the shipped shell found the registry landed but attached to the wrong paths: the turn-failure path still writes a raw error into the transcript as Irisy's own reply, offers copy/save-to-note/ask-knowledge-base on it, and the workspace pane prints a raw null-property error with a bare retry. Root cause was upstream — owners flatten typed failures into strings — so v44 fixes the direction of dependency rather than the wording. A decision fact is adapted from ADR-002 §15.5 v86 `Outcome` (target, staged before/after, precondition, provenance, committed effect, `Feedback` with `retryable`); a reprinted message string is neither a source of decision facts nor evidence that a rendering stage passes; and where an owner does not yet return a required fact the surface says less while the gap is recorded against the fact owner under ADR-005 §12.3 rather than filled in by the frontend. Each surface additionally names the intent IDs it serves and must carry current runnable verification, including real UI verification where behavior is visual; a surface without current evidence leaves its intents `partial` or `declared`. New Design Acceptance tracks migrating the turn-failure and workspace-load paths, removing content actions from a failed turn, and per-surface intent evidence. Pairs ADR-002 substrate §15.5/§17.6 v86 and ADR-005 irisy §12.3 v43.
+  - v43 2026-08-05: **NEW § decision-registry in §8.5 — decisions get a rendering subsystem, symmetric to the content viewer registry (bao chose option B: keep kernel-typed facts, frontend owns the mapping; "先实现功能").** Root cause this closes: the shell had an architecture for rendering content by descriptor/content type but none for rendering decisions, so every decision point was hand-built or degraded — the review gate rendered internal `tool` + `arg_summary` instead of target and staged change, typed `ResourceError::Unavailable { reason, retryable }` was flattened into a transient notice string, precondition mismatch and `OperationRef` state had no surface at all, and capability selection fell back to a native inventory dropdown. Those were not separate defects but one missing subsystem, which is also why connect, local-app reach, and reusable-outcome capture had nowhere to live. The registry maps a closed kind set (`approval`, `unavailable`, `conflict`, `progress`, `choice`, `capture`) to renderers; adding a kind requires an amendment. A decision fact carries subject, concrete target, staged before/after for a proposed mutation, the precondition it depends on, provenance, and typed options with stated consequences. A surface may not hand-build a decision presentation or degrade one into `window.confirm`/`alert`/a bare notice, may render only kernel-supplied facts, must never fabricate a target/diff/outcome, must keep caller and model prose out of the decision path, and must surface retryability/recovery when the fact carries it. Decision-critical facts are shown without a disclosure and a replacement surface may not be less informative than what it replaced; queued decisions are never silently dropped. Deliberately NOT introduced: a cross-boundary decision schema (option A), a new primitive/verb/transport/authorization axis, a workflow or step UI, a second shell, or a notification center. Existing review-gate properties are unchanged: the request stays gate-derived, the approval path stays on the surface an external caller cannot reach, the committing option keeps its danger affordance, and default focus stays on a non-committing option. Honest migration state: the current review request carries no target or staged change, so the approval surface keeps the gate-derived caller/operation/argument facts VISIBLE rather than demoting them, U10 is only partially served until a fact-owner amendment lands, and `ProviderHub`/`SmartTableViewer` still hand-build approval dialogs — all tracked in this section's Design Acceptance rather than claimed complete. Pairs ADR-005 irisy §12 v42 (U10/U12/U17/U23) and ADR-002 substrate §15/§17 v85 (the fact owners).
+  - v42 2026-08-05: **§8.5 intent conformance amendment (bao: 所有设计都得符合清单需求).** Every user-facing surface, control, menu entry, and empty/error state must serve at least one `v1` intent in ADR-005 §12.1 v42 and cite that intent ID; this section owns which surface serves an intent but no longer defines product scope and cannot introduce a job absent from that registry. A control may not require the user to name a tool, package, Skill, MCP server, ResourceRef, or capability domain to reach an intent, and a selector may not use the installed inventory as its primary affordance — Auto is the default, the compact FCT control is an override for U17, and full catalogue browsing stays in Library; rendering the internal capability list as ordinary chrome violates this even when each entry is valid. Three surfaces become structurally required rather than optional polish: U10 exact target plus staged change before a consequential action, U11 provenance drill-down from result to descriptor/operation state/raw local source, and U12 truthful unavailable/stale state carrying a recovery action. A surface that acts but omits approval, provenance, or failure is incomplete regardless of visual quality, and a `later` intent must not be presented as available. Pairs ADR-005 irisy §12 v42 and ADR-002 substrate §17 v85.
+  - v41 2026-08-05: **§8.5 FCT lifecycle and compact composer amendment (bao confirmed; PRJ cancelled).** FCT is the only user-facing reusable-capability noun. Library owns separate Find/Installed management and Create FCT authoring modes; creation/installation returns to Installed and never auto-activates. Use belongs to the current Irisy session through the compact `FCT · Auto`/selected-FCT composer control, with optional explicit `Use FCT` handoff from an installed Library item. Skills, packages, capabilities, Resources, and MCP remain implementation or drill-down facts rather than parallel user shelves. Duplicate identity, Resource/Project, raw Skill, and idle Ready controls are forbidden. Selection is valid only when it changes the exact next-turn Work-preserving Resource/optional-Skill/enforced-scope projection.
+  - v40 2026-08-05: **§8.5 shell authority amendment; §8.6 role switcher retired.** CTRL has one Ambient production shell with L1 exactly Work/Library/Settings; Irisy is resident and is not an L1 destination. ResourceDescriptor/content type and the viewer registry choose rendering; business-scene and per-pack branches are forbidden. Library is the sole browse/search/install UI over ADR-002's registry, while Irisy may invoke that same registry conversationally without a second search UI. Legacy routes are thin version-windowed redirects only. Adds non-release Design Acceptance.
   - v39 2026-08-03: **§8.5/§8.6 amendment — the persistent dialog is Irisy in every visible mode; the bottom bar exposes Identity, Resource, and Skill rather than agent/runtime jargon (bao confirmed).** Identity options are `Assistant` and `Coding`. `Hermes`, `OpenCode`, ACP, engine/persona internals, and `Workspace` are hidden from ordinary controls. Resource displays the actual current scope: Assistant derives it from active content/selection/knowledge/Companion/pack; Coding automatically binds the configured project when it is the sole eligible scope and shows a Project selector only when multiple eligible scopes exist. Skill defaults to `Auto`; a concrete skill appears only when explicitly pinned or transparently invoked, is populated from `list_local_skills`, and its SKILL.md is injected into that identity's next ACP session. Identity/resource/skill changes reset only the affected runtime before the next turn; controls may never be decorative. Content viewers remain selected automatically by content type, not by a user-facing frontend-layer selector. Runtime, transcript, cancellation, credentials, capabilities, and approvals remain isolated per ADR-005. Pairs ADR-001 spine §4 v21 and ADR-005 irisy §8.7/§11 v38.
   - v38 2026-08-02: **§8.5/§8.6 amendment — one mounted persistent dialog presents two explicitly selected, isolated agents: Irisy and Coding/OpenCode (bao confirmed).** `AmbientHome` owns the single `AgentMode` selector and the shared visual shell (message renderer, reasoning/tool trace, composer, attachment presentation). Irisy mode retains Irisy session tabs, engine selector, role/Companion/pack context; Coding mode retains OpenCode identity, selected workspace, coding skills, file/directory attachments, Stop, and secondary external launch. Each mode restores only its own durable transcript/session/workspace state; switching never copies hidden context, credentials, approvals, or an in-flight request. The former embedded `CodingScene` chat branch and standalone `/coding` chat route cease to be live authorities; `/coding` may only redirect/select Coding mode in the persistent shell. Pairs ADR-001 spine §4 v20 and ADR-005 irisy §8.7/§11 v37.
   - v37 2026-07-28: **§8.5 amendment — Coding's composer `+` is one native macOS selection panel that permits multiple files and directories together (bao approved).** `@tauri-apps/plugin-dialog` cannot express this interaction because it exposes mutually exclusive file or directory modes; the PWA calls one typed Tauri command backed by `NSOpenPanel` with both selection modes and multi-select enabled. The command returns a typed split: regular files enter the unchanged shared ACP capability-negotiated ContentBlock attachment path and appear as removable chips; directories are inserted as explicit paths in the turn for OpenCode to inspect through its own filesystem tools. CTRL never recursively enumerates, reads, encodes, or uploads a selected directory: ACP attachments remain regular files with the existing size and capability limits. This replaces the two file/folder path-menu entries without adding a second transport, a new gate surface, or a parallel agent path. Pairs ADR-002 substrate §1.8.6 v75 and ADR-001 spine §4 v18.
@@ -121,13 +132,13 @@ The Keyboard (always-on left grid) is the **drag-target for mcp installation**. 
 |---|---|
 | Pool mcp card | Installs to `~/.ctrl/mcps/<id>/`, runs ADR-002 § composition cap_asset provisioning, mcp appears on grid |
 | External `.zip` / `mcp.json` | Same after manifest validation |
-| GitHub URL | Fetch manifest, validate, install (ADR-007 § skill-discovery path) |
+| GitHub URL | Legacy compatibility import: normalize the selected public reference through ADR-002 §16; optional search augmentation follows ADR-006 §7 |
 | Mcp → trash zone | Uninstall (`rm -rf ~/.ctrl/mcps/<id>/`) |
 | Mcp → reorder | Persists Keyboard layout state |
 
 Drop-zone highlights on valid drag; reject + toast on invalid manifest. Post-install: Irisy detects new active skills in next turn. No restart, no "enable" toggle.
 
-Pool stays as **browse surface** (preview only); install path always Keyboard drop.
+Historical Pool remains only a compatibility browse route; Library is the canonical browse/search/install surface under §8.5.
 
 ## §4 Vault viewer stack (CTRL-native, NOT VMark dep)
 
@@ -165,7 +176,12 @@ Three-pane VMark-style entry into `~/Documents/CTRL/`:
 
 `VaultBrowser` reused inside Pool mcp detail panel ("edit prompt.md").
 
-## §7 Shell 4-col layout (v3 2026-06-01; v4 column order 2026-06-01) — `[Tab | L2 | L1 | Irisy]`
+## §7 Legacy 4-column shell — retired-v40 provenance
+
+The complete retained text in this section is historical and non-binding. It cannot authorize L1 items, routes, dimensions, or future work. v40's sole live shell authority is §8.5: one Ambient shell with Work/Library/Settings and Irisy resident outside L1.
+
+<details>
+<summary>Historical v3–v39 shell evidence (non-binding)</summary>
 
 > **STATUS (v8, 2026-06-16): LEGACY FALLBACK — no longer the shipped home.** The shipped home is now §8.5 (Ambient morphing, `AmbientWorkbench`). This 4-col shell renders ONLY behind `localStorage ctrl:legacy-shell='1'` (`app.tsx:50`). Retained as provenance + escape hatch. Its §7.8 Irisy-width 380–430 constraint is SUPERSEDED by §8.5's 480/300–640. See changelog v8.
 
@@ -231,6 +247,8 @@ These were surfaced during the 2026-06-01 refactor session and are NOT yet resol
 - Do NOT widen the Irisy column past 430px or shrink it under 380px — chat readability is calibrated to that range.
 - Do NOT render L1 at column index 1 (leftmost). L1 sits at column index 3, immediately left of Irisy (v4, bao 2026-06-01 `顺序是工作区（内有tab），L2，L1，Irisy`). Workspace tab area grows leftward from L1.
 - Do NOT spawn a Tauri child window for the workspace (pre-v3 path). The workspace tab area renders inside main window's `.tab` grid cell; `toggle_workspace_window` resizes main's left edge 478 ↔ 1600 only.
+
+</details>
 
 ## §6 Smart table → intelligent table (v10 — 2026-06-19, benchmarked vs Feishu Bitable)
 
@@ -597,7 +615,46 @@ This subsection records what the shipped PWA actually renders (v0.1.276), so the
 8. **Settings** (gear) — `navigate('/settings')`
 9. **Model badge** — opens `ProviderHub` picker
 
-**Persistent Irisy dialog and identities (v39)** — `AmbientHome` is the only mounted conversation authority. Every user-visible AI label is **Irisy**; the bottom bar selects `Identity = 'assistant' | 'coding'`, not Irisy versus an engine brand. The same bar exposes **Resource** and **Skill**. Resource is real scope, not decoration: Assistant derives it from the active content, explicit application selection, knowledge context, Companion, or pack; Coding auto-binds the configured project when it is the only eligible scope and shows a Project selector only when multiple eligible scopes exist, with absolute paths confined to details/tooltips. Skill is `Auto` unless the user explicitly pins a result from `list_local_skills`; a pinned SKILL.md is injected into that identity's fresh ACP session, while an installed-but-unused skill is never shown as active. Changing identity, Resource, or pinned Skill resets only the affected runtime before the next turn. Hermes, OpenCode, ACP, engine/persona implementation, and the word Workspace are hidden from ordinary chrome. Viewer choice remains automatic by content type. The message renderer and composer visuals may be shared, but Assistant and Coding never share runtime, cancellation, transcript/session, scope, credentials, capabilities, or approvals. The former Ambient `scene='coding'` branch and standalone `/coding` chat authority remain retired. `record_source` alone never grants Coding project eligibility. (ADR-003 frontend §8.5 v39)
+**Ambient production shell (v41).** `AmbientHome` is the only mounted work-and-conversation shell. L1 is exactly **Work / Library / Settings**. Irisy is resident in the shell and is not an L1 destination or selectable identity. Work holds explicitly opened Resources and tasks. Library is the sole FCT lifecycle surface over ADR-002's one registry, with two deliberately separate modes: **Find/Installed** manages discovery, install, removal, and selection availability; **Create FCT** is a dedicated authoring surface that returns to Installed after success. Creating or installing never silently activates an FCT. Skills, packages, capabilities, Resources, source kinds, and MCP remain implementation or drill-down facts and cannot form parallel catalogues.
+
+**Use FCT is not a Library authoring flow.** The Irisy composer is the sole session-use control: it selects Auto or one already available FCT for the current canonical Irisy session. Library may offer an explicit `Use FCT` action on an installed resolvable item, but that action only sets the current session selection and returns focus to the composer; it never opens creation controls inside the composer.
+
+The active Resource resolves through ADR-002's ResourceRef/ResourceDescriptor authority. `descriptor.content_type` plus the viewer registry selects rendering. The shell MUST NOT branch on FCT ref, package id, source brand, business scene, or product-specific route to choose a viewer. New content types register descriptor/viewer support; they do not add hand-coded shell branches. Irisy may invoke the same local registry used by Library conversationally, but it cannot expose a second browse/search/install UI or maintain another result store.
+
+The composer exposes one compact FCT selector and the turn action: `FCT · Auto` or `FCT · <dynamic name>`, plus Send; Send becomes Stop only when the runtime owns a cancellable active request. Static labels are English; dynamic user-authored FCT names retain their source language. Duplicate `Irisy`, `Resource: Project`, raw `Skill`, PRJ/Project-mode, and idle `Ready` controls are forbidden. FCT selection commits only after the canonical resolver returns the exact Resources, optional `skill_id`, capability scope, and policy facts that will alter the next turn; unresolved package entries are not selectable.
+
+Legacy `/coding`, `/discover`, `/pool`, `/notes`, and equivalent routes may exist only as thin redirects to the corresponding Work Resource, Library state, or Settings page. Each redirect declares a bounded compatibility window and contains no data loading, chat, discovery, install, or business rendering authority. (ADR-003 frontend §8.5 v41)
+
+**Decision surface registry (v43).** The shell has one registry for rendering content by descriptor/content type and now one symmetric registry for rendering decisions by kind. A decision point is any moment execution pauses for a choice outside the model: approval before a consequential action, an unavailable owner or missing connection, a failed precondition, a long-running operation, a bounded choice, or a reusable-outcome capture.
+
+Kernel-side typed facts remain the authority; the frontend owns only the kind-to-renderer mapping. This is the deliberate scope choice: no new cross-boundary schema, no new primitive, verb, transport, or authorization axis is introduced, and the registry consumes facts the kernel already produces (the gate-derived review request, typed `ResourceError` including `Unavailable { reason, retryable }`, descriptor/revision precondition mismatch, `OperationRef` state, and FCT selection-projection results).
+
+The kind set is closed: `approval`, `unavailable`, `conflict`, `progress`, `choice`, `capture`. Adding a kind requires an amendment. A decision fact carries the subject, the concrete target, the staged before/after when a mutation is proposed, the precondition it depends on, provenance, and typed options whose consequence is stated.
+
+Rules: a surface MUST NOT hand-build a decision presentation, and MUST NOT degrade one into `window.confirm`, `alert`, or a bare notice string. A decision surface renders only facts supplied by the kernel and never fabricates a target, a diff, or an outcome; caller/model prose is content and never drives a decision surface. Retryability and recovery must be surfaced when the fact carries them rather than flattened away.
+
+This registry is not a workflow or step UI, not a second shell, and not a notification center. It renders one pending decision at a time in the existing shell, and a decision raised while another is pending is queued rather than silently discarded.
+
+**Outcome-sourced decisions (v44).** A decision fact is adapted from the addressed owner's ADR-002 §15.5 v86 `Outcome`: target, staged before/after, precondition, provenance, committed effect, and `Feedback` including `retryable`. A surface adapts and renders those facts; it never derives them from a reprinted message string, and a reprinted string is not evidence that an intent's rendering stage passes. Where an owner does not yet return the fact an intent's pipeline requires, the surface says less and the gap is recorded against the fact owner under ADR-005 §12.3, never filled in by the frontend.
+
+Each shipped surface additionally carries the rendering and evidence stages of its intents' pipelines: it names the intent IDs it serves and has runnable verification, including real UI verification where the behavior is visual. A surface without current evidence leaves its intents `partial` or `declared`; it does not make them `verified`.
+
+Facts required to make the choice are shown without a disclosure; only provenance collapses. A decision surface MUST NOT be less informative than the surface it replaces: where the current owner supplies no richer fact, the existing gate-derived facts stay visible and the surface does not imply it has a target or staged change it was never given. Enriching an owner's fact is a fact-owner amendment, not a frontend improvisation.
+
+### Design Acceptance (non-release, v43 migration)
+
+- [ ] Migrate the remaining hand-built approval dialogs (`ProviderHub` provider removal, `SmartTableViewer` AI-column cost gate, which currently interpolates a raw kernel error into prose) so the registry is the only decision presentation path.
+- [ ] Land kernel-side target and staged before/after facts for the review request, then prove the approval surface satisfies ADR-005 §12 U10; until then U10 remains partially served.
+- [ ] Provide rendered coverage for the approval kind: non-committing default focus, Esc/backdrop denying, and visible gate-derived facts.
+- [ ] Wire the `progress`, `choice`, and `capture` kinds to real consumers or record why each remains unused.
+- [ ] Route the remaining failure paths that reprint message strings — the turn-failure path and the workspace load path — through Outcome-sourced decisions, and stop offering content actions such as copy or save-to-note on a failed turn.
+- [ ] Prove each shipped surface names its intent IDs and carries current rendering/evidence for them, including real UI verification where behavior is visual. (ADR-003 frontend §8.5 v44)
+
+**Intent conformance (v42).** Every user-facing surface, control, menu entry, and empty/error state must serve at least one `v1` user intent in ADR-005 §12.1 v42 and must cite that intent ID in its design record or implementation comment. This section owns which surface serves an intent; it does not define product scope, and it cannot introduce a user-facing job absent from that registry.
+
+A control may not require the user to name a tool, package, Skill, MCP server, ResourceRef, or capability domain in order to reach an intent; those remain drill-down facts behind a result. A selector may not enumerate the installed inventory as its primary affordance: Auto is the default, the compact FCT control is an override for U17, and complete catalogue browsing belongs to Library. A surface that renders the full internal capability list as ordinary chrome violates this rule even when every entry is individually valid.
+
+Three intents are structurally required rather than optional polish. U10 needs a surface showing the exact target and staged change before a consequential action; U11 needs provenance drill-down from a result to its descriptor, operation state, and raw local source; U12 needs a truthful unavailable/stale state carrying a recovery action instead of a bare message. A surface that performs an action but omits its approval, provenance, or failure path is incomplete regardless of visual quality. A `later` intent must not be presented as available. (ADR-003 frontend §8.5 v42)
 
 This is neither §7.1's `[▾ Irisy Mcp-pool Coding Settings]` nor § nav-l1 v5's `[Irisy Mcp-pool Notes Coding Assistant]` — it is the §8.1 capability-agnostic set (open tools/packs + Discover). Those two earlier chip specs are provenance only.
 
@@ -607,26 +664,9 @@ This is neither §7.1's `[▾ Irisy Mcp-pool Coding Settings]` nor § nav-l1 v5'
 
 **Brain note**: the home chat path routes through the in-process provider router (Pi exited the hot path, ADR-002 v20 §1.5) — NOT Pi, despite a stale "Pi default" comment in `lib/llm-transport.ts:262` (cosmetic, tracked as `vault/ctrl/adrs/DRIFT.md` D5). hermes is fully wired (install / `assistant_oneshot` / dashboard `:17890` / hermes-first branch in `irisy_chat.rs:151-195`) but its turn interception is intentionally **gated off** per bao 2026-06-12 decision A until hermes ships ACP streaming — an ADR-002 v20 intended interim, not a frontend concern.
 
-### §8.6 Role switcher — above the chat box (NEW v22 — 2026-06-25)
+### §8.6 Role switcher — retired-v40 provenance
 
-> **v39 amendment (2026-08-03) — this row is now the bottom Identity/Resource/Skill control for one user-visible Irisy, not an actor or engine-brand selector.** Identity options are Assistant and Coding. Resource displays real current scope; the sole Coding project is automatic, while multiple eligible projects produce a Project selector. Skill is Auto or one explicitly pinned local SKILL.md and must change the next runtime projection. Hermes/OpenCode/ACP/Workspace and persona/engine implementation are hidden from ordinary chrome. Identity, Resource, or Skill changes reset only the affected ACP owner; the role-switcher locks below apply to Assistant internals only and may not reintroduce a competing user-facing identity axis.
-
-bao 理念: **每个功能 = 角色 + 功能包,灵活配置不焊死**。配对 ADR-005 v6 的 persona 模型(单一品牌声音 + 可切换功能角色)。home 有**两条正交轴**:
-
-- **L1 rail（左侧）** = 数据/模块导航(notes / tables / coding / …)— `Sidebar.tsx`,不变。
-- **角色切换器（对话框上方）** = Irisy 当前**功能角色** = 一份灵活配置的 `(persona, 功能包[])`。显示当前角色 + 就地切换;**切角色时对话流持续**(不开新会话)。**尚未实装** —— 本节锁设计。
-
-Locks:
-
-1. **角色 = (persona, 功能包) 配置,非焊死单元。** persona 池(`lib/irisy-prompts.ts` + `personas/irisy/*`)⊥ 功能包池(`lib/feature-pack.ts` + 已装 MCP actions);每个 L1 声明式地配「绑哪个 persona + 挂哪些功能包」;换 persona / 加包 = 改配置不动代码。两者是扁平池 + 每 L1 配置(对齐 ADR-005 v6 §3 persona sources),可跨 L1 复用。
-2. **L1 ≠ 角色。** L1 是模块(数据 + workspace),角色只是它的 persona 切面。有些 L1 不挂角色(discover / settings = 纯导航)。
-3. **切换器位置 = 对话框上方**(`AmbientHome.tsx` 形变列头部,挨着 "Irisy" 标签 / 历史图标)。单一品牌(仍是 Irisy,ADR-005 单一品牌锁)—— 切角色 ≠ 多重人格。
-4. **对话持续化**:persona / 功能包是**每轮可变的上下文**;hermes 会话历史**不随角色切换重置**。
-5. **L1 ↔ 角色联动 = 是**(bao 2026-06-25):切 L1 时角色随之联动;输入框上方显示现行角色 + 可手动切换;切角色不改对话(= lock 4)。
-6. **角色的第三维 = 知识库(数据)**:角色 = `(persona, 功能包[], 知识库)`。同 persona 按「功能包 + 对应知识库」派生多角色 —— 例:**个人知识库助理(默认角色)= KB persona + 通用 notes 包 + 个人 vault**;**股票角色 = 同 KB persona + 股票功能包 + 股票知识库**。
-7. **初始角色集 + v1 范围**(bao 2026-06-25):默认 = 个人知识库助理;初始集 = 个人知识库助理 / 编程伴侣 / 工具创作;**v1 不做"新建角色"**,注册表留接口。
-
-设计 SSOT = `vault/ctrl/irisy-roles.md`(§七 3 决策已落)。实装 = 后续切片(v1 未发)。
+The former live role/persona/feature-pack switcher body is removed. It was introduced in v22, amended through v39, and is retained only in changelog/git history as provenance. v40 replaces it with one fixed Irisy identity and explicit Resource + optional pinned Skill + capability scope under §8.5 and ADR-005 v40. No role/persona registry or role-switcher UI is authorized.
 
 ## Dependencies
 
@@ -643,7 +683,7 @@ This is not a raw log console and not a runtime controller. It cannot send an Ir
 - [x] `packages/ctrl-web/` is single React 18 + Vite 5 codebase. Verified.
 - [x] `src-tauri/src/shell/` stays ≤ ~500 LOC. Verified.
 - [x] Tauri `invoke()` desktop + WS+token mobile bridge. Verified.
-- [x] L1 nav 2 chips (Irisy / Coding); Settings out of L1 nav. v0.1.105.
+- [~] Historical L1 nav 2-chip implementation evidence — retired by §8.5 v40; not current acceptance.
 - [x] Workspace 2-state (COMPANION 430 / EXPANDED 1800) with L1 `▾` sole operator; right edge anchored. v0.1.117 (`feat(shell): workspace = independent Tauri child window glued left of main`, then refined).
 - [x] Pool→Keyboard drag wired v0.1.106 (initial path). External zip / GitHub URL drop + trash uninstall + reorder in § Future work below.
 - [x] Viewer registry with content-type → lazy viewer mapping (Tiptap / CodeMirror 6 / mermaid / Tanstack Table / etc.). Verified.
@@ -654,7 +694,17 @@ This is not a raw log console and not a runtime controller. It cannot send an Ir
 ## Future work
 
 - Keyboard drag-install: external `.zip` / `mcp.json` drop + GitHub URL drag from address bar + trash zone uninstall + grid reorder persistence
-- Settings page L1 entry — `/settings` route renders inside workspace EXPANDED area; sub-pages `/settings/providers` (ADR-002 § provider) / `/settings/brain` (Pi status) / `/settings/appearance` / `/settings/editor` / `/settings/language` / `/settings/shortcuts` left rail with content panel right (§2 v2 amend)
+- Legacy Settings/Pool/Coding route cleanup is governed only by §8.5's thin, version-windowed redirect policy; no legacy route is future product authority.
+
+## Design Acceptance (non-release, v41 migration)
+
+- [ ] L1 renders exactly Work, Library, and Settings; Irisy remains resident and is not an L1 item.
+- [ ] Every shipped content surface selects a viewer from ResourceDescriptor/content type with no pack-id, source-brand, or business-scene branch.
+- [ ] Prove Library and Irisy observe the same normalized FCT registry projection; Library keeps Find/Installed management separate from Create FCT authoring, while composer Use persists per session and changes the next turn's Work-preserving Resources/optional Skill/enforced gate scope.
+- [ ] Each retained legacy route is a thin redirect with a documented removal window and no independent authority.
+- [ ] No role switcher, Assistant/Coding identity selector, persona registry, PRJ/Project context chip, raw Skill selector, or idle Ready indicator remains live.
+
+These are migration criteria and do not claim implementation acceptance.
 
 ## Provenance
 

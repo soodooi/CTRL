@@ -1,0 +1,638 @@
+{
+  "schemaVersion": 2,
+  "generatedBy": "scripts/gen-implementation-inventory.mjs",
+  "authority": "Owning ADRs define architecture; this artifact is the single executable complexity metric authority.",
+  "metrics": {
+    "agentVisibleGateTools": {
+      "definitionVersion": 2,
+      "definition": "Static tools projected to the capped embedded brain by BRAIN_TOOLSET.",
+      "sources": [
+        "src-tauri/src/kernel/visibility.rs"
+      ],
+      "exclusions": [
+        "First-party PWA projection",
+        "dynamic downstream MCP tools"
+      ],
+      "identities": [
+        "describe",
+        "produce",
+        "query"
+      ],
+      "count": 3,
+      "ceiling": 3,
+      "target": 3
+    },
+    "registeredGateTools": {
+      "definitionVersion": 2,
+      "definition": "Static tools registered in the authoritative :17873 MCP schema and cross-checked against Rust #[tool] owners.",
+      "sources": [
+        "vault/ctrl/mcp-schema.json",
+        "src-tauri/src/kernel/mcp_server.rs"
+      ],
+      "exclusions": [
+        "dynamic downstream MCP tools"
+      ],
+      "identities": [
+        "calendar_describe",
+        "calendar_produce",
+        "calendar_query",
+        "describe",
+        "diagnostics_smoke",
+        "diagnostics_status",
+        "diagnostics_trace",
+        "discover_packs",
+        "discover_skills",
+        "doc_produce",
+        "gate_tool_call",
+        "gate_tool_search",
+        "http_get",
+        "http_post",
+        "irisy_soul_get",
+        "irisy_soul_set",
+        "kernel_status",
+        "kv_get",
+        "kv_set",
+        "llm_chat",
+        "market_quote",
+        "market_screen",
+        "mcp_list_servers",
+        "mcp_pack_install",
+        "mcp_pack_list",
+        "mcp_pack_provision",
+        "mcp_pack_publish",
+        "mcp_pack_run",
+        "mcp_pack_scaffold",
+        "mcp_pack_uninstall",
+        "mcp_pack_validate",
+        "mcp_pack_write_file",
+        "mcp_proxy_call_tool",
+        "mcp_proxy_list_tools",
+        "note_active_get",
+        "note_diff",
+        "note_get",
+        "note_history",
+        "note_map",
+        "note_open",
+        "note_periodic",
+        "note_recent_changes",
+        "notes_describe",
+        "notes_query",
+        "produce",
+        "providers_describe",
+        "providers_query",
+        "query",
+        "registry_describe",
+        "registry_query",
+        "skill_list",
+        "skill_read",
+        "smart_table_add_field",
+        "smart_table_add_view",
+        "smart_table_append_row",
+        "smart_table_base_scaffold",
+        "smart_table_batch_append_rows",
+        "smart_table_batch_delete_rows",
+        "smart_table_create",
+        "smart_table_delete_field",
+        "smart_table_delete_row",
+        "smart_table_describe",
+        "smart_table_produce",
+        "smart_table_query",
+        "smart_table_run_ai_column",
+        "smart_table_run_ai_column_cancel",
+        "smart_table_run_ai_column_start",
+        "smart_table_run_ai_column_status",
+        "smart_table_update_cell",
+        "source_describe",
+        "source_produce",
+        "source_query",
+        "task_create",
+        "task_describe",
+        "task_produce",
+        "task_query",
+        "task_update",
+        "vault_aliases",
+        "vault_backlinks",
+        "vault_broken_links",
+        "vault_create_folder",
+        "vault_delete",
+        "vault_embed_note",
+        "vault_embedding_status",
+        "vault_graph_data",
+        "vault_list",
+        "vault_mentions",
+        "vault_move",
+        "vault_notes_by_tag",
+        "vault_orphans",
+        "vault_pulse",
+        "vault_read",
+        "vault_rebuild_index",
+        "vault_reembed_all",
+        "vault_rename",
+        "vault_root_path",
+        "vault_search",
+        "vault_semantic_search",
+        "vault_set_starred",
+        "vault_sourcing_pending",
+        "vault_sourcing_run",
+        "vault_suggest_links",
+        "vault_tags",
+        "vault_text_describe",
+        "vault_text_query",
+        "vault_watch",
+        "vault_write",
+        "vault_write_image",
+        "web_search"
+      ],
+      "count": 109,
+      "ceiling": 109,
+      "target": null
+    },
+    "missingCanonicalProductGateTools": {
+      "definitionVersion": 2,
+      "definition": "Canonical product verbs absent from the registered gate: describe, query, and produce.",
+      "sources": [
+        "vault/ctrl/mcp-schema.json",
+        "src-tauri/src/kernel/mcp_server.rs"
+      ],
+      "exclusions": [
+        "diagnostics",
+        "transport infrastructure",
+        "time-bounded compatibility aliases"
+      ],
+      "identities": [],
+      "count": 0,
+      "ceiling": 0,
+      "target": 0
+    },
+    "productTauriCommands": {
+      "definitionVersion": 2,
+      "definition": "Commands registered in the single Tauri generate_handler list.",
+      "sources": [
+        "src-tauri/src/commands/mod.rs"
+      ],
+      "exclusions": [
+        "commented retirements",
+        "unregistered command functions"
+      ],
+      "identities": [
+        "chat_attachment::read_import_sources",
+        "chat::chat_stream",
+        "coding_launcher::coding_launcher_status",
+        "coding_launcher::launch_coding_workspace",
+        "coding_launcher::register_project_resource",
+        "config::config_delete_provider",
+        "config::config_list_providers",
+        "config::config_set_provider_key",
+        "config::config_test_provider",
+        "diagnostics::app_diagnostics_smoke",
+        "diagnostics::app_diagnostics_status",
+        "diagnostics::app_diagnostics_trace",
+        "diagnostics::diagnostics_capture_start",
+        "diagnostics::diagnostics_capture_stop",
+        "diagnostics::diagnostics_export_preview",
+        "event_stream::subscribe",
+        "gate::gate_invoke",
+        "git::git_commit_all",
+        "git::git_init",
+        "git::git_log",
+        "git::git_push",
+        "git::git_status",
+        "git::vault_git_sync",
+        "image::image_generate",
+        "irisy_chat::irisy_chat_stream",
+        "irisy_chat::irisy_reset_engine",
+        "irisy::irisy_init",
+        "kernel::connect_local_app",
+        "kernel::connect_remote_mcp",
+        "kernel::install_mcp",
+        "kernel::install_mcp_from_mcp",
+        "kernel::install_mcpb",
+        "kernel::list_local_app_connectors",
+        "kernel::list_mcp_servers",
+        "kernel::list_mcps",
+        "kernel::list_session_transcripts",
+        "kernel::mcp_call",
+        "kernel::open_workspace",
+        "kernel::read_mcp_manifest",
+        "kernel::run_action",
+        "kernel::run_mcp",
+        "kernel::set_mcp_config",
+        "kernel::uninstall_mcp",
+        "keychain::delete_key",
+        "keychain::get_key",
+        "keychain::store_key",
+        "memory::append_event",
+        "memory::query",
+        "memory::read_log",
+        "notes_ui_scan::check_vault_exists",
+        "notes_ui_scan::list_vault",
+        "notes_ui_scan::list_vault_folders",
+        "notes_ui_scan::reload_vault",
+        "notes_ui::auto_rename_untitled",
+        "notes_ui::batch_delete_notes_async",
+        "notes_ui::check_for_app_update",
+        "notes_ui::copy_image_to_vault",
+        "notes_ui::copy_text_to_clipboard",
+        "notes_ui::create_empty_vault",
+        "notes_ui::create_getting_started_vault",
+        "notes_ui::create_note_content",
+        "notes_ui::create_vault_folder",
+        "notes_ui::delete_vault_folder",
+        "notes_ui::detect_renames",
+        "notes_ui::get_default_vault_path",
+        "notes_ui::get_file_diff",
+        "notes_ui::get_file_diff_at_commit",
+        "notes_ui::get_file_history",
+        "notes_ui::get_modified_files",
+        "notes_ui::get_note_content",
+        "notes_ui::get_process_memory_snapshot",
+        "notes_ui::get_settings",
+        "notes_ui::git_author_identity",
+        "notes_ui::git_commit",
+        "notes_ui::init_git_repo",
+        "notes_ui::is_git_repo",
+        "notes_ui::load_vault_list",
+        "notes_ui::open_vault_file_external",
+        "notes_ui::read_text_from_clipboard",
+        "notes_ui::reload_vault_entry",
+        "notes_ui::rename_vault_folder",
+        "notes_ui::save_image",
+        "notes_ui::save_note_content",
+        "notes_ui::save_settings",
+        "notes_ui::save_vault_list",
+        "notes_ui::search_vault",
+        "notes_ui::should_use_external_media_preview",
+        "notes_ui::start_vault_watcher",
+        "notes_ui::stop_vault_watcher",
+        "notes_ui::sync_vault_asset_scope_for_window",
+        "notes_ui::update_current_window_min_size",
+        "notes_ui::update_menu_state",
+        "notes_ui::update_wikilinks_for_renames",
+        "pack_registry::fetch_pack_registry",
+        "provider_models::provider_list_models",
+        "provider_models::provider_query_models",
+        "provider_templates::list_provider_templates",
+        "provider_templates::refresh_provider_catalog",
+        "provider::brain_status",
+        "provider::get_active_providers",
+        "provider::provider_clear_active",
+        "provider::provider_detect",
+        "provider::provider_list",
+        "provider::provider_set_active",
+        "review::review_pending",
+        "review::review_resolve",
+        "screenshot::capture_screen_and_ocr",
+        "skills::list_local_skills",
+        "skills::search_skills",
+        "storage::cache_clear",
+        "storage::cache_get",
+        "storage::cache_remove",
+        "storage::cache_set",
+        "storage::cache_total_bytes",
+        "storage::localstorage_clear",
+        "storage::localstorage_get",
+        "storage::localstorage_list",
+        "storage::localstorage_remove",
+        "storage::localstorage_set",
+        "system::collapse_workspace_window",
+        "system::destroy_input_window",
+        "system::ensure_workspace_window_expanded",
+        "system::hide_window",
+        "system::install_container_runtime",
+        "system::kernel_status",
+        "system::ollama_pull_default",
+        "system::ollama_status",
+        "system::position_window_top_right",
+        "system::reveal_capability",
+        "system::runtime_install_status",
+        "system::set_window_height",
+        "system::toggle_workspace_window",
+        "updater::apply_app_update",
+        "updater::check_app_update",
+        "vault::set_active_note",
+        "vault::vault_get_config",
+        "vault::vault_set_auto_sync",
+        "vault::vault_set_root",
+        "vault::vault_watch_recent",
+        "vault::vault_write_image"
+      ],
+      "count": 140,
+      "ceiling": 140,
+      "target": null
+    },
+    "exactMcpTauriDualSurfaces": {
+      "definitionVersion": 2,
+      "definition": "Exact-name overlap between registered MCP tools and registered Tauri commands; this does not claim semantic equivalence.",
+      "sources": [
+        "vault/ctrl/mcp-schema.json",
+        "src-tauri/src/commands/mod.rs"
+      ],
+      "exclusions": [
+        "semantic equivalents with different names",
+        "generic canonical verb leaf collisions with unrelated namespaced Tauri commands"
+      ],
+      "identities": [
+        "kernel_status",
+        "vault_write_image"
+      ],
+      "count": 2,
+      "ceiling": 2,
+      "target": 0
+    },
+    "semanticMcpTauriDualSurfaces": {
+      "definitionVersion": 2,
+      "definition": "Business-equivalent MCP/Tauri surfaces derived from exact identity or explicit ctrl-inventory semantic-dual annotations.",
+      "sources": [
+        "vault/ctrl/mcp-schema.json",
+        "src-tauri/src/commands/mod.rs"
+      ],
+      "exclusions": [
+        "unrelated shell, OS, diagnostics, and UI-only Tauri commands"
+      ],
+      "identities": [
+        "skills::list_local_skills->skill_list",
+        "skills::search_skills->discover_skills",
+        "system::kernel_status->kernel_status",
+        "vault::vault_write_image->vault_write_image"
+      ],
+      "count": 4,
+      "ceiling": 4,
+      "target": 0
+    },
+    "querySourceImplementations": {
+      "definitionVersion": 2,
+      "definition": "Production Rust implementations of QuerySource.",
+      "sources": [
+        "src-tauri/src/**/*.rs"
+      ],
+      "exclusions": [
+        "cfg(test) modules",
+        "trait declaration"
+      ],
+      "identities": [
+        "src-tauri/src/kernel/calendar_source.rs::CalendarSource",
+        "src-tauri/src/kernel/manifest_source.rs::ManifestConnectorSource",
+        "src-tauri/src/kernel/tasks_source.rs::TaskSource",
+        "src-tauri/src/kernel/vault_notes_source.rs::NotesSource",
+        "src-tauri/src/kernel/vault_smart_table.rs::SmartTable"
+      ],
+      "count": 5,
+      "ceiling": 5,
+      "target": null
+    },
+    "recordSinkImplementations": {
+      "definitionVersion": 2,
+      "definition": "Production Rust implementations of RecordSink.",
+      "sources": [
+        "src-tauri/src/**/*.rs"
+      ],
+      "exclusions": [
+        "cfg(test) modules",
+        "trait declaration",
+        "manifest connector generic produce path"
+      ],
+      "identities": [
+        "src-tauri/src/kernel/calendar_source.rs::CalendarSource",
+        "src-tauri/src/kernel/tasks_source.rs::TaskSource",
+        "src-tauri/src/kernel/vault_doc.rs::DocBody",
+        "src-tauri/src/kernel/vault_smart_table.rs::SmartTable"
+      ],
+      "count": 4,
+      "ceiling": 4,
+      "target": null
+    },
+    "rawEventPublishers": {
+      "definitionVersion": 2,
+      "definition": "Production calls that publish Cell or Op directly through EventWsBridge instead of typed EventBus authority.",
+      "sources": [
+        "src-tauri/src/**/*.rs"
+      ],
+      "exclusions": [
+        "EventWsBridge method definitions",
+        "cfg(test) modules"
+      ],
+      "identities": [
+        "src-tauri/src/commands/kernel.rs:1122::run_text_chat::publish_cell",
+        "src-tauri/src/commands/kernel.rs:1141::run_text_chat::publish_cell",
+        "src-tauri/src/commands/kernel.rs:1182::run_mcp_invoke::publish_cell",
+        "src-tauri/src/commands/kernel.rs:852::run_mcp_inner::publish_op",
+        "src-tauri/src/commands/kernel.rs:907::run_mcp_inner::publish_op",
+        "src-tauri/src/commands/kernel.rs:932::run_mcp_inner::publish_cell",
+        "src-tauri/src/commands/kernel.rs:941::run_mcp_inner::publish_op",
+        "src-tauri/src/kernel/mcp_server.rs:1151::notify_packs_changed::publish_op",
+        "src-tauri/src/kernel/subprocess_channel_adapter.rs:160::translate_and_publish::publish_cell",
+        "src-tauri/src/kernel/subprocess_channel_adapter.rs:171::translate_op::publish_cell",
+        "src-tauri/src/kernel/subprocess_channel_adapter.rs:181::translate_op::publish_cell",
+        "src-tauri/src/kernel/subprocess_channel_adapter.rs:198::translate_op::publish_cell",
+        "src-tauri/src/kernel/subprocess_channel_adapter.rs:225::translate_op::publish_op"
+      ],
+      "count": 13,
+      "ceiling": 13,
+      "target": 0
+    },
+    "liveShells": {
+      "definitionVersion": 2,
+      "definition": "Production shell implementations reachable through RootShellInner.",
+      "sources": [
+        "packages/ctrl-web/src/app.tsx"
+      ],
+      "exclusions": [
+        "hosted remote entry",
+        "test shells"
+      ],
+      "identities": [
+        "AmbientWorkbench"
+      ],
+      "count": 1,
+      "ceiling": 1,
+      "target": 1
+    },
+    "liveRoutes": {
+      "definitionVersion": 2,
+      "definition": "Production TanStack routes registered in app.tsx.",
+      "sources": [
+        "packages/ctrl-web/src/app.tsx"
+      ],
+      "exclusions": [
+        "icon-lab",
+        "pack-lab",
+        "table-lab"
+      ],
+      "identities": [
+        "codingRedirectRoute:/coding",
+        "indexRoute:/",
+        "libraryRoute:/library",
+        "poolRedirectRoute:/pool",
+        "settingsAgentRoute:/settings/agent",
+        "settingsCtrlRoute:/settings/ctrl",
+        "settingsEnvRoute:/settings/env",
+        "settingsLogsRoute:/settings/logs",
+        "settingsProvidersRoute:/settings/providers",
+        "settingsRoute:/settings"
+      ],
+      "count": 10,
+      "ceiling": 10,
+      "target": 3
+    },
+    "rolePersonaRegistryEntries": {
+      "definitionVersion": 2,
+      "definition": "Role/persona ids registered by any production ROLES array; deleting the registry yields zero.",
+      "sources": [
+        "packages/ctrl-web/src/**/*.{ts,tsx}"
+      ],
+      "exclusions": [
+        "engine drivers",
+        "protocol message roles",
+        "tests and documentation"
+      ],
+      "identities": [],
+      "count": 0,
+      "ceiling": 0,
+      "target": 0
+    },
+    "directAgentCliSpawns": {
+      "definitionVersion": 2,
+      "definition": "All direct production Rust process constructions, a conservative superset that catches moved agent/CLI spawns.",
+      "sources": [
+        "src-tauri/src/**/*.rs"
+      ],
+      "exclusions": [
+        "cfg(test) modules"
+      ],
+      "identities": [
+        "src-tauri/src/bin/hermes_acp_release_probe.rs:75::main",
+        "src-tauri/src/commands/coding_launcher.rs:275::run_osascript",
+        "src-tauri/src/commands/coding_launcher.rs:322::open_macos_app",
+        "src-tauri/src/commands/git.rs:29::run_git",
+        "src-tauri/src/commands/kernel.rs:354::install_mcpb_blocking",
+        "src-tauri/src/commands/notes_ui.rs:228::run_git_at_root",
+        "src-tauri/src/commands/notes_ui.rs:323::detect_renames",
+        "src-tauri/src/commands/notes_ui.rs:596::open_vault_file_external",
+        "src-tauri/src/commands/screenshot.rs:76::capture_and_ocr",
+        "src-tauri/src/commands/system.rs:536::reveal_in_file_manager",
+        "src-tauri/src/commands/system.rs:542::reveal_in_file_manager",
+        "src-tauri/src/commands/system.rs:548::reveal_in_file_manager",
+        "src-tauri/src/commands/updater.rs:1060::rollback_transaction",
+        "src-tauri/src/commands/updater.rs:1185::process_command",
+        "src-tauri/src/commands/updater.rs:1335::run_update_helper",
+        "src-tauri/src/commands/updater.rs:1379::run_update_helper",
+        "src-tauri/src/commands/updater.rs:1526::spawn_transaction_helper",
+        "src-tauri/src/commands/updater.rs:370::run_command",
+        "src-tauri/src/kernel/libreoffice_bridge.rs:222::verify_libreoffice_signature",
+        "src-tauri/src/kernel/libreoffice_bridge.rs:240::verify_libreoffice_signature",
+        "src-tauri/src/kernel/mcp_host.rs:271::to_command",
+        "src-tauri/src/kernel/mcp_host.rs:279::to_command",
+        "src-tauri/src/kernel/mcp_host.rs:327::to_command",
+        "src-tauri/src/kernel/pack_provision.rs:224::provision_service",
+        "src-tauri/src/kernel/pack_provision.rs:83::probe",
+        "src-tauri/src/kernel/pack_sandbox.rs:110::wrap_program",
+        "src-tauri/src/kernel/pack_sandbox.rs:126::wrap_program",
+        "src-tauri/src/kernel/pack_sandbox.rs:140::wrap_program",
+        "src-tauri/src/kernel/pack_sandbox.rs:158::wrap_shell",
+        "src-tauri/src/kernel/pack_sandbox.rs:169::wrap_shell",
+        "src-tauri/src/kernel/pack_sandbox.rs:180::wrap_shell",
+        "src-tauri/src/kernel/provider/adapter/cli/one_shot.rs:115::chat_stream",
+        "src-tauri/src/kernel/vault_git.rs:133::run_git",
+        "src-tauri/src/shell/acp_client.rs:849::start_in_scoped",
+        "src-tauri/src/shell/agent_installer.rs:212::ensure_uvx",
+        "src-tauri/src/shell/agent_installer.rs:220::ensure_uvx",
+        "src-tauri/src/shell/kernel_supervisor.rs:31::free_dashboard_port",
+        "src-tauri/src/shell/kernel_supervisor.rs:312::start",
+        "src-tauri/src/shell/kernel_supervisor.rs:45::free_dashboard_port",
+        "src-tauri/src/shell/kernel_supervisor.rs:60::free_dashboard_port",
+        "src-tauri/src/shell/kernel_supervisor.rs:62::free_dashboard_port",
+        "src-tauri/src/shell/keychain_subprocess.rs:106::get",
+        "src-tauri/src/shell/keychain_subprocess.rs:148::delete",
+        "src-tauri/src/shell/keychain_subprocess.rs:38::set",
+        "src-tauri/src/shell/keychain_subprocess.rs:71::get_for_service",
+        "src-tauri/src/shell/ollama_install.rs:120::ollama_binary_on_path",
+        "src-tauri/src/shell/ollama_install.rs:149::probe_now",
+        "src-tauri/src/shell/ollama_install.rs:281::parse_pull_progress",
+        "src-tauri/src/shell/provision_runner.rs:106::shell_command",
+        "src-tauri/src/shell/provision_runner.rs:112::shell_command",
+        "src-tauri/src/shell/provision_runner.rs:146::install_via_pkg_mgr",
+        "src-tauri/src/shell/provision_runner.rs:155::install_via_pkg_mgr",
+        "src-tauri/src/shell/provision_runner.rs:160::install_via_pkg_mgr",
+        "src-tauri/src/shell/provision_runner.rs:165::install_via_pkg_mgr",
+        "src-tauri/src/shell/runtime_install.rs:207::auto_installable",
+        "src-tauri/src/shell/runtime_install.rs:93::on_path",
+        "src-tauri/src/shell/tool_installer.rs:149::download_and_extract",
+        "src-tauri/src/shell/tool_installer.rs:160::download_and_extract",
+        "src-tauri/src/shell/tool_installer.rs:168::download_and_extract",
+        "src-tauri/src/shell/tool_installer.rs:176::download_and_extract"
+      ],
+      "count": 60,
+      "ceiling": 60,
+      "target": null
+    },
+    "directSkillAgentSpawns": {
+      "definitionVersion": 2,
+      "definition": "Explicitly marked Skill-owned headless agent process constructions across production Rust.",
+      "sources": [
+        "src-tauri/src/**/*.rs"
+      ],
+      "exclusions": [
+        "shared Irisy ACP engine",
+        "explicit user coding launcher"
+      ],
+      "identities": [],
+      "count": 0,
+      "ceiling": 0,
+      "target": 0
+    },
+    "perPackUiIdBranches": {
+      "definitionVersion": 2,
+      "definition": "Every literal ctrl-* pack id in production UI source; zero literals prevents comparisons, switches, and lookup maps.",
+      "sources": [
+        "packages/ctrl-web/src/**/*.{ts,tsx}"
+      ],
+      "exclusions": [
+        "tests",
+        "stories",
+        "labs",
+        "ctrl-asset",
+        "ctrl-asset:",
+        "ctrl-asset://...",
+        "ctrl-tab-store",
+        "ctrl-workspace-store",
+        "generic manifest data outside the UI source root"
+      ],
+      "identities": [
+        "packages/ctrl-web/src/lib/feature-pack-demo.ts:27::ctrl-ghostfolio"
+      ],
+      "count": 1,
+      "ceiling": 1,
+      "target": 0
+    },
+    "lifecycleToolFamilies": {
+      "definitionVersion": 2,
+      "definition": "Registered MCP basename families containing all _start, _status, and _cancel members.",
+      "sources": [
+        "vault/ctrl/mcp-schema.json"
+      ],
+      "exclusions": [
+        "non-MCP lifecycle APIs"
+      ],
+      "identities": [
+        "smart_table_run_ai_column:{start,status,cancel}"
+      ],
+      "count": 1,
+      "ceiling": 1,
+      "target": 0
+    },
+    "orphanLifecycleToolMembers": {
+      "definitionVersion": 2,
+      "definition": "Registered MCP basenames with an incomplete subset of _start, _status, and _cancel suffixes.",
+      "sources": [
+        "vault/ctrl/mcp-schema.json"
+      ],
+      "exclusions": [
+        "ordinary words ending in these suffixes remain visible intentionally"
+      ],
+      "identities": [],
+      "count": 0,
+      "ceiling": 0,
+      "target": 0
+    }
+  }
+}

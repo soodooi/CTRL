@@ -1,22 +1,30 @@
 ---
 adr_id: 005
 module: irisy
-title: CTRL Irisy — App AI assistant + persona shell + §8 terminal-essence dialog + §9 mission/knowledge + §10 capability integration + §11 role boundary
-version: 38
+title: CTRL Irisy — one fixed identity + explicit context + sole live transcript + capability integration
+version: 44
 status: accepted
-last_updated: 2026-08-03
+last_updated: 2026-08-05
 deciders: [bao, zeus, hephaestus]
 sections:
-  - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004) }
+  - { id: lifecycle,                  source: orig-016 — RETIRED in v5 (mcp lifecycle moves to ADR-004); intent column retired-v42 (superseded by §12 user intent registry) }
+  - { id: user-intents,               source: bao-2026-08-05-single-truth-lists, note: "§12 v42 sole user-intent registry and product-scope authority; §12.3 v43 requires one executable pipeline per intent with generated verified/partial/declared status; ADR-002 §17 owns capability domains and ADR-003 §8.5 owns surface conformance." }
   - { id: remote-view,                source: orig-017 — preserved (still Irisy's UX surface) }
-  - { id: persona-shell,              source: H-2026-06-09-002 校准 (replaces persona v4 brain-self-awareness lock) }
+  - { id: persona-shell,              source: retired-v40, note: "Role/persona registry and selectable identity authority retired; one fixed Irisy identity." }
   - { id: soul-md-compat,             source: new-2026-06-03 — RETIRED in v5 (SOUL.md spec applies to hermes agent memory, not Irisy) }
   - { id: self-reflection-loop,       source: new-2026-06-04 — MIGRATED to hermes via SKILL.md (Irisy is no longer an agent) }
   - { id: capability-decomposition,   source: new-2026-06-04 — RETIRED in v5 (no Irisy system prompt — agents own their prompts) }
   - { id: pi-extension-integration,   source: new-2026-06-04 — RETIRED in v5 (Pi exited CTRL hot path, ctrl-pi-bridge deleted) }
   - { id: capability-integration,     source: bao-2026-08-02, note: "Normative contract for every Irisy capability or external-application integration; project review records are evidence, never a second authority." }
-  - { id: role-boundary,              source: bao-2026-08-03-one-irisy-two-identities, note: "One user-visible Irisy has Assistant and Coding identities while distinct runtime, session, resource, cancellation, and capability owners remain isolated." }
+  - { id: role-boundary,              source: bao-2026-08-05-one-fixed-irisy, note: "One fixed Irisy identity; §11 v41 keeps the canonical tuple and resolves selected FCT into existing Resource/optional-Skill/capability/policy facts before turn assembly; §11.2 v44 moves transcript truth to a kernel-owned plain-text Resource with the frontend store as its projection." }
+  - { id: byo-managed-install,        source: retired-v40, note: "Former §8.8 body removed; managed-engine install history retained in changelog/git provenance only." }
 changelog:
+  - v44 2026-08-05: **§11.2 amendment — the transcript is a kernel-owned plain-text Resource, and the frontend store is its projection (bao: U13 做).** v40 named the persisted frontend session store the sole live and recovery transcript authority. That store is browser storage: the one thing a user most needs to keep was the one thing ordinary tools could not read, which fails the plain-text invariant and the vim test outright, and made U13 recovery unverifiable because there was no artifact to verify against. A conversation is user content, so it now lives as one readable Markdown file per session — YAML frontmatter for metadata, `## <role>` per turn — owned by the kernel as the canonical Resource `ctrl://local/session/<id>`; the transcript directory is the session list, with no second index. The parse is deliberately tolerant: missing frontmatter, unknown keys, an unclosed block, and an ordinary `## Heading` inside a reply are all handled, because refusing to read a hand-edited file would lose history over a typo. The owner offers exactly one write, `append_message`, under the §15.2 write contract (revision recheck, atomic commit, post-write reread, typed Outcome); rewriting and deleting history are absent by design, and a fork narrows the view, never the record. The frontend store is rebuilt from the transcript on open and writes only settled turns, so a streaming or empty placeholder never reaches the file. Browser-held transcripts are migrated turn by turn before the projection is rebuilt, a partial migration leaves what landed readable and retries without deleting its source, and an unreachable kernel keeps the existing local view and says so instead of blanking it. Adds no verb, primitive, transport, or authorization axis: transcripts reuse the vault/notes grant and the existing three verbs. Pairs ADR-002 substrate §15.2/§15.5 v87 and ADR-005 §12 v43 U13.
+  - v43 2026-08-05: **NEW §12.3 — every intent needs one executable pipeline, and its status is generated rather than asserted (bao: 每个清单的逐条意图和能力都得有可验证的管线).** A surface existing or a capability being installed is not evidence that a job can be done; a user-angle review of the shipped shell found intents whose surfaces existed while the path failed, including raw errors rendered as Irisy's own replies. Each `v1` intent now declares exactly one pipeline `entry surface → resolved context → capability domains → canonical operation → Outcome → rendering → evidence`, where every stage is checkable: the entry stage asserts reachability without naming a tool/package/Skill/MCP server/ResourceRef/domain, the domain stage exposes over-broad grants, the Outcome stage names the facts the owner must return so a missing target/staged/retryability is correctly blamed on the fact owner rather than presentation, and the evidence stage is runnable plus real UI verification where behavior is visual. Status is exactly `verified`, `partial` (with the failing stage named), or `declared`, reported from generated evidence; `partial`/`declared` must not be shown to users as available, a completion claim naming an intent requires that intent's current evidence, and an intent cannot be `verified` while any domain in its pipeline is `declared` under ADR-002 §17.6. This adds no per-intent endpoint, route, or runtime branch — a pipeline is an evidence path over the existing shell, registry, gate, owners, and rendering registries. Pairs ADR-002 substrate §15.5/§17.6 v86 and ADR-003 frontend §8.5 v44.
+  - v42 2026-08-05: **NEW §12 user intent registry; §1's intent column retired (bao: 整理成能力清单和意图清单，唯一真相，所有设计都得符合清单需求).** CTRL had no live user-intent authority: the only enumeration (68 intents) retired with ADR-008 and was never inherited, and §1's 8-stage table is a pre-fixed-identity pack lifecycle naming retired Pool/keycap/persona surfaces. Every design round therefore re-derived scope from architecture, which repeatedly produced controls that expose internal inventory instead of serving a job. §12.1 enumerates 25 intents (U1–U25) as complete user jobs in the user's terms, each mapped to ADR-002 §17 v85 capability domains and marked `v1` or `later`; an intent is never a tool, endpoint, domain, FCT, Resource kind, or screen. U23 (save a verified behavior for reuse) is `v1` on bao's decision because without it the only reuse path is choose-a-capability-before-working, the exact failure mode this registry exists to prevent; its scope excludes transcripts, step sequences, replayed parameters, and triggers, and saving never activates the result. U22 write stays `later` because none of its write-safety preconditions has real evidence yet. §12.1.1 refuses rather than defers scheduling/event-triggers/conditions/branching, BYO-CLI loop supervision, and any job whose primary affordance is browsing internal inventory. Rules: the registry is amendable but never unilaterally — any add/split/merge/retire/rescope, including moving an intent between `v1` and `later`, requires explicit discussion with bao and bao's decision before the amendment, and an uncovered real user need must be raised rather than served silently, stretched into an existing entry, or blocked without record; every product decision names the intents it serves; an intent must be reachable without the user naming a tool, package, Skill, MCP server, ResourceRef, or capability domain; an intent needing a nonexistent domain is a substrate amendment first; U6/U19/U22 writes cross ReviewGate under §10.3; U10 approval, U11 provenance, and U12 truthful failure/recovery are first-class intents rather than modal details; capability selection (U17) is an override, never a precondition, so Auto alone must serve U1–U9; `later` intents must not be presented as available. §11 v41 still owns identity, the six-fact tuple, and session/transcript authority. Pairs ADR-002 substrate §17 v85 and ADR-003 frontend §8.5 v42.
+  - v41 2026-08-05: **§9.1/§11 FCT context amendment (bao confirmed; PRJ cancelled).** Irisy may resolve or accept one selected FCT for a turn. FCT is a product projection, not an identity, session, transcript, Resource, Skill, capability, operation, or ReviewGate owner. Resolution happens live before runtime assembly: preserve Work Resources, append/dedupe dependency Resources, optionally select an internal Skill, and enforce least-privilege gate scope/policy. Zero-Resource is valid only when Skill or enforced scope changes. Selection persists per canonical session; stale/removed selection reports once, returns to Auto, resets, and does not send. Create/Manage remains in Library while Use belongs to the composer.
+  - v40 2026-08-05: **§8.7/§11 authority amendment; §8.8 retired.** CTRL has one fixed Irisy identity, no Assistant/Coding identity split and no role/persona registry. Turn context is exactly `session_id + explicit Resources + optional pinned Skill + capability scope + policy + task`. The Assistant transcript store becomes the sole live Irisy transcript authority; former Coding project history and Hermes history are read-only import material that create new canonical Irisy sessions. Project coding is a Resource/Skill scope. Skills never own sessions. Live dependency on `irisy-architecture.md` is removed; historical changelog/provenance references remain. The conflicting §8.8 body is removed and retained only as retired-v40 provenance.
+  - v39 2026-08-03: **§11.2/§11.3 amendment — one Skill registry and one transcript authority close the visible-control/runtime gap (bao: selected “炒股养家” was ignored while Irisy searched a hardcoded `stock-analysis-cn`; requested full architectural repair).** UI discovery, explicit pinning, and gate `skill_list`/`skill_read` resolve the same hot-scanned local `SKILL.md` registry. A pinned Skill is immutable fresh-session input, takes precedence over generic Auto-discovery hints, and fails visibly if stale or unreadable; it can prescribe method but cannot imply that a required feature pack or gate tool is installed. Feature packs provide capabilities through `:17873`, Resources provide context, and Skills provide playbooks; these axes compose but never masquerade as one another. Assistant session tabs and their persisted transcript store are the sole live/recovery transcript authority; Hermes history is read-only import material that creates a new tab and never overwrites an active transcript. Coding retains its separate workspace-keyed transcript authority. Pairs ADR-002 substrate §7 v80 and ADR-003 frontend §8.5/§8.6 v39.
   - v38 2026-08-03: **§8.7 + §11 amendment — Irisy is the sole user-visible AI brand with two identities, Assistant and Coding; runtime names are not product actors (bao confirmed).** The identity selector, real Resource scope, and Auto/explicit Skill control live under the one composer. Assistant resources are current content, explicit application selection, knowledge, or active pack; Coding resources are eligible projects, auto-bound when only one exists. A pinned skill is loaded from the existing local SKILL.md authority and injected into that identity's fresh ACP session; an installed-but-unused skill is never shown as active. Identity/resource/skill changes reset only the affected owner before the next turn. Beneath the brand, Assistant and Coding still own separate ACP singleton, cancellation/drain, durable transcript/session, resource scope, capabilities, credentials, and approvals; no context transfer is implied. Pairs ADR-001 spine §4 v21 and ADR-003 frontend §8.5/§8.6 v39.
   - v37 2026-08-02: **§8.7 + §11 amendment — presentation converges from LEFT Coding / RIGHT Irisy into one persistent dialog shell with an explicit Irisy/Coding actor selector, without merging agent authority (bao confirmed).** The selected mode owns the visible transcript and mode chrome; Irisy keeps its own selectable ACP engine, roles, Companions, packs, transcript, and context, while Coding keeps the separate `coding_singleton()`, OpenCode command/cancellation owner, workspace-keyed sessions, projected coding skills, attachments, and workspace scope. Shared React renderer/composer components are presentation reuse only. Switching actors never shares session, context, credentials, pending tool calls, cancellation, or approval. The standalone Coding chat authority is retired. `record_source` remains a data contract and cannot imply Coding workspace eligibility; projection requires explicit actor/surface metadata. Pairs ADR-001 spine §4 v20 and ADR-003 frontend §8.5/§8.6 v38.
   - v36 2026-08-02: **NEW §11 App AI Assistant Role Boundary — Irisy, the left-region Coding agent, and the repository development agent are three distinct actors.** Irisy is the shipped, user-facing App AI assistant: it completes user jobs through installed capabilities and the gate, but it is not the CTRL repository maintainer or an architecture authority. Coding is the separate user-owned OpenCode agent for code and feature-pack work in the selected workspace; sharing ACP and gate infrastructure does not make it Irisy. Kiro or another repository development agent works outside the shipped product, follows GOAL + owning ADRs, and changes CTRL itself; it must never be presented as Irisy. Handoffs preserve explicit identity, scope, session, and approval boundaries. This section is the sole role definition; `irisy-roles.md` and `irisy-coding-companion.md` are retired as live design sources. Pairs ADR-001 spine §4 v19 and ADR-005 irisy §8.7 v36.
@@ -60,7 +68,9 @@ related:
   - vault/ctrl/adrs/003-frontend.md
 ---
 
-## §1 8-stage mcp lifecycle
+## §1 8-stage mcp lifecycle — retired-v42 intent provenance
+
+> **RETIRED as an intent authority in v42.** The "User intent" column below is historical provenance only. It predates the fixed-identity model and still names retired Pool/keycap/persona surfaces. §12 is the sole user-intent registry; this table must not be cited for product scope, UI conformance, or capability mapping.
 
 Irisy = vertically-cross-cutting companion. **8 stages**, each with explicit role + UI surface.
 
@@ -117,23 +127,9 @@ Memory `project_remote_co_view_is_irisy` 🔒 — 远程同屏 / mirror / 跨设
 - Not a remote desktop tool — CTRL streams workspace cells (semantic events), not pixel buffers
 - Not in v1 scope — primitives roadmapped to v1.1 once mesh + Irisy 8-stage stable
 
-## §3 Persona rule + prompt v5 (binding)
+## §3 Persona rule — retired-v40 provenance
 
-**Persona sources** (amended v6 2026-06-25 — flexible config, not per-mcp-only):
-- **Per-mcp persona** (original) — lives inside `cap_asset.files` as markdown (ADR-002 § composition axis 6); vault override `vault/mcps/<id>/persona.md` wins.
-- **Role persona pool** (NEW v6) — Irisy's switchable functional roles draw from a small curated persona pool (`lib/irisy-prompts.ts` + `personas/irisy/*`); a persona is **decoupled from any single mcp** and composable into a role. This **supersedes the old "no global persona library" lock** — there IS now a flat curated pool, but it stays a flat pool + per-L1 `(persona, toolset[])` config, NOT a brain-self-aware indirection mesh. Roles switch above the chat box; conversation persists. The authoritative actor and role boundary is §11; implementation detail remains owned by this ADR and ADR-003.
-
-**Irisy prompt v5** (`vault/.irisy-prompts/irisy-system.md`):
-
-1. **Self-aware via `brain_status()`** — kernel injects `<brain_state>` block (engine label / providers / health / last_failover) from ADR-002 § provider §3.7. Irisy answers "你是什么 / 用什么模型" using this state.
-2. **User-friendly labels only** — say "Claude 订阅" / "Volc Doubao" (brand label). Never expose RPC codenames: "Pi" / "claude-oauth" / "RpcClient" / "kernel" / "bridge" / "MCP".
-3. **Singleton brain** — never suggest "切换 brain". User switches **provider** (Settings → Providers), not brain.
-4. **Failover transition** — on `provider:failover` event ("Claude 暂时连不上, 我切到 Volc 了"). Use the typed event, not heuristics.
-5. **Settings deflect** — provider/model change ask → "在 Settings → Providers 改" (one line, no inline provider explanation).
-6. **Tool call hiding** — tool plumbing never streams to chat (binding per ADR-002 § composition §7).
-7. **Reply style** — one short paragraph default; no "Sure!" / "Of course!" preamble; start at the answer.
-
-**`PROMPT_VERSION` bump policy**: any change to system prompt body → bump `PROMPT_VERSION` in `packages/ctrl-web/src/lib/irisy-prompts.ts` so `ensurePromptsBootstrap` re-seeds vault snapshots. v4 → v5 is this ADR's deliverable.
+The former binding persona pool, per-L1 role composition, and switcher rules are removed from live authority. They were introduced before the fixed-identity model and remain traceable through changelog/git history. Irisy now has one fixed identity; method variation comes from an optional pinned Skill and capability scope under §11 v40. Prompt implementation may define one fixed Irisy voice but cannot expose a role/persona registry.
 
 ## §4 SOUL.md compat — Irisy persistent memory is the SOUL.md spec (NEW v2, 2026-06-03)
 
@@ -592,7 +588,12 @@ increment, not a separate ADR.)
   *(v12 2026-07-04 RUNTIME: 2-turn ACP test on ONE session — turn 1 stated
   `sky-anchor-7731`, turn 2 recalled it verbatim without restating.)*
 
-### §8.6 Unified terminal-essence frontend — every surface is a terminal, agent is selectable (NEW v8, 2026-06-28)
+### §8.6 Selectable-agent/persona frontend — retired-v40 provenance
+
+The complete retained text in this subsection is historical and non-binding. It records the terminal-essence/selectable-agent evolution before v40; it does not authorize an agent selector, persona axis, per-surface session owner, or second transcript. Current authority is §8.7 and §11 v40.
+
+<details>
+<summary>Historical v8–v39 design and implementation evidence (non-binding)</summary>
 
 bao 2026-06-28: **「前端都是 terminal 实质的, 统一, 可选 agent」**. §8.1's "dialog in
 form, terminal in essence" is **not scoped to the Irisy ambient chat** — it is the
@@ -734,190 +735,19 @@ permission DSLs, --yolo, leader/chord/vim-as-default, raw token math, two-axis f
 Honest gap: much is tsc/Playwright-verified (render + client logic); real-data +
 engine round-trip (approval modal, auto-open, fork re-hydrate) verify on desktop.
 
-### §8.7 Consolidation — one Irisy, two isolated identities (v38)
+</details>
 
-> Authoritative consolidation of §8 after bao confirmed every visible AI is Irisy, with Assistant and Coding identities. Runtime branding is hidden, while execution isolation remains load-bearing. **§8.7 governs where it conflicts with §8.6.**
+### §8.7 Consolidation — one fixed Irisy identity (v40)
 
-**The product has ONE mounted Irisy dialog and TWO identities:**
+§11 v40 is the sole live identity/session authority and governs this section on conflict. The product has one mounted Irisy surface and one fixed Irisy identity. Project coding is represented by an explicit Project Resource plus optional pinned Skill, capability scope, policy, and task; there is no Assistant/Coding actor selector or separate live project transcript owner.
 
-- **Assistant.** Uses Irisy's durable Assistant transcript/session and the real Resource derived from current content, explicit application selection, knowledge context, Companion, or pack.
-- **Coding.** Uses Irisy's Coding transcript/session and the selected eligible project resource. The configured project is automatic when it is the sole eligible scope; multiple scopes expose a Project choice rather than Workspace terminology.
-- **Skill.** Both identities default to `Auto`. An explicit pin resolves through the existing local `SKILL.md` authority and is injected into that identity's next fresh ACP session. Installed-but-unused skills are available, not active, and must not be shown as active chips.
+Irisy's managed engine remains implementation machinery. Any user-owned BYO CLI is outside Irisy and connects only as an external `:17873` client under ADR-001 v22. Runtime history from Hermes or the former Coding path may be imported read-only into a new canonical Irisy session; it cannot remain a second live session authority.
 
-Hermes, Codex, Claude Code, OpenCode, ACP, and MCP are execution machinery, not user identities. They may appear in advanced diagnostics/settings or explicit external-launch copy, but not as competing names in the ordinary identity control. Content viewers are selected automatically by content type; users do not choose a frontend implementation layer.
+Continuity and reset use the sole canonical Irisy transcript described in §11. Resource, Skill, capability scope, and policy changes must affect the next turn, while a Skill never owns or spawns a session.
 
-Changing Identity, Resource, or pinned Skill MUST change real prompt/capability scope. Before the next turn, CTRL resets only that identity's affected ACP owner so a live session cannot retain stale project or skill context. Assistant and Coding MUST NOT share ACP singleton, command owner, cancellation/drain state, transcript/session, Resource scope, projected capabilities, credentials, pending tool calls, or approval state. A visible brand unification is not runtime fusion. The standalone Coding chat surface remains retired; `/coding` may only select the Coding identity in this Irisy shell.
+### §8.8 Managed BYO-engine install — retired-v40 provenance
 
-Coding project eligibility remains explicit projection metadata. A manifest's `record_source` field describes data behavior only and never makes that pack a Coding project.
-
-**Irisy's engine remains a pluggable ACP agent.** All three speak the Agent
-Client Protocol (JSON-RPC over stdio), which `shell/acp_client.rs` already drives
-for hermes:
-
-| Irisy engine | ACP adapter | spawn |
-|---|---|---|
-| Hermes (default) | `hermes-acp` | uvx (wired) |
-| Codex | `@zed-industries/codex-acp` (Rust binary wrapping the user's Codex) | npx |
-| Claude Code | `claude-code-acp` (Anthropic SDK ACP adapter) | npx |
-
-CTRL spawns the selected adapter and drives it through the SAME client:
-`initialize → session/new {cwd, mcpServers:[gate]} → session/prompt`. The engine
-choice is ONE parameter (the spawn command); everything downstream — gate tools,
-Irisy persona, §8.3 loop+context ownership, streaming — is identical. This makes
-ADR-001 spine §byo-cli-driver's "ACP-aware CLI 增强通道" concrete.
-
-**Driven Irisy engine vs projected Coding agent — the key distinction.** The
-persistent shell does not collapse the two runtime roles:
-
-- Irisy mode: Codex or Claude Code may be selected as Irisy's **engine**; CTRL
-  installs/spawns/drives that adapter over Irisy's ACP singleton and streams its
-  answer into Irisy's transcript. **CTRL-driven.**
-- Coding mode: OpenCode is the user-owned **Coding agent** in the selected
-  workspace; CTRL projects instructions, Skills, and the gate and relays its
-  independent ACP stream. **User-owned loop, not Irisy's engine.**
-
-The actor choice and Irisy-engine choice are independent controls. "CTRL does not
-supervise a BYO CLI" governs the Coding projection path; Irisy's selected engine is
-CTRL-driven under its existing contract.
-
-**Corrections to §8.6** (§8.7 governs on conflict):
-
-1. §8.6's "every surface routes through ONE engine" remains an overclaim. One
-   persistent visual shell contains two actor modes with separate engine/session
-   owners. Coding never routes through Irisy's engine; presentation reuse is not
-   loop reuse.
-2. The top-level Irisy/Coding selector chooses the actor. Irisy's `AgentSelector`
-   chooses only Irisy's engine. Neither selector changes the other, and neither
-   mode inherits the other's transcript, context, workspace, credentials, or
-   approvals.
-
-**Continuity — the real §8.4 fix (still UNMET as of v9, code-verified).** The
-transcript persists to the UI (`transcript-store`) but the engine receives only
-`last_user` (`irisy_chat.rs`), and a fresh ACP session starts empty on
-reload/crash — **UI remembers, engine forgets**. Fix, uniform across all ACP
-engines: on a fresh/reset session (`!primed`), replay the persisted transcript
-into the first `session/prompt` so the engine re-hydrates; send only `last_user`
-while the SAME session continues. Continuity is the engine's (§8.3); the
-transcript is the recovery source (§8.4).
-
-**Pairs with ADR-002 §brain amendment:** generalize "Irisy brain = Hermes Agent"
-→ "Irisy brain = a CTRL-driven, **selectable ACP engine** (Hermes default; Codex /
-Claude Code via their ACP adapters)". Hermes stays the bundled default and does
-NOT retire.
-
-**Acceptance (Irisy engine; implemented 2026-06-29, presentation amended v37):**
-- [x] `acp_client.rs` spawn command is parameterized by the selected engine
-  (`engine_argv`); `hermes-acp` / `codex-acp` / `claude-code-acp` all drive
-  through one client + one ACP handshake. **hermes verified end-to-end**
-  (`acp_smoke`: `ANSWER "ACP OK"`, no regression).
-- [x] The `agent` id (on `irisy_chat_stream`) selects the engine; hermes required
-  installed, BYO trusted (UI-gated on `list_byo_drivers` present); BYO adapters
-  lazy-fetch via npx; engine-switch resets the singleton.
-- [x] Installed BYO drives a REAL ACP answer (no dead-end); `engineTransport`
-  hand-off remains ONLY for a not-installed engine (→ InstallAgentModal).
-  **Codex/Claude end-to-end pending real-machine verify** (neither installed on
-  the dev box; spawn specs are code-correct; `claude-code-acp` package name to
-  confirm).
-- [x] Transcript re-hydrates a fresh engine session (`prompt` replays prior turns
-  when `!primed`) — closes the §8.4 illusion (UI-remembers / engine-forgets).
-  Behavioral recall-after-reload to verify on a real multi-turn run.
-- [x] Actor/session roles stay independent: top-level `AgentMode` ≠ Irisy's
-  `active-agent` engine selector; `coding_singleton()` ≠ Irisy's singleton;
-  Coding projection ≠ Irisy engine drive.
-
-### §8.8 One-click managed install for right-region BYO engines (NEW v10, 2026-06-29)
-
-bao 2026-06-29: **「你希望普通用户这么安装配置吗?普通用户只会一键安装。」** §8.7 made
-Codex/Claude drivable as Irisy's right-region engine, but the InstallAgentModal still
-told users to copy `npm i -g @openai/codex` into a terminal. That is the **developer-tool
-default**, not CTRL's model — it dead-ends a non-technical user. §8.8 corrects the install
-UX to match the moat (ambient, self-contained, zero-prerequisite).
-
-**The two-tier install model:**
-
-1. **Ordinary users = zero install.** hermes is the bundled default engine (CTRL ships it,
-   uvx auto-starts it). The agent axis defaults to hermes; an ordinary user never installs
-   anything and never sees a terminal command. For them it is **zero-click**, not one-click.
-2. **Codex / Claude (opt-in) = CTRL one-click managed install.** Selecting a not-present BYO
-   engine opens InstallAgentModal with a real **Install** button (no terminal, no copy-paste).
-   CTRL installs it into its OWN managed prefix `~/.ctrl/agents/<id>/` via local `npm install
-   --prefix` — **never global, never sudo** (extends the proven `install_via_npm`, the same
-   path hermes-npm used). The Node runtime is **self-bootstrapped** by `ensure_node()` exactly
-   as `ensure_uvx()` bootstraps uv: download the official Node LTS tarball into `~/.ctrl/bin/`
-   on first need, zero prerequisite on the user's machine (ADR-002 §1.2 v20 — "kernel
-   bootstraps what it needs").
-3. **Auth = one-time, reuse BYOK.** After install the only remaining step is provider auth.
-   Reuse the OpenAI/Anthropic key the user already configured in CTRL (Keychain) by injecting
-   it into the adapter subprocess env (same as `write_hermes_dotenv` / provider injection); the
-   key never reaches Irisy or any LLM payload (ADR-006 byok-no-claude — Codex/Claude are the
-   user's own tools, BYOK, not an SDK on CTRL's hot path). Fall back to a guided sign-in only
-   when no key is configured.
-
-**Why this is consistent with §8.7's "CTRL does not supervise a BYO CLI".** That rule governs
-the **LEFT** (projection) path — a coding agent the user drives in their own terminal. The
-**RIGHT** engine is always **CTRL-driven** (§8.7), so CTRL **installing + owning** the
-right-region engine's runtime is the same ownership, extended to install. "Driven (right)"
-now means **CTRL-installed + CTRL-driven**; "projected (left)" stays user-installed +
-user-driven. No contradiction.
-
-**Detection (honest, no fabricated choices).** `list_byo_drivers` reports `present=true` when
-EITHER the CTRL-managed install exists (`~/.ctrl/agents/<id>/node_modules/.bin/<bin>`) OR the
-user already has their own (`codex`/`claude` on PATH, or legacy `~/.codex` / `~/.claude`). So a
-user who pre-installed via brew/npm is detected too — CTRL never double-installs.
-
-**Acceptance:**
-- [x] InstallAgentModal is a one-click **Install** button → `install_byo_agent(id)` → progress
-  → ready; the copy-command-into-terminal framing is removed (ordinary users never see a shell
-  command).
-- [x] `install_byo_agent` installs into `~/.ctrl/agents/<id>/` via `npm install --prefix`
-  (no global / no sudo); `ensure_node()` self-bootstraps Node LTS into `~/.ctrl/bin/` like
-  `ensure_uvx`.
-- [x] `list_byo_drivers` detects the managed install + PATH binary + legacy home dir; never
-  fabricates an absent driver.
-- [x] Auth reuses the configured BYOK key — `registry.byo_engine_auth_env(engine)` resolves
-  the CANONICAL provider's key from the keychain (codex → `openai`, claude-code → `anthropic`,
-  via `resolve_auth` with alias handling) and `irisy_chat` feeds it as the BYO engine's
-  `provider_env`, which `acp_client::start` injects into the adapter subprocess env
-  (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` [+ BASE_URL]). Empty when unconfigured → the CLI uses
-  its own login (never a wrong key); pinned to the canonical id so a coding CLI is never
-  misrouted onto an OpenAI-compatible-but-not-OpenAI endpoint. Key stays in the subprocess env
-  — never in Irisy's prompt or the PWA (ADR-006 byok-no-claude).
-- [x] **Real-machine probe 2026-06-29 (codex)** — resolved three hang causes: (1) the
-  package moved — `@zed-industries/codex-acp` is DEPRECATED and answers NOTHING on stdio (silent
-  180s hang); the maintained one is `@agentclientprotocol/codex-acp` (v1.0.1). (2) the ACP flow
-  needs an explicit `authenticate` before `session/new` (codex returns "Authentication required"
-  otherwise); hermes advertises no authMethods so it's skipped. (3) the adapter couldn't find the
-  managed codex binary (off PATH) → now `CODEX_PATH` + PATH wiring. Also: adapter stderr is now
-  drained to logs so a stall is never silent. `@zed-industries/claude-code-acp` (0.16.2) confirmed
-  still correct.
-- [x] **Codex auth = OpenAI only — definitively (live `codex exec` test 2026-06-29 with the user's
-  Volc key).** `authMethods` = `api-key`{provider:openai} | `chat-gpt`; api-key reads
-  `OPENAI_API_KEY`/`CODEX_API_KEY`. Tried pointing codex at Volc via a custom `[model_providers]`
-  with `wire_api="chat"` → codex 0.142.4 hard-rejects: *"`wire_api = "chat"` is no longer supported …
-  set `wire_api = "responses"`"* (github.com/openai/codex/discussions/7782). Volc (`ark…/api/v3`) is
-  Chat-Completions, not the Responses API → **Codex CANNOT use Volc or any OpenAI-compatible provider**.
-  CONSEQUENCE locked: per-engine provider constraints — **Hermes** rides the CTRL provider router (any
-  BYOK incl. Volc; it's Irisy's working brain today), **Codex** = OpenAI-Responses only, **Claude** =
-  Anthropic only. The ONLY way to run Codex on an arbitrary provider would be CTRL exposing an
-  OpenAI-Responses-compatible shim that translates to the provider's wire format (deferred feature,
-  not built).
-- [x] **Honest per-engine readiness (bao 2026-06-29 — "用 Hermes 跑 Volc + Codex/Claude 诚实标注").**
-  `list_byo_drivers` now returns `authReady` (CTRL holds the engine's required account key: hermes
-  always; codex=openai key; claude=anthropic key). UI uses `isUsable = present && authReady`: the
-  selector dot is hollow when not usable, the detail says "Needs an OpenAI/Anthropic account", and
-  `engineTransport` short-circuits with a plain message ("Codex needs an OpenAI account — it can't use
-  your current provider; switch to Hermes") instead of silently falling back to the router. No
-  pretend-it-works, no silent wrong-engine answer.
-- [x] **Capability-brief honesty (audit fix 2026-06-29).** The capability brief
-  (`acp_client.rs CTRL_CAPABILITY_BRIEF`) claimed clipboard / OCR / image+video generation — none of
-  which the gate registers, so Irisy was told it could do things it can't. Removed; replaced with the
-  real `smart_table_*` tools. Separately, SOUL.md memory (`irisy_soul_get`/`irisy_soul_set`) was
-  implemented but absent from `BRAIN_TOOLSET`, so the capped brain never saw it despite the brief
-  promising persistent memory — added to the core group (cap raised 25→27). Irisy no longer
-  over-claims, and its memory tools are actually reachable.
-- [ ] **Still pending**: end-to-end answer with a REAL OpenAI key (probe confirmed the mechanism via
-  the auth-error, not a live completion); claude-code authenticate + end-to-end; Windows Node/codex
-  asset paths.
+The former §8.8 live body is removed. It described a historical managed-install design for alternate right-region engines and its implementation evidence. v40 retires that identity/runtime framing; details remain in changelog and git history only. Current authority is one fixed Irisy identity (§11) plus an external BYO CLI gate-client path (ADR-001 v22).
 
 ## Acceptance
 
@@ -935,7 +765,7 @@ user who pre-installed via brew/npm is detected too — CTRL never double-instal
 - [x] Strategic lock recorded — SOUL.md spec adopted verbatim, `x-ctrl:` namespace reserved for CTRL extensions, ecosystem stance documented in `vault/ctrl/history/brainstorm/openclaw-compat-2026-06-03.md` and memory `decision_openclaw_compat_layer`. Code follow-up tracked in **Future work** below (deferred batch, not a blocker for ongoing P0 fixes).
 ## §9 Mission + knowledge system (NEW v11, 2026-06-29)
 
-> Architectural authority = this accepted module ADR plus the other owning module ADRs. `vault/ctrl/irisy-architecture.md` is the non-authoritative five-capability planning lens; it cannot create or override a decision. This § records the mission and knowledge DECISION; §11 is the sole actor and role boundary.
+> Architectural authority = this accepted module ADR plus the other owning module ADRs. This § records the mission and knowledge decision; §11 is the sole identity, context, session, and transcript boundary. Historical planning maps are non-authoritative and are not live dependencies.
 
 ### §9.1 The mission (LOCKED, bao 2026-06-29)
 
@@ -943,7 +773,7 @@ bao picked the research-backed frame: **Irisy = the 数字员工 / operator for 
 
 Root-fix for "Irisy isn't smart" (bao 2026-06-29): not the model — two structural gaps. ① **No mission** — the system prompt had identity + voice + a tool list + guardrails but no *purpose*, so Irisy always "waits to be asked → answers shallow." ② **Knowledge scattered across 5 sources** with no SSOT (`irisy-prompts.ts` + `acp_client.rs::CTRL_CAPABILITY_BRIEF` + hermes SOUL/config + vault + skills) → drift (brief over-claimed capabilities, SOUL went unread). Three research tracks (knowledge/context-engineering · proactive-operator · China-OPC market) converge: leading assistants make the mission a model-external persistent scaffold and the knowledge a layered, single-SSOT, injected-vs-retrieved system.
 
-Three differentiators (all three required): **completes the whole job** (not answers) · **remembers your business — locally** (rivals all park the customer book in their cloud; Irisy gives the agent that context WITHOUT exporting = vault-is-truth, the sharpest seam) · **self-extends** (feature packs, Manus Skills/Projects analog). Positioning red lines: NOT the free all-in-one super-box (Doubao/Quark/Yuanbao own that via free + IM distribution — undistributable for us) → owner-role colleague; NOT a companion (shallow market, >50% churn, regulatory exposure) → warm-but-reliable colleague, trust from accuracy+consistency+drill-down; privacy framed as **business data sovereignty** (PIPL/DSL + leak/lockout avoidance, e.g. cross-app automation getting banned), NOT abstract consumer privacy.
+Three differentiators (all three required): **completes the whole job** (not answers) · **remembers your business — locally** (rivals all park the customer book in their cloud; Irisy gives the agent that context WITHOUT exporting = vault-is-truth, the sharpest seam) · **self-extends** (creates or selects an FCT when a reusable capability is missing). Positioning red lines: NOT the free all-in-one super-box (Doubao/Quark/Yuanbao own that via free + IM distribution — undistributable for us) → owner-role colleague; NOT a companion (shallow market, >50% churn, regulatory exposure) → warm-but-reliable colleague, trust from accuracy+consistency+drill-down; privacy framed as **business data sovereignty** (PIPL/DSL + leak/lockout avoidance, e.g. cross-app automation getting banned), NOT abstract consumer privacy.
 
 ### §9.2 Knowledge system — 8 layers, single SSOT each, injected-vs-retrieved
 
@@ -952,7 +782,7 @@ Principle (Anthropic context-engineering et al.): keep the static prompt small a
 | # | Layer | SSOT | Injected per-turn vs retrieved on-demand |
 |---|---|---|---|
 | 1 | Identity / mission | `irisy-prompts.ts` (versioned) | injected, tiny — who + OPC mission + operating loop |
-| 2 | persona / voice | persona pool (versioned) | injected, tiny, per-role |
+| 2 | fixed voice/style | one versioned Irisy prompt source | injected, tiny; not user-selectable and not a role registry |
 | 3 | **Capability awareness** | **live gate registry** (MCP `tools/list` / `visibility.rs`) | injected, **generated per-turn from the registry** ← honesty fix |
 | 4 | Durable user/business facts (customer-profile core) | `vault/irisy/` markdown (md+YAML) | injected, **bounded** (Letta core-block style), reconcile-on-write (ADD/UPDATE/DELETE, mem0 style) |
 | 5 | Skill metadata | `SKILL.md` frontmatter | injected, name+desc only (progressive disclosure) |
@@ -981,7 +811,7 @@ Audit finding: CTRL already DESIGNED all three, scattered + stale. `vault_seed/i
 ### §9.4 Acceptance (§9)
 
 - [x] Mission LOCKED by bao 2026-06-29 (数字员工/operator frame) — recorded here + reflected in planning map §一.
-- [x] Module ADR authority reconciled: this ADR owns the accepted Irisy mission/knowledge decisions; `vault/ctrl/irisy-architecture.md` retains only the non-authoritative five-capability planning lens; §11 owns the role boundary; `vault/ctrl/irisy-roles.md` is a retired historical pointer.
+- [x] Module ADR authority reconciled: this ADR owns the accepted Irisy mission/knowledge decisions; §11 owns identity, context, session, and transcript boundaries; historical planning and role documents are non-authoritative provenance only.
 - [x] **Soul re-souled (§9.5 ③ + ②-jargon)**: `vault_seed/irisy-soul.md` `about` + `x-ctrl.identity` rewritten co-pilot/passenger → operator/back-office-of-your-one-person-company; retired jargon (`Pi`/`keycap`/`co-pilot`/`servant`) wiped. Seeds into `vault/irisy/SOUL.md` on next launch (`write_if_missing`, currently absent → writes the new soul). PWA chat path reads it via `irisy_soul_get`.
 - [x] **Mission in the PWA spine**: `irisy-prompts.ts` v13→v14 prepends mission + operating loop (layer 1).
 - [ ] **Close the drain (§9.5 ②)**: on hermes launch, sync `vault/irisy/SOUL.md` → `~/.hermes/SOUL.md` (or point hermes at the vault) so the engine path reads the SAME re-souled file as the PWA path; stop hermes double-writing its private `~/.hermes/memories/MEMORY.md` (land durable facts in the vault instead). ← needs on-device hermes verification.
@@ -1145,53 +975,176 @@ commitment for a LibreOffice extension, MCP server, or new native window.
 - [ ] A Contract delta is accepted through an ADR-005 amendment before code
   relies on it.
 
-## §11 Irisy Identity and Runtime Boundary (v38)
+## §11 Irisy role boundary — one fixed identity and FCT-resolved context authority (v44)
 
-This section is the sole role definition for AI identities visible in CTRL. Product, planning, research, and historical documents may link here but must not restate or redefine these boundaries.
+This section is the sole live authority for Irisy's identity, context, session, and transcript boundaries. Product, planning, research, and historical documents may link here but cannot define another role/persona/identity registry.
 
-### §11.1 One product identity, distinct owners
+### §11.1 Identity and context
 
-| Identity / actor | Product position | Owns | Does not own |
+CTRL exposes one fixed identity: **Irisy**. Assistant, Coding, engine names, personas, and project modes are not alternate product identities. Project coding is an explicit Project Resource combined with Skill/capability scope; it does not create a second agent, transcript owner, or session type.
+
+Every turn's complete runtime context remains exactly:
+
+```text
+session_id + explicit Resources + optional pinned Skill + capability scope + policy + task
+```
+
+A user selection may name one FCT, but FCT is resolved live before this tuple is assembled and does not add a seventh context field. The canonical resolver preserves the session's Work-owned explicit Resources, appends and canonical-ref-deduplicates any FCT dependency Resources, and maps the selected FCT to an optional internal Skill plus an enforceable least-privilege gate scope and policy facts. Auto means Irisy may choose through the same registry under current policy. A zero-Resource FCT is valid only when it changes Skill or enforced scope. An unresolved selection reports the failure, returns that session to Auto, resets the runtime owner, and cannot send or retain stale context.
+
+- `session_id` addresses one canonical Irisy session.
+- `explicit Resources` are canonical ADR-002 ResourceRefs selected by the user or owning Work surface; implicit project, application, clipboard, or hidden-history scraping is forbidden.
+- `optional pinned Skill` is one resolved local `SKILL.md` playbook. It contributes method only and never spawns, owns, resumes, forks, or persists a session.
+- `capability scope` is the authorized `:17873` projection available for this task; installed does not mean visible or active.
+- `policy` contains gate visibility, ReviewGate, credential, privacy, and mutation rules.
+- `task` is the current user request plus explicit operation state references.
+
+Changing Resources, pinned Skill, capability scope, or policy changes the next runtime projection for the same Irisy identity. No control may be decorative.
+
+### §11.2 Sole live transcript authority — a kernel-owned plain-text transcript (v44)
+
+A conversation is user content. The **transcript file is the truth**: one readable Markdown file per session, owned by the kernel as the canonical Resource `ctrl://local/session/<id>` with YAML frontmatter for session metadata and a `## <role>` heading per turn. The transcript directory is the session list; there is no separate index. Ordinary tools must be able to read, grep, diff, and edit a transcript, and a hand-edited transcript must still open and still accept new turns — a parse that refuses would lose the user's history over a typo.
+
+The frontend session store is a **projection** of that Resource, not a second authority. It is rebuilt from the transcript on open, and every turn it shows is written through the canonical `produce` write contract. Persistence writes only settled turns: a streaming or empty placeholder turn is not a record, so it never reaches the file. Appending is the only write the owner offers; rewriting or deleting history is deliberately absent, because the file is the record and the user already has an editor for it. A fork narrows the view, never the record.
+
+Creating, closing, renaming, switching, forking, importing, and continuing sessions derive from the transcript. A runtime engine may hold transient loop state, but after reset/restart it is rehydrated from the canonical transcript and cannot become a second transcript manager. Browser-held transcripts from an earlier build are migrated into transcript files before the projection is rebuilt, so upgrading cannot lose a conversation; a partial migration leaves the turns that landed readable on disk and retries, and never deletes its source. When the kernel is unreachable the existing local view is retained and reported as such rather than blanked — unavailability degrades, it does not erase.
+
+Hermes history and former Coding workspace/project history are read-only import material. Import creates a new Irisy session with provenance and explicit Project Resource when applicable; it never overwrites an active session, resumes the historical engine owner, or remains live in parallel. After import, all new turns and recovery use the canonical Irisy transcript store.
+
+A BYO CLI remains an external `:17873` client with its own user-owned history outside Irisy. CTRL may project scoped Resources/Skills/capabilities to it, but that history is not an Irisy transcript and CTRL does not own its loop.
+
+### §11.3 Runtime and capability boundaries
+
+Irisy's managed runtime owner holds current cancellation/drain state and transient operation correlation for one canonical session. Resources own content; Skills own method text; package/manifest owners retain capabilities and descriptors; OperationRef owners own durable effects; ReviewGate owns mutation approval. FCT owns none of these: it is the pre-turn product projection that selects an authorized combination of them. None may claim session or transcript ownership.
+
+The out-of-product CTRL development agent remains distinct from shipped Irisy and is governed by GOAL plus module ADRs. This distinction does not create a product identity selector.
+
+### §11.4 Documentation authority and retired provenance
+
+- §8.7 is historical runtime evolution; this §11 v41 governs on conflict.
+- §8.8 is retired-v40 and has no live body.
+- §9 owns mission and knowledge behavior but does not own identity/session topology.
+- §10 owns integration forms and context declarations.
+- ADR-001 v22 owns the managed-Irisy versus external-BYO-CLI projection relationship.
+- `irisy-roles.md`, `irisy-coding-companion.md`, and `irisy-architecture.md` are not live dependencies or authorities. Historical changelog/provenance references may remain for traceability only.
+
+## §12 User intent registry — the sole product-scope authority (v42)
+
+This section is the sole accepted enumeration of the user intents CTRL serves. The former 68-intent inventory retired with ADR-008 and was never inherited, and §1's lifecycle table is provenance only. Without one registry every design round re-derived scope from architecture, which repeatedly produced controls that expose internal inventory instead of serving a job.
+
+An intent is a complete user job stated in the user's terms. It is not a tool, endpoint, capability domain, FCT, Resource kind, or screen. Intents are stable product scope; the surfaces that serve them are not.
+
+### §12.1 The registry
+
+Capability domains reference ADR-002 §17 v85. `Scope` is `v1` for intents CTRL commits to serving now, and `later` for accepted-but-deferred scope.
+
+| ID | User intent | Primary domains | Scope |
 |---|---|---|---|
-| **Irisy — Assistant** | The Assistant identity in the persistent Irisy dialog and Companion form. | The user's jobs across current content, explicit selections, knowledge, installed capabilities, and inspectable artifacts. | Coding's project session, cancellation owner, hidden runtime identity, CTRL repository architecture, or an independent permission system. |
-| **Irisy — Coding** | The Coding identity in the same Irisy dialog, scoped to one eligible project resource. | Code and feature-pack work inside that project, using its independent ACP owner, cancellation/drain, transcript, projected instructions, Skills, and gate scope. | Assistant memory/context, another project, or authority to merge runtime state because both identities share the Irisy name. |
-| **CTRL development agent** | An out-of-product development tool such as Kiro used to build and maintain CTRL itself. | Repository analysis and changes governed by `vault/ctrl/GOAL.md`, `adrs/INDEX.md`, the owning module ADR, tests, and review. | The shipped Irisy persona, the user's session, or authority to invent product architecture outside accepted ADRs. |
+| U1 | Ask about what I have open or selected | `system`, `vault`, `notes` | v1 |
+| U2 | Rewrite, summarize, or translate this content | `notes`, `vault`, `llm` | v1 |
+| U3 | Answer from my own local knowledge | `vault`, `notes`, `memory` | v1 |
+| U4 | Find something in my local content | `vault`, `notes` | v1 |
+| U5 | Turn this into structured records | `smart_table`, `tasks`, `calendar` | v1 |
+| U6 | Change my local content for me | `vault`, `notes`, `smart_table`, `tasks`, `calendar` | v1 |
+| U7 | Look something up outside my machine | `websearch`, `market` | v1 |
+| U8 | Use data from an application or service I already use | `source`, `mcp` | v1 |
+| U9 | Work on a specific project | `project`, `vault` | v1 |
+| U10 | Approve or reject a consequential action | `system` | v1 |
+| U11 | See exactly what happened and where it came from | `system`, `diagnostics` | v1 |
+| U12 | Recover when something is unavailable or stale | `system` | v1 |
+| U13 | Continue, revisit, or branch earlier work | `system` | v1 |
+| U14 | Find a capability for something I cannot do yet | `discover`, `registry` | v1 |
+| U15 | Install or enable a capability | `mcp`, `registry` | v1 |
+| U16 | Create a capability I need | `mcp`, `discover`, `skill`, `vault` | v1 |
+| U17 | Use a specific capability for this session | `registry`, `skill` | v1 |
+| U18 | Review, disable, or remove what I installed | `mcp`, `registry`, `skill` | v1 |
+| U19 | Connect an application or credential | `source`, `mcp`, `providers` | v1 |
+| U20 | Configure how CTRL behaves | `providers`, `system` | v1 |
+| U21 | Diagnose CTRL when it misbehaves | `diagnostics` | v1 |
+| U22 | Operate a local application's explicit selection | `source`, `mcp` | v1 read; write `later` |
+| U23 | Save a behavior that worked so I can reuse it | `mcp`, `registry` | v1 |
+| U24 | Run a long operation and check on it | `system` | later |
+| U25 | Reach my own machine from another device | `system` | later |
 
-An engine or protocol is not a product identity. Hermes, Codex, Claude Code, OpenCode, ACP, and MCP may provide accepted execution machinery, but ordinary users choose Assistant or Coding, not those implementation names. Shared Irisy branding and React presentation never authorize state, session, resource, credential, cancellation, capability, or approval transfer.
+U23 is the intent that keeps CTRL task-first. Without it the only reuse path is choose-a-capability-before-working, which is the failure mode this registry exists to prevent. Its scope is deliberately narrow: it captures a reusable job description, the required capability shape, and policy. It never records the transcript, a step sequence, replayed parameters, or a trigger, and saving never activates the result.
 
-### §11.2 User-selectable axes and routing
+### §12.1.1 Explicit non-intents
 
-The ordinary composer exposes exactly these understandable axes:
+These are not deferred; they are refused. They must not be added without an amendment that also revisits CTRL's product boundary.
 
-1. **Identity** — Assistant or Coding.
-2. **Resource** — the real current content/selection/knowledge/Companion/pack for Assistant, or eligible project for Coding. A sole Coding project is automatic; multiple real projects produce a Project choice, with paths available only as detail.
-3. **Skill** — `Auto` or one explicitly pinned local `SKILL.md`. Auto permits task-matched on-demand discovery; it does not claim a specific skill is active. An explicit pin loads the skill body into the affected identity's next fresh session.
+- Scheduling, event triggers, conditions, and branching. Triggers plus conditions become a workflow editor, which CTRL is not. U23 stops at reusable capability, not automation.
+- Supervising a BYO CLI's agent loop.
+- Any job whose primary affordance is browsing internal inventory.
 
-Frontend/viewer technology is not a fourth user axis: CTRL selects Markdown, table, HTML, or another viewer by content type. A feature pack is a real capability/resource container and appears only when active in context, never merely because it is installed.
+### §12.2 Rules
 
-Requests to operate documents, applications, business data, or installed capabilities normally belong to Assistant. Requests to author code or a feature pack in the selected project belong to Coding. Requests to change CTRL's own source, architecture, governance, tests, or release artifacts belong to the out-of-product CTRL development agent.
+This registry is amendable, never frozen, but it is not amendable unilaterally. Adding, splitting, merging, retiring, or rescoping an intent — including moving one between `v1` and `later` — requires explicit discussion with bao and bao's decision first; only then is the section amended. An agent, design review, user-research finding, or implementation constraint may propose a change and must present the evidence for it, but may not enact one. When a real user need appears that no entry covers, the correct action is to raise it for discussion rather than to serve it silently, stretch an existing entry to cover it, or block the user without recording the gap.
 
-### §11.3 Projection, reset, and isolation
+Every product decision must name the intents it serves. Adding, splitting, retiring, or rescoping an intent requires an amendment to this section; a design may not introduce a new user-facing job that no registry entry covers.
 
-Identity, Resource, and pinned Skill are runtime inputs, not labels. A changed value must alter real prompt/capability scope. Before the next turn CTRL resets only the affected identity's ACP owner so stale project or skill context cannot survive. It never copies another identity's hidden context to simulate continuity.
+An intent must be reachable without the user naming a tool, package, Skill, MCP server, ResourceRef, or capability domain. Those remain drill-down facts. Each intent maps to at least one domain in ADR-002 §17; an intent needing a domain that does not exist is a substrate amendment first.
 
-The following stay explicit and separate between Assistant and Coding:
+U6, U19, and U22 writes cross ReviewGate under §10.3. U10 is a first-class intent, not a modal detail: its surface must show the exact target and staged change. U11 and U12 are also first-class; a design that serves an action intent but omits its provenance or failure path is incomplete, and truthful failure always outranks apparent completion.
 
-1. runtime/ACP owner and cancellation/drain state;
-2. durable transcript/session;
-3. selected Resource and capability projection;
-4. credentials and mutation approval owner;
-5. pending requests/tool calls;
-6. completion evidence and authoritative output location.
+Selecting a capability (U17) is an override, not a precondition. Auto must serve U1–U9 without any selection. `later` intents must not be presented as available.
 
-The configured Coding project remains available even when no selector is shown; hiding a redundant single-option control never removes filesystem, editing, or command capability. Project switching still cancels/drains or resets the Coding owner before committing the new resource. Sharing attachment parsing, gate access, renderer, composer, or the Irisy name is implementation reuse, not runtime fusion.
+### §12.3 Every intent needs a verifiable pipeline (v43)
 
-### §11.4 Documentation authority
+An intent is not served because a surface exists or a capability is installed. It is served when one named, executable pipeline proves the whole path end to end. Each `v1` intent declares exactly one such pipeline:
 
-- This §11 owns the role boundary.
-- §8.7 owns the one-shell/two-agent runtime and session topology.
-- §9 owns Irisy's mission and knowledge model.
-- §10 owns capability and external-application integration.
-- ADR-001 §4 owns the projection/gate relationship for Coding.
-- `irisy-architecture.md` may contain only the non-authoritative five-capability planning lens required by the active GOAL.
-- `irisy-roles.md` and `irisy-coding-companion.md` are retired historical pointers and must not carry live design requirements.
+```text
+entry surface → resolved context → capability domains (ADR-002 §17)
+   → canonical operation (§15) → Outcome (§15.5) → rendering
+   → evidence
+```
+
+Each stage is checkable rather than narrative. `entry surface` names where the user starts and asserts the intent is reachable without naming a tool, package, Skill, MCP server, ResourceRef, or capability domain. `capability domains` are the exact grant the turn projects, so an over-broad grant is visible. `Outcome` names the facts the owner must return for this intent; an intent that needs a target, staged change, or retryability the owner does not produce is blocked on a fact-owner amendment, not on presentation. `rendering` names the viewer or decision kind. `evidence` is a runnable check plus, where behavior is visual, real UI verification.
+
+Each intent therefore carries exactly one status:
+
+- **verified** — the pipeline runs and its evidence is current.
+- **partial** — the pipeline is defined and some stage passes, with the failing stage named.
+- **declared** — accepted scope with no passing pipeline yet.
+
+Status is reported from generated evidence, never asserted in prose. `partial` and `declared` must not be presented to users as available, and a completion claim naming an intent requires that intent's current evidence. An intent whose pipeline depends on a `declared` capability domain (ADR-002 §17.6) cannot itself be `verified`.
+
+This does not create a per-intent endpoint, route, or runtime branch. A pipeline is an evidence path over the existing shell, registry, gate, owners, and rendering registries.
+
+### §12.4 Relationship to other authority
+
+This section owns which jobs exist and each intent's pipeline status; ADR-002 §17 owns the authorization vocabulary and its per-domain evidence, and §15 owns the operation and Outcome contract; ADR-003 §8.5 owns which surface serves an intent and must cite intent IDs rather than define scope; §11 v41 still owns identity, the six-fact tuple, and session/transcript authority. The retired ADR-008 inventory, `irisy-architecture.md`, and §1's table are provenance and cannot reintroduce scope.
+
+## Design Acceptance (non-release, v44 transcript)
+
+- [x] A transcript is one readable Markdown file per session with YAML frontmatter and `## <role>` turns, round-tripping without loss (`src-tauri/src/kernel/transcript_format.rs`, 12 tests).
+- [x] A hand-edited transcript still opens and still accepts a new turn without losing its existing history (`transcript_format.rs`, `session_resource.rs`).
+- [x] `append_message` is the only write, executes the §15.2 recheck/atomic-commit/reread contract, and reports a stale revision as recoverable `precondition_failed` without writing (`src-tauri/src/kernel/session_resource.rs`, 13 tests).
+- [x] The transcript directory is the session list, including a file placed there by hand, and excludes interrupted-write temp siblings (`session_resource.rs`).
+- [x] The frontend store is rebuilt from the transcript on open and writes only settled turns, so a streaming or empty placeholder never reaches the file (`packages/ctrl-web/src/lib/session-transcript.test.ts`, 25 tests).
+- [x] An unverified or failed append is reported rather than read as saved (`session-transcript.test.ts`).
+- [ ] Prove the migration path on a real profile carrying browser-held transcripts, including a mid-migration failure leaving the landed turns readable and the source intact. Covered by unit evidence; not yet exercised against a user profile.
+- [ ] Render the transcript viewer from the descriptor's `presentation.viewer = "transcript"` hint rather than the session store's own list rendering.
+
+## Design Acceptance (non-release, v43 migration)
+
+- [ ] Declare one §12.3 pipeline for every `v1` intent, including its exact domains, required Outcome facts, and rendering.
+- [ ] Generate each intent's status from real evidence and prove no `partial` or `declared` intent is presented to users as available.
+- [ ] Prove no intent is reported `verified` while any domain in its pipeline remains `declared` under ADR-002 §17.6.
+- [ ] Prove U10, U11, and U12 pipelines consume §15.5 Outcome facts rather than reprinted message strings.
+
+## Design Acceptance (non-release, v42 migration)
+
+- [ ] Prove every shipped user-facing surface serves at least one §12.1 `v1` intent, and that no surface exists for an intent absent from the registry.
+- [ ] Prove each `v1` intent is reachable without the user naming a tool, package, Skill, MCP server, ResourceRef, or capability domain.
+- [ ] Prove U10, U11, and U12 have real surfaces showing exact target/staged change, provenance drill-down, and truthful failure with a recovery path.
+- [ ] Prove no `later` intent is presented as available.
+
+## Design Acceptance (non-release, v41 migration)
+
+- [ ] Ordinary UI and runtime routing expose one fixed Irisy identity with no Assistant/Coding or persona/role registry.
+- [ ] Runtime assembly can show the exact context tuple for a turn and contains only explicit ResourceRefs.
+- [ ] The canonical Irisy transcript store recovers every live Irisy session after reset/restart; no engine or project store continues as another live owner.
+- [ ] Hermes and former Coding history imports create new canonical sessions without overwriting active transcripts or resuming historical owners.
+- [ ] A selected FCT resolves live before turn assembly, preserves Work ResourceRefs, appends/deduplicates dependency ResourceRefs, and supplies optional internal Skill plus enforced least-privilege gate scope; unavailable projection reports once, returns the session to Auto, resets, and never sends stale context.
+- [ ] A pinned internal Skill can alter method projection but cannot create or own a session.
+
+These are migration criteria and do not mark implementation acceptance complete.

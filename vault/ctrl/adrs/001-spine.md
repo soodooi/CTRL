@@ -1,20 +1,21 @@
 ---
 adr_id: 001
 module: spine
-title: CTRL spine — 4-layer kernel + 5 primitives + 4 mcp sources + BYO-CLI driver platform + 3-capability-face + 6 self-evolution loops
-version: 21
+title: CTRL spine — 4-layer kernel + 5 primitives + one Irisy + BYO-CLI external gate client + 3 capability faces
+version: 22
 status: accepted
-last_updated: 2026-08-03
+last_updated: 2026-08-05
 deciders: [bao, zeus]
 sections:
   - { id: layers,         source: orig-001-§3 }
   - { id: primitives,     source: orig-001-§1.2 }
   - { id: sources,        source: orig-001-§1.3 }
-  - { id: aggregator,     source: retired-v7 + bao-2026-08-03-one-irisy-two-identities }
-  - { id: invariants,     source: orig-001-§4 + bao-2026-08-03-one-irisy-two-identities }
+  - { id: aggregator,     source: retired-v7 + bao-2026-08-05-one-irisy-resource-scope }
+  - { id: invariants,     source: orig-001-§4 + bao-2026-08-05-one-irisy-resource-scope }
   - { id: philosophy,     source: orig-001-§6 }
   - { id: self-evolution, source: brainstorm system-self-evolution-2026-06-04 }
 changelog:
+  - v22 2026-08-05: **§4 + invariant #11 authority amendment — one fixed Irisy identity; Project coding is a Resource + Skill/capability scope, not a second identity.** The managed Irisy path and external BYO CLI projection path remain distinct, but the BYO CLI is only an external `:17873` gate client and CTRL does not own its loop. This retires live Assistant/Coding identity wording while preserving the four layers, five primitives, three capability faces, plain text, and projection/gate architecture. Adds non-release Design Acceptance migration criteria without claiming implementation completion.
   - v21 2026-08-03: **§4 + invariant #11 amendment — every user-visible AI surface is Irisy; Assistant and Coding are Irisy identities, not competing agent brands (bao confirmed).** The bottom composer controls expose three understandable axes: Identity (`assistant | coding`), Resource (the real current document/selection/knowledge/project/pack scope), and Skill (`Auto` or one explicitly pinned local `SKILL.md`). Engine and protocol names such as Hermes, OpenCode, ACP, and the internal Workspace term are implementation detail and do not appear as ordinary identity choices. The configured Coding project is auto-bound when it is the only eligible project; a project selector appears only when multiple real scopes exist, with paths in detail text. Resource and pinned-skill changes MUST alter the next runtime projection, reset only that identity's ACP owner before reuse, and never be inert labels. Branding convergence does not merge execution: Assistant and Coding retain independent singleton, command/cancellation owner, transcript/session, resource scope, credentials, capabilities, and approval boundary. Pairs ADR-003 frontend §8.5/§8.6 v39 and ADR-005 irisy §8.7/§11 v38.
   - v20 2026-08-02: **§4 + invariant #11 amendment — Irisy and Coding/OpenCode are selected inside one persistent dialog shell while remaining two isolated agents (bao confirmed "保持一个对话框，两个agents").** `AgentMode = irisy | coding` changes the active actor and mode-specific chrome without remounting a second chat authority: Irisy exposes its selectable ACP engine, roles, Companions, and packs; Coding exposes OpenCode identity, selected workspace, coding skills, attachments, and secondary external launch. They may reuse visual renderer/composer components, but MUST retain separate ACP singleton, command/cancellation owner, transcript/session store, workspace/data scope, projected capabilities, credentials, and approval boundary. A mode switch never silently copies or merges context. The standalone Coding chat surface and route authority are retired in the same coherent change. OpenCode workspace eligibility must be explicit actor/surface projection metadata; `record_source` data semantics alone never make a pack a Coding workspace. Pairs ADR-003 frontend §8.5/§8.6 v38 and ADR-005 irisy §8.7/§11 v37.
   - v19 2026-07-28: **§4 amendment — a feature-pack request in Coding invokes CTRL's governed production lifecycle, not generic architecture consultation (bao: OpenCode prematurely defined packs, offered unverified `skill` vs `mcp-server` choices, and promised installability without evidence).** `CODING_CAPABILITY_BRIEF` continues to point OpenCode at the existing `create-feature-pack` SKILL.md v1.2.0 as the sole multi-step authority; it does not add a second OpenCode workflow or supervise the user-owned ACP agent loop. The brief now requires an ordered contract: `skill_list`/`skill_read` first; prior research lookup plus a durable `Research/feature-packs/<slug>.md` update before form selection; verified official source/auth/endpoint or existing-server evidence; exactly one evidence-based recommendation and explicit confirmation only after the research record; validate-and-repair → install → real form-specific smoke; publish only on explicit share intent. Before evidence, it forbids speculative implementation menus and unsupported claims about sources, dependencies, zero configuration, installation, or usability. String-contract tests pin all stages and red lines. This operationalizes ADR-002 §7 v76's durable research rule while preserving ADR-002 §7.4's manifest=data/runtime=generic lock, `:17873` as the only lifecycle gate, and `FeaturePackScene` as the sole generic renderer. No manifest change, new gate tool, or new runtime/controller path. Pairs ADR-002 substrate §7 v76.
@@ -98,7 +99,7 @@ brain — 2 parallel paths (v8): (1) Irisy brain = Hermes Agent (CTRL bundles + 
 
 ## §4 BYO-CLI driver 5-block view (logical, co-exists with §1)
 
-> **Evolution**: Pi-centric (retired pre-v4) → 3-agent aggregator hermes/opencode/kairo (v4–v6, **RETRACTED**) → **BYO-CLI driver platform (v7)** → **v8 纠正: 2 parallel brain paths**. CTRL is a **projection + gate** layer. **(v8, governing)**: 两条 brain 路并存 — (1) **Irisy brain = Hermes Agent** (CTRL bundles + launches, dashboard `:17890`); (2) **BYO-CLI driver** (this §4, user's own CLI via projection). v7's "hermes retired" was an overstatement — hermes is NOT retired, it powers Irisy. Both paths gate at `:17873`.
+> **Evolution**: Pi-centric (retired pre-v4) → 3-agent aggregator (v4–v6, retired) → projection + gate. **v22 governs:** CTRL presents one fixed Irisy identity. Project coding is an explicit Project Resource with optional pinned Skill, capability scope, policy, and task; it is not another product identity. A BYO CLI is an external client of `:17873`: CTRL projects authorized assets but never owns or supervises that CLI's loop. The managed Irisy path and external BYO CLI path may use different runtimes while sharing the same gate contract.
 
 ```
               ┌──────────────────────────────────────────────────────┐
@@ -115,14 +116,14 @@ USER ↔ PWA ↔ │ KERNEL (thin: project · gate :17873 · keychain · MCP) �
                               { permission · audit · visibility }
 ```
 
-- **ui-ux** — PWA, single React 18 + Vite 5 + TanStack codebase (ADR-003). 5 L1 chips: Irisy (persona shell) / Mcp pool / Notes (inline viewer + open-in-Obsidian, v24) / Skills / Driver (the CLI session surface, v7 — was Coding/Assistant chips for opencode/hermes).
+- **ui-ux** — one Ambient PWA shell (ADR-003 v40). L1 is exactly Work / Library / Settings; Irisy is resident outside L1. ResourceDescriptor/content type selects the viewer, and legacy routes are bounded redirects only.
 - **KERNEL** — Rust microkernel, **极薄** (ADR-002 v19+, v7):
   - `projector` — materialize local assets to the CLI's native形态 on a per-intent subset (v7, §4.1): tools → MCP entry in the CLI's `.mcp.json` (mounted on bus `:17873`); skills → `SKILL.md` copied into the CLI's skills dir; memory → derived `CLAUDE.md` / `AGENTS.md`; user-triggered workflows → slash command. Manifest optional `target:` override; else auto-route by asset type.
   - `mcp_server :17873` (ADR-002 § mcp-bus) — **the gate**: exposes Notes folder + clipboard + OCR + provider router to the driver as MCP tools; every call routes back here for permission / audit / visibility. CTRL does **not** supervise the driver's decisions.
   - `provider/` — fal.ai + Anthropic + OpenAI + Hunyuan + DeepSeek + Volc (BYOK) adapters; routes `image.generate` / `video.generate` / `text.chat` (ADR-002 § provider), exposed to the driver as MCP tools.
   - `keychain` — unified credential vault; the driver reads via env-injected token at launch (no per-driver config proliferation).
 - **CLI driver** ★ — the user's **own** resident strong CLI (Claude Code 等). For the BYO-CLI path CTRL ships / lazy-installs / supervises **no** brain — it only projects assets. (v8: the OTHER path, Irisy, IS powered by CTRL-bundled **Hermes Agent**; Pi remains retired (v4). hermes is not retired — see §4 header.) Two triggers share one projection: **passive** (user runs `claude` themselves → CLI auto-discovers projected assets, zero-intrusion, satisfies vim-test) + **active** (Ctrl-summoned ephemeral workspace launches the CLI). Scheduling/decision权 stays in the CLI model.
-- **Irisy identities in the persistent dialog** (v21) — the product presents one AI name, **Irisy**, with `Identity = assistant | coding`. Assistant and Coding are user-facing job identities, not engine brands. The composer bottom bar also exposes **Resource** and **Skill**: Resource names the real current content, explicit selection, knowledge scope, project, or pack; Skill is `Auto` or one explicitly pinned local `SKILL.md`. Hermes, OpenCode, ACP, and Workspace are internal implementation terms, not ordinary identity labels. Coding auto-binds the configured project when it is the only eligible scope and offers a Project resource choice only when multiple real scopes exist. Changing identity, resource, or pinned skill changes the next prompt/capability projection and resets only the affected ACP owner before reuse; no control may be decorative. Beneath this single brand, Assistant and Coding retain separate ACP singleton, Tauri commands, cancellation owner/drain boundary, durable transcript/session, resource scope, projected capabilities, credentials, and approval authority. `record_source` remains only a data contract and never grants Coding-project eligibility. Opening an allowlisted OS terminal/editor remains secondary. (ADR-001 spine §4 v21)
+- **One Irisy; project coding is scope (v22).** The product exposes one fixed Irisy identity. Runtime/engine names and the retired Assistant/Coding identity split are not ordinary product controls. Irisy's turn context is owned by ADR-005 and may include an explicit Project Resource, optional pinned Skill, capability scope, policy, and task. Selecting a project changes real Resource/capability projection; it does not select another agent. A user-selected BYO CLI remains outside Irisy as an external `:17873` gate client: CTRL materializes authorized Resource/Skill/capability references into native CLI configuration, but does not create, resume, cancel, persist, or supervise the CLI's loop or transcript. Opening an allowlisted OS terminal/editor is an explicit external action. (ADR-001 spine §4 v22)
 - **Notes/KB = Obsidian** (v24, ADR-002 — kairo/SilverBullet bundling retired) — the user's own Obsidian is the PKM editor over `~/Documents/CTRL/Notes/`; CTRL bundles NO editor (don't reinvent the wheel, bao 2026-06-17). Data access is editor-independent: the driver reads/writes via kernel notes-MCP `:17873` + optional Obsidian Local-REST-API MCP. PWA `/notes` = inline md viewer + "open in Obsidian".
 - **provider** — LLM/image/video API adapters; **fal.ai is flagship** (985 endpoints, FLUX 2 / Seedream / Recraft / Nano Banana Pro / Kling 3.0 / Veo 3.1 / Hunyuan Video). Codex 锁单家 gpt-image-2, CTRL 拿 985 模型聚合.
 - **MCP** — tools the driver invokes via MCP (ADR-004). CTRL kernel itself is an MCP server (in, the gate) AND host (out).
@@ -175,7 +176,7 @@ Projection is **intent-scoped** (project the relevant subset, don't blast full c
 8. Backup source = `~/Documents/CTRL/Notes/` + `~/.ctrl/{mcps,agents,skills,config.toml,mesh/identity}`.
 9. Skills truth model — `~/.ctrl/skills/<id>/SKILL.md` is SSOT (Claude Code Skills schema). Skills are **projected** into the user's CLI-driver skills dir (v7 — portable across any BYO driver; was "cross-agent invoke" pre-v7). Was "`~/.ctrl/mcps/<id>/skills/`" pre-v4 — uplifted to top-level because Skills is now a peer capability face (§4.1).
 10. v1.0 mcp runtime = `.ts` / `.js` only. Python / Rust deferred.
-11. **One Irisy brand, two isolated runtime paths (v21; RETRACTS visible engine branding).** The product exposes `Identity = Assistant | Coding`, plus real Resource and Skill scope. Assistant may use a CTRL-managed ACP engine; Coding may use the user's Coding runtime, but Hermes/OpenCode/ACP and Workspace are not ordinary user-facing identities. Resource and explicit Skill changes alter the next runtime projection and reset only the affected owner. The two identities may share presentation code but never ACP singleton, command/cancellation owner, transcript/session, resource scope, credentials, capability projection, pending requests, or approvals. Skills remain local plain-text `SKILL.md`; `Auto` means no pinned playbook, while an explicit pin must load that authority into a fresh session. Coding project eligibility is explicit; `record_source` never implies it. Pi and the kernel-supervised aggregator remain retired. (ADR-001 spine §5 v21)
+11. **One fixed Irisy identity; project coding is Resource/Skill scope (v22).** Irisy is the only live CTRL AI identity. The retired Assistant/Coding split, engine names, and persona registry are not product identities. Project coding is represented by an explicit Project Resource plus optional pinned Skill, capability scope, policy, and task. A BYO CLI is an external `:17873` client: projection may expose authorized assets, but CTRL never owns its session, transcript, cancellation, credentials, approvals, or agent loop. Skills remain local plain-text method and never own sessions. Pi and the kernel-supervised aggregator remain retired. (ADR-001 spine §5 v22)
 12. **No CTRL-owned vault editor / index** (v24: don't reinvent the wheel — bao 2026-06-17). The user's **Obsidian** owns notes editing + wiki-link + backlink + graph + plugins; CTRL bundles no editor (kairo/SilverBullet retired). CTRL kernel exposes `~/Documents/CTRL/Notes/` via MCP `:17873` for agent consumption (editor-independent) + keeps a LIGHT inline md viewer for read/preview. `notes_index.rs` is OPTIONAL (MCP-server convenience; an optional Obsidian Local-REST-API MCP adds richer graph ops).
 
 ## §6 Design philosophy locks
@@ -254,7 +255,7 @@ Loop 5 audit ledger schema  ← substrate, ships first
 - [ ] Audit ledger schema lands in `persistence.rs` (ADR-002 § audit-ledger v1 amend, P0).
 - [ ] Policy envelope L3/L4/L5 lands cross-loop (ADR-006 § policy-envelope v1 amend, P0).
 - [ ] Loop 1 detect + Loop 5 audit ledger ship as Crawl-phase MVP.
-- [ ] Per-loop §3 detail amends arrive in their owning ADRs (1 → ADR-005 §5, 2 → ADR-002 § provider amend, 3 → ADR-007 § cap-curation, 4 → ADR-002 § vault amend, 5 → new section or ADR-002 § self-healing, 6 → ADR-006 § telemetry).
+- [ ] Per-loop detail amends arrive in their owning ADRs (Irisy → ADR-005, provider/resource/local discovery → ADR-002, cloud discovery/telemetry → ADR-006); deprecated ADR-007 owns no live curation work.
 
 ## Acceptance
 
@@ -270,6 +271,15 @@ Loop 5 audit ledger schema  ← substrate, ships first
 - [x] Lean kernel — wasmtime / cranelift / sandbox.rs / composition.rs removed. Verified.
 - [x] Kernel-as-MCP-server @ :17873 (ADR-002 § mcp-bus). Verified.
 - [x] Provider router shipped v0.1.126 (ADR-002 § provider v1). Verified 2026-05-31.
+
+## Design Acceptance (non-release, v22 migration)
+
+- [ ] Ordinary product chrome exposes one fixed Irisy identity and no Assistant/Coding or engine/persona identity switch.
+- [ ] Project coding is demonstrated as an explicit Project Resource plus Skill/capability scope, with no second live CTRL transcript or session owner.
+- [ ] A real BYO CLI probe shows it is only an external `:17873` client and that CTRL does not start, resume, cancel, or supervise its agent loop.
+- [ ] Four layers, five primitives, three capability faces, ReviewGate, and plain-text recovery remain intact after migration.
+
+These criteria describe design migration evidence and are not release acceptance or an implementation-complete claim.
 
 ## Provenance
 

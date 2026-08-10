@@ -1,0 +1,743 @@
+{
+  "schemaVersion": 2,
+  "authority": "ADR-005 irisy §12 owns the intent registry; ADR-002 substrate §17 owns capability domains. This file is the hand-declared pipeline input required by ADR-005 §12.3 v43, and it MUST cover every v1 intent. scripts/gen-pipeline-conformance.mjs verifies every reference and never infers status from a token match, so a stage is only counted when the artifact it names exists.",
+  "stageContract": [
+    "entry: the shipped surface where the user starts, and the control they use. `surface: null` means no surface exists yet.",
+    "domains: the exact capability domains the turn projects",
+    "operation: the canonical operation or kernel path invoked",
+    "outcomeFacts: the ADR-002 §15.5 facts this intent needs the owner to return",
+    "rendering: viewer or decision kind that presents the result",
+    "evidence: runnable checks that exercise this intent's path, plus visual verification where behaviour is visual",
+    "gaps: known reasons this pipeline is not yet trustworthy; a declared gap keeps status below verified"
+  ],
+  "domainEvidence": {
+    "note": "§17.6 owner-side domains are proven through their owner's authorization path rather than tool classification.",
+    "project": {
+      "owner": "src-tauri/src/kernel/project_resource.rs",
+      "test": "src-tauri/src/kernel/project_resource.rs",
+      "testName": "the_project_domain_is_enforced_by_this_owner",
+      "note": "Proves the owner admits an explicit `project` grant and the unscoped wildcard, and denies neighbouring grants (`notes,vault`), `system` only, and an empty scope, for both describe and query.",
+      "gaps": []
+    }
+  },
+  "pipelines": [
+    {
+      "intent": "U1",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/AmbientHome.tsx",
+        "control": "composer prompt with the active Work Resource"
+      },
+      "domains": [
+        "system",
+        "vault",
+        "notes"
+      ],
+      "operation": "irisy_chat_stream with explicit Resources",
+      "outcomeFacts": [
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "transcript"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/irisy-turn.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/grounding.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U2",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/viewers/ResourceViewerHost.tsx",
+        "control": "Rewrite / Summarize / Translate on the open content, staged into an approval decision"
+      },
+      "domains": [
+        "notes",
+        "vault",
+        "llm"
+      ],
+      "operation": "llm_chat proposal, then produce(ref, replace_content) on approval",
+      "outcomeFacts": [
+        "target",
+        "staged",
+        "precondition",
+        "effect"
+      ],
+      "rendering": {
+        "kind": "approval"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/content-rewrite.test.ts",
+          "packages/ctrl-web/src/lib/note-write.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/note-write.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U3",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/sources/SourcesPanel.tsx",
+        "control": "search your notes; every passage is cited to its note and openable"
+      },
+      "domains": [
+        "vault",
+        "notes",
+        "memory"
+      ],
+      "operation": "vault_search(with_context) cited back to each note",
+      "outcomeFacts": [
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "transcript"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/sources.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/sources.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U4",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/sources/SourcesPanel.tsx",
+        "control": "search your notes, then open a hit as the session Work Resource"
+      },
+      "domains": [
+        "vault",
+        "notes"
+      ],
+      "operation": "vault_search then open the hit as a canonical Resource",
+      "outcomeFacts": [
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "markdown"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/sources.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/sources.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U5",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/TodayPanel.tsx",
+        "control": "Work-pane open tasks with complete-in-place, plus today's events; smart tables keep their grid"
+      },
+      "domains": [
+        "smart_table",
+        "tasks",
+        "calendar"
+      ],
+      "operation": "task_query / calendar_query / task_update; produce(smart table, upsert/set-cell)",
+      "outcomeFacts": [
+        "target",
+        "effect"
+      ],
+      "rendering": {
+        "viewer": "smart-table"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/lifeos.test.ts",
+          "packages/ctrl-web/src/lib/smart-table-gate-bridge.test.ts",
+          "packages/ctrl-web/src/modules/smart-table.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/today.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U6",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/viewers/ResourceViewerHost.tsx",
+        "control": "edit a note the session owns in the Work pane; the same produce operation an agent proposes"
+      },
+      "domains": [
+        "vault",
+        "notes",
+        "smart_table",
+        "tasks",
+        "calendar"
+      ],
+      "operation": "produce(ctrl://local/note/..., replace_content) · produce(ctrl://local/task/..., set_field) · produce(ctrl://local/calendar/..., set_field) · produce(ctrl://local/table/..., set_cell)",
+      "outcomeFacts": [
+        "resource",
+        "target",
+        "staged.before",
+        "staged.after",
+        "preconditions",
+        "effect.verified_by",
+        "feedback.code",
+        "feedback.retryable"
+      ],
+      "rendering": {
+        "kind": "approval"
+      },
+      "evidence": {
+        "unit": [
+          "src-tauri/src/kernel/note_resource.rs",
+          "src-tauri/src/kernel/task_resource.rs",
+          "src-tauri/src/kernel/calendar_resource.rs",
+          "src-tauri/src/kernel/table_resource.rs",
+          "src-tauri/src/kernel/record_write.rs",
+          "packages/ctrl-web/src/lib/note-write.test.ts",
+          "packages/ctrl-web/src/lib/record-write.test.ts",
+          "packages/ctrl-web/src/lib/lifeos.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/note-write.spec.ts",
+          "packages/ctrl-web/e2e/today.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": [
+        "The smart-table cell edit is verified at the wire level but not at the UI level: the grid renders to a canvas, so there is no DOM cell for a browser test to drive.",
+        "A calendar event has no first-party editing surface yet; its canonical write is exercised but reached through the assistant rather than from the schedule.",
+        "Smart-table row and column operations (add row, delete row, add/retype/drop column) still rewrite the whole file through the bespoke path with no revision precondition, so one of those can still overwrite a concurrent cell write."
+      ]
+    },
+    {
+      "intent": "U7",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/sources/SourcesPanel.tsx",
+        "control": "explicit Look up on the web, separate from the local search"
+      },
+      "domains": [
+        "websearch",
+        "market"
+      ],
+      "operation": "web_search through the gate, naming the provider that answered",
+      "outcomeFacts": [
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "transcript"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/sources.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/sources.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U8",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/LocalApps.tsx",
+        "control": "connected connector read, declaring source:<id> for exactly the connector it addresses"
+      },
+      "domains": [
+        "source",
+        "mcp"
+      ],
+      "operation": "source_describe / source_query under a declared source:<id> intent",
+      "outcomeFacts": [
+        "provenance",
+        "feedback.retryable"
+      ],
+      "rendering": {
+        "viewer": "records"
+      },
+      "evidence": {
+        "unit": [
+          "src-tauri/src/kernel/visibility.rs",
+          "src-tauri/src/kernel/mcp_server.rs",
+          "packages/ctrl-web/src/lib/local-apps.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/local-apps.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U9",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/viewers/ProjectViewer.tsx",
+        "control": "explicit Project Resource"
+      },
+      "domains": [
+        "project",
+        "vault"
+      ],
+      "operation": "describe/query(ctrl://local/project/...)",
+      "outcomeFacts": [
+        "target",
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "project"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/decision-registry.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/project-unavailable.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U10",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ReviewGateHost.tsx",
+        "control": "approval decision"
+      },
+      "domains": [
+        "system"
+      ],
+      "operation": "produce(ref, operation) through ReviewGate",
+      "outcomeFacts": [
+        "target",
+        "staged",
+        "precondition"
+      ],
+      "rendering": {
+        "kind": "approval"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/decision-registry.test.ts",
+          "src-tauri/src/kernel/resource.rs"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/review-approval.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U11",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/viewers/ProvenanceDrillDown.tsx",
+        "control": "Source strip under a rendered Resource, plus transcript tool-step and decision drill-down"
+      },
+      "domains": [
+        "system",
+        "diagnostics"
+      ],
+      "operation": "describe(ref) descriptor facts and provenance chain walk",
+      "outcomeFacts": [
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "transcript"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/provenance.test.ts",
+          "packages/ctrl-web/src/lib/decision-registry.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/provenance-drilldown.spec.ts",
+          "packages/ctrl-web/e2e/decision-surface.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U12",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/AmbientHome.tsx",
+        "control": "unavailable decision with recovery"
+      },
+      "domains": [
+        "system"
+      ],
+      "operation": "query(ctrl://local/system/catalog, selection-projection)",
+      "outcomeFacts": [
+        "feedback.retryable",
+        "provenance"
+      ],
+      "rendering": {
+        "kind": "unavailable"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/decision-registry.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/decision-surface.spec.ts",
+          "packages/ctrl-web/e2e/turn-failure.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U13",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/AmbientHome.tsx",
+        "control": "session tabs, Re-run, Fork"
+      },
+      "domains": [
+        "system"
+      ],
+      "operation": "produce ctrl://local/session/<id> append_message",
+      "outcomeFacts": [
+        "resource",
+        "target",
+        "preconditions",
+        "effect.verified_by",
+        "result.revision",
+        "feedback.code",
+        "feedback.retryable"
+      ],
+      "rendering": {
+        "viewer": "transcript"
+      },
+      "evidence": {
+        "unit": [
+          "src-tauri/src/kernel/transcript_format.rs",
+          "src-tauri/src/kernel/session_resource.rs",
+          "packages/ctrl-web/src/lib/session-transcript.test.ts",
+          "packages/ctrl-web/src/lib/irisy-sessions.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/session-recovery.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U14",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/Discover.tsx",
+        "control": "Library Find"
+      },
+      "domains": [
+        "discover",
+        "registry"
+      ],
+      "operation": "discover_packs / registry query",
+      "outcomeFacts": [
+        "provenance",
+        "feedback.retryable"
+      ],
+      "rendering": {
+        "viewer": "records"
+      },
+      "evidence": {
+        "unit": [],
+        "e2e": [
+          "packages/ctrl-web/e2e/library-offline.spec.ts",
+          "packages/ctrl-web/e2e/l1-persona.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U15",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/Discover.tsx",
+        "control": "Install, plus Enable/Disable on an installed capability"
+      },
+      "domains": [
+        "mcp",
+        "registry"
+      ],
+      "operation": "mcp_pack_install; produce(ctrl://local/system/catalog, enable|disable)",
+      "outcomeFacts": [
+        "target",
+        "staged",
+        "effect",
+        "feedback.retryable"
+      ],
+      "rendering": {
+        "kind": "capture"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/fct.test.ts",
+          "src-tauri/src/kernel/capability_state.rs",
+          "src-tauri/src/kernel/fct_catalog.rs"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/capability-manage.spec.ts",
+          "packages/ctrl-web/e2e/coding.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U16",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/PackCreator.tsx",
+        "control": "Create FCT in Library; a local-app adapter is authored in Coding under the create-local-app-adapter skill (bao 2026-08-05)"
+      },
+      "domains": [
+        "mcp",
+        "discover",
+        "skill",
+        "vault"
+      ],
+      "operation": "mcp_pack_scaffold / validate / install; skill_list + skill_read(create-local-app-adapter) in Coding",
+      "outcomeFacts": [
+        "target",
+        "effect",
+        "feedback.field"
+      ],
+      "rendering": {
+        "viewer": "form"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/feature-pack-create.ts",
+          "src-tauri/src/commands/skills.rs"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/coding.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U17",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/AmbientHome.tsx",
+        "control": "Auto-first FCT chip opening a bounded choice panel; Library owns the full catalogue"
+      },
+      "domains": [
+        "registry",
+        "skill"
+      ],
+      "operation": "query(ctrl://local/system/catalog, selection-projection)",
+      "outcomeFacts": [
+        "target"
+      ],
+      "rendering": {
+        "kind": "choice"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/fct.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/fct-choice.spec.ts",
+          "packages/ctrl-web/e2e/l1-persona.spec.ts",
+          "packages/ctrl-web/e2e/decision-surface.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U18",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/Discover.tsx",
+        "control": "Installed FCTs, each stating its owner with Disable and, for packages, Remove"
+      },
+      "domains": [
+        "mcp",
+        "registry",
+        "skill"
+      ],
+      "operation": "mcp_pack_uninstall; produce(ctrl://local/system/catalog, enable|disable); reveal_capability",
+      "outcomeFacts": [
+        "target",
+        "staged",
+        "effect"
+      ],
+      "rendering": {
+        "kind": "choice"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/fct.test.ts",
+          "src-tauri/src/kernel/capability_state.rs",
+          "src-tauri/src/kernel/fct_catalog.rs",
+          "src-tauri/src/commands/system.rs"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/capability-manage.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U19",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/LocalApps.tsx",
+        "control": "Local apps shelf in Library with an explicit Connect"
+      },
+      "domains": [
+        "source",
+        "mcp",
+        "providers"
+      ],
+      "operation": "connect_local_app then managed local MCP child reconnect",
+      "outcomeFacts": [
+        "target",
+        "feedback.retryable"
+      ],
+      "rendering": {
+        "kind": "unavailable"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/local-apps.test.ts",
+          "src-tauri/src/shell/builtin_mcps.rs"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/local-apps.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U20",
+      "entry": {
+        "surface": "packages/ctrl-web/src/routes/settings.tsx",
+        "control": "Settings"
+      },
+      "domains": [
+        "providers",
+        "system"
+      ],
+      "operation": "provider_set_active and configuration commands",
+      "outcomeFacts": [
+        "target",
+        "effect",
+        "feedback.field"
+      ],
+      "rendering": {
+        "viewer": "form"
+      },
+      "evidence": {
+        "unit": [],
+        "e2e": [
+          "packages/ctrl-web/e2e/provider-verification.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U21",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/diagnostics/DiagnosticsPanel.tsx",
+        "control": "Settings > Logs diagnostics client with per-module status, checks, capture, and export preview"
+      },
+      "domains": [
+        "diagnostics"
+      ],
+      "operation": "app_diagnostics_status / app_diagnostics_smoke / app_diagnostics_trace / diagnostics_capture_* / diagnostics_export_preview",
+      "outcomeFacts": [
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "records"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/diagnostics-view.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/diagnostics.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U22",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/ambient/LocalApps.tsx",
+        "control": "Read selection on a connected local app, then Use in this session"
+      },
+      "domains": [
+        "source",
+        "mcp"
+      ],
+      "operation": "source_query(record_source.query.mcp_tool)",
+      "outcomeFacts": [
+        "target",
+        "precondition",
+        "provenance"
+      ],
+      "rendering": {
+        "viewer": "records"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/local-apps.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/local-apps.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    },
+    {
+      "intent": "U23",
+      "entry": {
+        "surface": "packages/ctrl-web/src/components/viewers/ResourceViewerHost.tsx",
+        "control": "capture decision raised by a verified change, offering Save as FCT"
+      },
+      "domains": [
+        "mcp",
+        "registry"
+      ],
+      "operation": "derive an FCT manifest from a verified Outcome, then mcp_pack_install",
+      "outcomeFacts": [
+        "target",
+        "effect"
+      ],
+      "rendering": {
+        "kind": "capture"
+      },
+      "evidence": {
+        "unit": [
+          "packages/ctrl-web/src/lib/fct-capture.test.ts"
+        ],
+        "e2e": [
+          "packages/ctrl-web/e2e/note-write.spec.ts"
+        ],
+        "visual": true
+      },
+      "gaps": []
+    }
+  ]
+}

@@ -1,10 +1,10 @@
 ---
 adr_id: 010
 module: communication
-title: CTRL communication architecture — 统一窄腰 (§14 契约 + :17873 治理 + MCP 插件协议) over 多元传输
-version: 13
+title: CTRL communication — typed production events + canonical product endpoints over multiple transports
+version: 14
 status: accepted
-last_updated: 2026-08-02
+last_updated: 2026-08-05
 deciders: [bao, zeus]
 sections:
   - { id: positioning,       source: new-2026-06-22, note: "定位:CTRL = 普通用户的通用平台,不是 Claude Code 壳。协议服务平台/能力市场,coding 只是一类能力。" }
@@ -19,7 +19,10 @@ sections:
   - { id: future,            source: new-2026-06-22, note: "WASM 插件 / A2A peer / AG-UI 对齐 / Beelay·Keyhive 均叠加在窄腰上,不替代。" }
   - { id: endpoint-spec,     source: new-2026-06-24-v6, amended: v10-2026-07-24, note: "端点 spec = 从运行真相生成的机器可读契约:工具=MCP tools/list JSON Schema;§14=describe schema;本机 command/event=Rust typed schemas + Tauri IPC/Channels/WS binding registry;跨设备=protobuf。AsyncAPI 于 v10 退役,不再作为 runtime 或 artifact,避免第二份 schema/binding 真相。catalog 从 artifacts 生成,不爬源。" }
   - { id: diagnostics,       source: new-2026-07-25-v11, note: "Irisy/Coding/Notes 共用一个 Rust-owned 诊断组合层；typed Tauri 是第一方控制面，:17873 仅投影授权的只读 status/smoke/trace；元数据最小化、递归脱敏、内存限时留存、无默认磁盘或云导出。" }
+  - { id: production-event-fact, source: bao-2026-08-05-track-0, note: "§ event-authority: typed InternalMsg/EventBus is sole production event fact; external streams are authorized/redacted projections." }
+  - { id: canonical-endpoints, source: bao-2026-08-05-track-0, note: "Cross-domain product endpoints are exactly describe/query/produce; artifacts generated from descriptor/operation/event owners; Tauri IPC shell-only." }
 changelog:
+  - v14 2026-08-05: **Production event and endpoint authority amendment.** Typed `InternalMsg` on `EventBus` becomes the sole production event fact. Tauri Channels and authenticated WebSocket carry only authorized/redacted external projections; no raw production publisher remains. Cross-domain product endpoints are exactly `describe(ref)`, `query(ref, request)`, and `produce(ref, operation)`, with artifacts generated from descriptor/operation/event owners. Tauri IPC remains only for shell/OS/UI responsibilities and cannot duplicate business capability surfaces. Adds non-release Design Acceptance.
   - v13 2026-08-02: **§ trust-domains/§ transports amendment — LibreOffice Python UNO extension and keychain-bound secret-free rendezvous (bao approved A + C).** Python is permitted only inside the user-installed, explicitly enabled, application-owned LibreOffice extension; it is not an MCP runtime. CTRL creates and stores the dedicated bridge credential in the OS keychain, while the extension obtains it through the operating-system credential boundary and holds it only in process memory. The extension binds a random loopback port and atomically publishes a schema-versioned owner-only rendezvous containing only PID/process binding and address metadata—never the credential or selected content. CTRL rejects symlinks, non-owner files, permissive modes, stale/reused or non-LibreOffice process identity, unsupported schema, and non-loopback endpoints; it resolves the keychain credential at private-child spawn and injects URL/token only after `env_clear()`, never through inherited parent environment. Missing credential, rendezvous, valid process, extension, or explicit selection remains honestly unavailable. The first slice is macOS Writer/Calc read-only; other operating systems require equivalent native credential and process-binding implementations before enablement.
   - v12 2026-08-02: **§ trust-domains/§ transports amendment — private authenticated local-application bridge behind the gate (bao approved LibreOffice方案 A).** The user-installed LibreOffice extension is the sole UNO boundary. A managed TypeScript/JavaScript stdio MCP child talks to an adapter-private authenticated local binding; bridge address, credentials, raw UNO methods, and downstream MCP tools remain inside the adapter trust boundary and are never projected to Irisy. Cross-domain callers see only the generic §14 source through `:17873`. Reads are limited to explicitly selected Writer text or Calc ranges and carry document identity, revision, target coordinates, and a content/range hash. Future writes must recheck those preconditions after ReviewGate approval and reread native state before reporting success. Missing app, extension, selection, or bridge fails closed with an honest unavailable/degraded result.
   - v11 2026-07-25: **NEW § diagnostics — Irisy/Coding/Notes 统一诊断契约（bao 批准）.** 一个 Rust-owned diagnostics composer 只观察既有 ACP、SubprocessActor、vault watcher/index 和 gate audit owner，不启动第二个 agent/process/watcher/index。第一方通过 typed Tauri 使用 status/smoke/trace/capture/export-preview；`:17873` 只向授权 caller 投影只读 status/smoke/trace。健康模型固定为 startup + live + ready + `ok|degraded|failed`；默认只留 metadata breadcrumb，每模块 200 条且最长 15 分钟；增强 capture 最长 5 分钟且不能解除内容禁令。递归 redaction 在进入内存或导出前执行；token/Authorization/env/raw prompt-completion-thought/tool args-results/PTY I/O/note body/绝对路径/InternalMsg 永不暴露。默认不写磁盘、不上传云；本地导出必须先 preview 后由用户显式保存。trace/session/correlation id 只关联 live/recent 观测，不提供执行回放。
@@ -189,6 +192,33 @@ First-party app code uses typed Tauri commands for status/smoke/trace plus expli
 Default recording is metadata-only breadcrumbs, held in memory for at most 15 minutes and 200 events per module. Enhanced capture requires an explicit user action, expires after at most five minutes, and only increases lifecycle-event granularity. Recursive minimization/redaction runs before any event enters memory or an export preview. Tokens, Authorization/cookies/keychain values, subprocess environment, raw prompts/completions/thoughts, raw tool arguments/results, PTY input/output, note bodies, absolute paths/usernames, and `InternalMsg` or raw kernel Event payloads are forbidden in every mode.
 
 Diagnostics writes no telemetry file and performs no cloud export by default. An export must first show the redacted preview and then be explicitly saved to a user-selected local destination. Gate authorization, caller/intent visibility, and audit remain the existing `:17873` governance path; diagnostics adds no bypass and no new execution authority.
+
+### § event-authority — one production event fact and one business endpoint surface (v14)
+
+Typed `InternalMsg` published on `EventBus` is the sole production event fact inside the kernel. Every production publisher constructs `InternalMsg` with an internal origin and typed event payload; direct publication of raw `Event`, ad-hoc broadcast payloads, or a second production bus is forbidden. This closes the prior honest gap where the typed bus existed while production traffic could still bypass it.
+
+Tauri Channels and authenticated WebSocket are not event authorities. They are external projections created only after subscription authorization at `:17873`, schema/version selection, minimization, and redaction. A projection carries only its public external-event type and correlation facts; it never exposes `InternalMsg`, secrets, raw prompt/tool/content payloads, or an unauthenticated publisher. Clients cannot publish raw production events through either transport.
+
+Cross-domain product capability endpoints are exactly:
+
+```text
+describe(ref)
+query(ref, request)
+produce(ref, operation)
+```
+
+ADR-002 v81 owns their ResourceRef/descriptor/operation semantics. Endpoint artifacts are generated from the real owners: ResourceDescriptor schemas, operation request/result/OperationRef types, and authorized external-event types plus adapter bindings. Catalogues consume those artifacts and never hand-maintain a parallel business endpoint schema.
+
+Tauri IPC remains only for shell/OS/UI responsibilities that cannot be represented as a business Resource operation: native window/tray/hotkey lifecycle, native file/folder picker, user-surface ReviewGate resolution, typed Channel subscription setup, and equivalent platform integration. Business reads, writes, installs, searches, jobs, and content operations must not have both a Tauri command and a canonical gate endpoint. Transitional aliases require a bounded version window and parity evidence before deletion; no new business dual surface is allowed.
+
+## Design Acceptance (non-release, v14 migration)
+
+- [ ] Inventory production event publishers and prove each enters typed `InternalMsg`/`EventBus`; raw `Event` and direct transport publishers are absent.
+- [ ] Prove Channels and authenticated WebSocket expose only authorized/redacted external-event projections and reject raw publication.
+- [ ] Generate endpoint artifacts from descriptor, operation, and event owners and verify the catalog does not crawl source or duplicate schemas.
+- [ ] Inventory Tauri IPC and classify every retained command as shell/OS/UI-only or a time-bounded business compatibility alias; migrate remaining business dual surfaces.
+
+These are truthful migration criteria, not release acceptance or implementation-complete claims.
 
 ### § future — 叠加档(不替代窄腰)
 WASM Component Model/Extism(高频·强沙箱不可信插件)· A2A Agent Card(CTRL 当自治 peer agent,对应 share-and-be-shared)· AG-UI 完整采用(若开放第三方 agent 入前端)· **Beelay/Keyhive**(Automerge 原生 E2EE+capability sync,取代手搓 Olm)。均叠加在 MCP/§14 窄腰上。

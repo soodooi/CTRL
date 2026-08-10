@@ -2,9 +2,9 @@
 adr_id: 002
 module: substrate
 title: CTRL substrate — BYO-CLI driver · projection · capability surface · 3-capability-face · provider router · crypto · subprocess · MCP bus · composition
-version: 79
+version: 90
 status: accepted
-last_updated: 2026-08-02
+last_updated: 2026-08-05
 deciders: [bao, zeus]
 sections:
   - { id: brain,                source: orig-003, note: "v27 reframed: BYO-CLI driver brain — user-chosen local CLI (Claude Code etc.); CTRL never spawns/supervises a brain. Prior hermes-ACP/Pi/opencode-as-brain content retired, kept in changelog as provenance." }
@@ -16,14 +16,29 @@ sections:
   - { id: crypto,               source: orig-007 }
   - { id: subprocess,           source: orig-012 }
   - { id: mcp-bus,              source: orig-013 }
-  - { id: composition,          source: orig-024, note: "v73 §7: versioned draft-2020-12 JSON Schema is the sole cross-language manifest authority; TypeScript/Ajv and Rust/jsonschema are consumers, while product/install evals remain separate. v76 §7: pack-authoring research is required to land in a durable Research/feature-packs/<slug>.md vault note (create-feature-pack SKILL.md v1.2.0), not a manifest field." }
+  - { id: composition,          source: orig-024, note: "v88 §15.4.1: capability availability is user-owned plain-text state; enable/disable are the catalogue Resource's bounded produce operations, disabled stays installed but unselectable and unprojectable, and install/uninstall keep their existing surface. v84 §7/§15.4/§16: FCT is the sole user-facing reusable-capability noun and a normalized selection projection over the existing registry; internal manifest/package/Skill/capability authorities remain unchanged. v73: versioned draft-2020-12 JSON Schema is the sole cross-language manifest authority." }
   - { id: vault,                source: new-2026-06-01, note: "kernel vault primitives + feature-layer boundary; Daily Note + Sourcing are feature-layer (Irisy + frontend)" }
   - { id: smart-table-output,   source: new-2026-06-03, note: "mcp output unification — single SmartTable per mcp, schema in manifest output_capture" }
   - { id: embeddings,           source: new-2026-06-03, note: "local Ollama nomic-embed-text + SQLite vector blob + cosine flat search; hybrid mode on vault.search; 5 new MCP tools" }
   - { id: audit-ledger,         source: new-2026-06-04, note: "kernel-side immutable record of every self-evolution event across the 6 loops (ADR-001 §8). Reuses persistence.rs SQLite event store with a new event kind; replay-able, queryable from PWA settings." }
   - { id: diagnostics-projection, source: new-2026-07-25-v72, note: "Existing ACP, subprocess, vault watcher/index, and gate owners publish content-free lifecycle metadata to ADR-010 diagnostics without transferring execution ownership." }
-  - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce: one uniform interface over all content-type feature points (md/html/table/pdf/connector/…) projected on :17873 gate; type layer via describe, read(query)≠write(produce-through-gate); query = kernel service over QuerySource, feature packs + workflows are clients; smart-table = first impl. v77: source-owned rebuildable analytical caches plus generic presentation metadata remain inside this contract, never become user-data truth or a shared writable database. v78: a declared local MCP tool may supply source rows behind the same generic trio; downstream MCP remains private and LibreOffice is the first read-only consumer. Research: GraphQL/Plan9/agentic-AI paper." }
+  - { id: unified-operation-interface, source: new-2026-06-19, note: "§14 — describe/query/produce is the uniform external vocabulary. v83 retires QuerySource/RecordSink as permanent architecture: they are migration adapters behind the sole ResourceOwner contract until removed; descriptor-owned schemas type owner-private payloads." }
+  - { id: resource-contract, source: bao-2026-08-05-track-0, note: "§15 v83 sole permanent contract: ResourceRef → one ResourceOwner → describe/query/produce through one ResourceRegistry; descriptor schemas are payload-shape authority; system catalog discovers refs; stable-handle filesystem resolution remains v82. §15.2 v90 extends the write contract from one Markdown note to a note's tasks, one calendar event, and a smart table's cells, each with one bounded field change and one shared stale/unverified reply shape." }
+  - { id: local-discovery, source: migrated-adr-007-retired-v3, note: "§16 v84 one hot-scanned local registry with one normalized FCT projection, namespaced refs, canonical selection resolution, anonymous local install, and no second registry." }
+  - { id: outcome-contract, source: bao-2026-08-05-verifiable-pipelines, note: "§15.5 v86 typed owner-produced Outcome (target/staged/precondition/provenance/effect/Feedback); boundary error-string flattening is a defect; ReviewGate requests derive from the prepared Outcome without changing who may approve." }
+  - { id: capability-registry, source: bao-2026-08-05-single-truth-lists, note: "§17.5 v89 per-source narrowing is implemented and enforced at the gate's single visibility decision; a bare `source` grant authorizes no connector. §17 v85 sole enumerated capability-domain authority; §17.6 v86 requires an executable per-domain pipeline before a domain is `verified`; visibility.rs becomes its implementation; domains are consumed by tool classification AND owner-side capability scope; §17.4 records that always-on verbs mean tool scoping does not bound Resource reach; §17.5 requires per-source narrowing for connectors; ADR-010 owns enforcement placement and ADR-005 §12 maps user intents onto these domains." }
 changelog:
+  - v90 2026-08-05: **§15.2 write-contract coverage extended from one Markdown note to the three record sources (bao: 完成剩余的改造和测试).** v87 fixed the contract and shipped one vertical, the whole-note replacement. Tasks, calendar events, and smart-table cells stayed on their bespoke §14.13 tools, which answer with a sentence like "updated Inbox.md line 4 field status". That is a fact deficit with real consequences, not a presentation choice: a row or line index addressed from an earlier scan can mean a different record by the time the write lands, and the reply cannot say what the previous value was, whether the source had moved, or whether anything was verified — so a surface either trusted it blindly or reprinted the sentence. Worse, the smart-table viewer implemented a cell edit as a whole-file rewrite with no precondition, so two people editing different cells meant the second write silently discarded the first. Three canonical owners now exist: a note's tasks (`ctrl://local/task/<note>`, addressed by line, which is a task's real identity in Markdown), one calendar event (`ctrl://local/calendar/<event note>`, addressed by note rather than by scan position), and a smart table (`ctrl://local/table/<table note>`, cells by row index in `query` order). Each offers exactly one bounded field change under the full §15.2 contract and returns a §15.5 Outcome, and each delegates validation and rendering to its existing source so there is one writer rather than a second that could disagree with the reader. The stale-precondition reply, the unverified-write reply, and the empty-field rendering are defined once for all record writes on both sides of the boundary, because a surface renders all three through the same decision registry and three copies would diverge into what looks like different failures. Taking the contract literally for a delegated writer surfaced four defects that a reply-shape change alone would have hidden. Verification compared the caller's raw request against the stored value, so every normalization the writer legitimately performs — a comma-separated tag list, a `status` synonym — was written correctly and then rolled back and reported as a failure. The rollback restored through the frontmatter-rendering writer, so an undo dropped frontmatter comments and reordered keys; it now restores the exact bytes that were read. The previous bytes lived only in memory, so clause 3 was cited but not implemented and a failed rollback could not tell the user where their content went; a shared recovery point now lands beneath the kernel derivative state root before the source is touched, and failing to write one aborts the operation. And a "one field" change was reformatting whole files, because the task writer rebuilt the note through the frontmatter-rendering writer and rejoined lines with `\n`: a plain note gained an empty frontmatter block and a CRLF note came back LF throughout, both reported as verified successes because the reread only inspected the changed field. The atomic writer itself then failed its own no-follow discipline: it staged through a PREDICTABLE dot-prefixed sibling opened with a plain create, so a symlink planted at that name redirected a note's bytes outside the vault and the rename installed the link as the note, after which every later write escaped too — and it returned success throughout. `note_resource::commit_atomically` in the same tree already defended exactly this, so the fix is its discipline rather than a new one: a nanosecond-unique staging name, `O_EXCL | O_NOFOLLOW`, cleanup only past a successful create, and a parent directory sync so the rename itself is durable. It also preserves the note's mode, since a rename installs the staging file's permissions and would silently widen a note the user had restricted. Chasing the same fidelity question through the vault reader turned up a latent CRLF defect with repo-wide reach: both `split_frontmatter` and `raw_frontmatter_prefix` recognized a `---\r\n` opening fence and then advanced four bytes past it instead of five, and the body separator was stripped as `\n` then `\r`, which left a CRLF note holding `\n\r\n`. Together those meant every CRLF note read with a frontmatter text that began with a stray newline and a body that began with extra blank lines — so every line index in it was off, and a body rewrite left the closing fence's last `-` at the start of the body. Both are fixed with tests, and line-addressed writes are the reason it mattered. Making clause 4 true for these owners also exposed that it was not true for anyone reusing the vault writer: `vault::write` and `write_body` truncated the target before filling it, so a crash, a full disk, or a killed process left the user holding half a note, and a concurrent reader could observe that truncation. Both now write a flushed temp sibling and rename it over the target, which is the only step a reader can observe — so every vault writer inherits atomic commit rather than only the owners that reimplemented it. Adds no verb, primitive, transport, registry, or authorization axis: record writes reuse the vault grant and the existing three verbs. Column operations on a table stay on the bespoke tool, which owns the in-place frontmatter `schema` patch, until a schema change gets its own staged form. Moves ADR-005 §12 U6's canonical-operation stage to complete for all three sources. Pairs ADR-005 §12 v43 U6 and ADR-003 frontend §8.5 v44.
+  - v89 2026-08-05: **§17.5 per-source narrowing implemented; §17.5's coarse-authorization gap closed (bao: U8 继续).** The rule was accepted in v85 and unimplemented, which meant a grant for "read my spreadsheet selection" also authorized every other installed connector, including credentialed ones. Enforcement lands at the gate's single visibility decision, not inside each connector verb: the generic verbs stay visible under the `source` domain, but the addressed `source_id` must be named as `source:<id>`. A connector call with an absent or blank `source_id` is denied, because an unaddressed call cannot be narrowed. `source:<id>` parses as narrowing rather than a domain token, so it never opens `mcp`, never grants a sibling or a prefix/suffix relative, and never widens to raw downstream tools; owners can still observe it because `resource_scope()` emits it. An unscoped in-process intent still reaches connectors, having no external caller to narrow. First-party callers are not exempt: the PWA's default scope holds the `source` domain and therefore names nothing, so the gate bridge (`gate_invoke`) gained an optional declared intent and the local-app read now declares `source:<id>` for exactly the connector it reads. Moves ADR-005 §12 U8 to `ready` and removes the standing instruction not to call connector authorization least privilege.
+  - v88 2026-08-05: **NEW §15.4.1 capability availability is user-owned state (bao: 逐条管线要通畅，前后端通畅).** Serving ADR-005 §12 U15 ("install or enable") and U18 ("manage what is installed") exposed a missing state, not a missing screen: `installed` was the only state an installed capability could reach, so a user who wanted to stop using one had to uninstall it and throw away its files and configuration. This amendment accepts availability as a third state, owned by the user and stored as plain text at `~/.ctrl/capabilities.toml` as a list of disabled refs, readable and repairable in an ordinary editor. It adds no registry, primitive, identity, or authorization axis; it narrows what the existing catalogue offers. `enable`/`disable` become the catalogue Resource's only bounded `produce` operations, returning §15.5 Outcome facts with availability before/after as the staged change, while install and uninstall keep their existing surface rather than gaining a second one. Binding rules: a disabled capability stays installed and listed with its owner shown, and re-enabling needs no reinstall; the catalogue both reports it unselectable and refuses to project it, so a stale caller-held ref cannot bypass the state; a malformed state file fails closed as owner-unavailable rather than reading as "nothing disabled"; availability is a privilege change, so an external caller's request is review-eligible and the owner stages before committing; the file is rewritten atomically and reread before success is reported, per §15.5.2; and a management surface names what owns each capability so removal is never a guess. Showing a capability's own files is accepted as a Tauri shell/OS command addressed by capability ref rather than by path, so the kernel keeps path authority and refuses any ref that is not a single directory segment beneath its install root. Moves ADR-005 §12 U15 and U18 to `ready`.
+  - v87 2026-08-05: **§15.2 accepts the Markdown note write contract — the first governed canonical mutation (bao chose the write vertical over adding four more surfaces).** v83 deliberately left `produce` unsupported for notes until revision/hash preconditions, a write recovery point, atomic commit, post-write reread, partial-failure handling, and rollback evidence were accepted; this amendment accepts exactly that list and nothing wider. The owner may advertise one bounded operation, `replace_content`, requiring the caller's `expected_revision` with the new content. Preconditions, all binding: the change is staged into §15.5 Outcome facts (target, before/after, revision) BEFORE approval is requested, and an unstageable operation is not review-eligible; the revision is rechecked immediately before mutation through a freshly resolved stable handle, and a moved revision writes nothing and returns typed `Feedback` with a precondition code and `retryable: true`; the previous bytes are durably captured beneath the kernel-managed derivative state root — outside the user's content tree — and failure to write that recovery point aborts the operation; the commit is a flushed temporary sibling renamed over the target so no reader sees a partial file; the owner then reopens through a stable handle and compares the actual committed revision, reporting success only from observed state with `effect.verified_by` naming the check; on mismatch the owner restores the recovery point and reports the rollback rather than success, and if restoration also fails the failure is non-retryable and names the recovery location so data stays hand-recoverable. Scope stays one whole-note replacement on one local Markdown file: partial-range writes, multi-file transactions, external application writes, and durable `OperationRef` effects remain unsupported, and every other Resource kind still returns structured unsupported until its owner meets this same list. Two further clauses were added after an independent review found real defects in the first implementation: the write is serialized per resource, because two writers that both passed the recheck could interleave and the loser's rollback would revert content the winner had already verified; and the temporary sibling is created with exclusive no-follow semantics, because a plain create would let a pre-planted link redirect the write outside the authorized root. The same review established that the recovery point must be enforced outside the content tree in every constructor, not only in tests, and that owner-side capability scope is caller-declared, now recorded in §17.4. This moves ADR-005 §12 U6/U10/U11 from `declared` to `partial`; no frontend caller exists yet, so none of them is `verified`.
+  - v86 2026-08-05: **NEW §15.5 Outcome + §15.5.3 ReviewGate fact derivation + §17.6 per-domain pipeline (bao: 开始修订，每个清单的逐条意图和能力都得有可验证的管线).** Root cause: the canonical three-verb path returns structured errors, but roughly a hundred remaining tools collapse typed failures with `e.to_string()`, and the accepted §14.11 `Feedback` type has zero production producers — so a caller receives one sentence and can only reprint it. That fact deficit, not a presentation choice, is why consequential surfaces improvised: raw errors were rendered as assistant replies, typed `retryable` was discarded, and the approval surface could not state what would change. §15.5 makes an operation's result a typed owner-produced `Outcome` carrying target, staged before/after, precondition, provenance, committed effect with the owner's post-commit verification, and `Feedback` on failure; it is descriptor-typed and adds no verb, primitive, transport, registry, or authorization axis. Rules (§15.5.1 shape, §15.5.2 rules, §15.5.3 review derivation): reducing a typed failure to a message string at a boundary is a defect in that change and existing cases are declared debt under a non-decreasing ratchet; success requires verified committed state or truthful degradation; a caller may render an Outcome but never synthesize a target/staged/precondition/effect, and prose is never an Outcome fact. §15.5.3 requires a canonical `produce` review request to be built from the prepared Outcome rather than tool name plus argument summary, while the gate-derived, non-caller-prose, and no-self-approval properties remain binding — enriched facts widen what the human sees, never who may decide. §17.6 requires each domain to be `verified` by an executable pipeline (classification, admit, deny at visibility and invocation, owner-side enforcement) generated from real owners, and reported as `declared` until then. First vertical: one Markdown note write. Pairs ADR-005 irisy §12 v43 (per-intent pipelines) and ADR-003 frontend §8.5 v44 (surfaces render Outcome facts).
+  - v85 2026-08-05: **NEW §17 capability domain registry — the enumerated capability vocabulary becomes accepted authority (bao: 整理成能力清单和意图清单，唯一真相).** Before this amendment the domain list that authorizes every cross-domain call existed only in `src-tauri/src/kernel/visibility.rs`, so the vocabulary had no owning decision and could drift silently. §17.1 enumerates `system` plus 19 grantable domains with what each authorizes; that code is now an implementation of this table. A domain is an authorization unit, never a product shelf, menu, tool namespace, Resource kind, or FCT. Rules: the registry is amendable but never unilaterally — any add/rename/merge/remove/rescope requires explicit discussion with bao and bao's decision before the amendment, and code may not introduce a domain ahead of that decision; an amendment lands in the same change as the code; a tool classifies into exactly one domain; unclassifiable and downstream-server tools resolve to `mcp` rather than a first-party domain; `net` never enters a default grant and a network-capable domain must be endpoint-restricted; an exact `tool:<name>` grant never implies its domain or a sibling; absent caller scope resolves to a declared default, never the full surface. The agent-facing surface remains exactly the three verbs (§15.2) and FCT still projects a least-privilege subset (§15.4). §17.1 also records that a domain is consumed in two places: tool-name classification and owner-side capability scope. `project` is the owner-side-only case — no tool prefix classifies into it, yet the Project Resource owner denies access without it — so a domain may never be removed on tool-classification evidence alone. §17.4 records that tool-surface scoping never decides which refs are reachable, because the three verbs are always-on and §15.2 owner authorization is the real control for content. §17.5 accepts that a whole-domain `source` grant is insufficient: it authorizes every installed connector at once, so an FCT MUST narrow it to `source:<id>` exact grants reusing §15.4's shape, and the current coarse state must not be described as least privilege until that lands. Pairs ADR-005 irisy §12 v42 (intent→domain mapping) and ADR-003 frontend §8.5 v42 (surface conformance); ADR-010 § trust-domains v14 continues to own where enforcement happens.
+  - v84 2026-08-05: **§7/§15.4/§16 product-language and executable-selection amendment — FCT is CTRL's sole user-facing reusable-capability noun (bao confirmed; PRJ cancelled).** FCT is not expanded in product copy and does not create a sixth primitive, owner, registry, runtime, manifest format, or protocol. It is the normalized selectable projection of one namespaced registry entry into Work-preserving appended Resources, optional Skill, enforced least-privilege gate scope, policy facts, and the existing package/install reference. Zero-Resource FCTs are valid only when Skill or enforced scope changes. Stable refs resolve live per turn; invalid selection reports once, returns that session to Auto, and never sends stale/widened context. Create/Manage remains a separate Library mode from composer Use. Skills remain internal plain-text method assets; manifests, MCP, package/pack APIs, disk paths, and `ctrl-<name>` identities remain compatibility and implementation terms.
+  - v83 2026-08-05: **§14/§15 convergence amendment — one permanent Resource contract, not a Source-centered substrate (bao confirmed after explicit over-design review).** The end-state is exactly `ResourceRef → ResourceOwner → describe/query/produce`: one owner owns descriptor and behavior, and one ResourceRegistry selects and dispatches all three verbs. Descriptor-owned JSON Schemas are the sole cross-boundary payload-shape authority; the gate validates untrusted JSON against one descriptor snapshot, then the same owner deserializes into private typed models and performs semantic/actual-object authorization. `QuerySource`, `RecordSink`, `ProduceOp`, and namespaced tools become bounded migration adapters, not peer architecture, and retire as owners move. One ref identifies one independently governable logical object; the registry registers `(authority, kind)` owners, never instances. `ctrl://local/system/catalog` discovers refs but is neither dispatch nor authorization. The first canonical vertical is a read-only Markdown file ref such as `ctrl://local/note/daily/2026-08-05.md`, resolved and read through the v82 stable-handle path; its descriptor advertises no produce operation and direct produce returns structured unsupported until a separately accepted revision/rollback contract exists. No collection model, global query/operation enum, rollback framework, or OperationRef implementation is introduced by this slice.
+  - v82 2026-08-05: **§15.1 implementation lock — bounded canonical ResourceRef and stable-handle traversal (bao confirmed before code).** A ResourceRef is at most 4096 bytes; `kind` is 1–64 ASCII bytes; `id` has 1–32 segments, each 1–255 UTF-8 bytes after decoding and NFC normalization; optional `rev` is 1–256 bytes and is the only permitted query key. Parsing rejects credentials, fragments, controls, malformed or non-canonical ambiguity, encoded slash/backslash, decoded slash/backslash, and decoded dot segments. Canonical text preserves authority/kind case rules, decodes RFC 3986 unreserved bytes, NFC-normalizes decoded text, then emits uppercase percent escapes. Filesystem owners on macOS/Linux anchor an authorized root directory handle and traverse component-by-component with `openat(..., O_NOFOLLOW)` plus `fstat`; authorization observes the opened handle. Windows returns typed `PlatformPrimitiveUnavailable` in this slice. No platform may fall back to canonicalize-then-open. The implementation adds only the ResourceRef/ResourceDescriptor/OperationRef/Feedback, one-owner registry, and resolver foundation; canonical gate tools remain Track 3.
+  - v81 2026-08-05: **NEW §15/§16 authority amendment — typed ResourceRef and one local discovery registry.** ResourceRef grammar, security, registry resolution, ResourceDescriptor ownership, exact agent verbs `describe(ref)` / `query(ref, request)` / `produce(ref, operation)`, OperationRef retry/recovery/retention semantics, and version-windowed compatibility aliases are fixed here. A Skill is method-only and never spawns or owns a session. ADR-007's local discovery/search/install/source policy migrates here as one hot-scanned local registry with normalized provider adapters, anonymous local install, and optional developer PAT in the OS keychain; no second discovery registry is permitted. Five primitives, plain text, ReviewGate, and `:17873` remain unchanged.
+  - v80 2026-08-03: **§7 composition amendment — feature-pack Skills converge on one hot-scanned local `SKILL.md` registry instead of a vault-KB shadow system (bao requested full Irisy architecture repair after a pinned Chinese Skill was ignored in favor of hardcoded `stock-analysis-cn`).** The manifest `skills[]` axis resolves bundle-relative SKILL.md assets at install and projects each atomically under CTRL-managed `~/.ctrl/skills`; user `~/.claude/skills` overrides retain first-hit precedence. UI listing, explicit Assistant/Coding pin resolution, and gate `skill_list`/`skill_read` consume that same registry. `knowledge_base` remains Resource context and cannot host a second discoverable Skill authority. Skill text defines method only; feature-pack tools/data remain separate capabilities visible solely through the governed `:17873` gate. A stale explicit pin is an error, never silent Auto fallback. Pairs ADR-005 irisy §11 v39.
   - v79 2026-08-02: **§1B.8 amendment — per-pack OpenCode workspace eligibility is explicit, never inferred from §14 data semantics (bao confirmed the one-dialog/two-agent design and projection boundary).** A manifest projects a Coding/OpenCode workspace only when `projection.coding_workspace` is exactly `true`; the default is false. `record_source`, `knowledge_base`, local MCP backing, and other capability/data fields remain available to Irisy or the gate without granting Coding actor scope. `project_installed_packs` therefore stops using `record_source` as an eligibility proxy and checks the explicit projection flag before calling `project_pack`. Existing eligible packs must opt in; LibreOffice Companion deliberately does not. This supersedes v74's trigger while retaining the same scoped `.mcp.json` + `opencode.json` + `AGENTS.md` mechanism for opted-in packs. Pairs ADR-001 spine §4 v20, ADR-003 frontend §8.5/§8.6 v38, and ADR-005 irisy §8.7/§11 v37.
   - v78 2026-08-02: **§7/§14 amendment — generic local MCP-backed §14 Source, with LibreOffice as the first read-only consumer (bao approved方案 A).** An installed, explicitly enabled pack may declare a local stdio MCP server plus a `record_source.query.mcp_tool`; `source_describe` still derives the type layer from manifest data, while `source_query` invokes that private downstream tool through the existing `McpHost`, converts only its declared row payload, and then runs the shared kernel query engine. The downstream server id/tool names and raw MCP surface never reach Irisy; callers still see only the generic `source_describe/source_query/source_produce` trio through `:17873`. The first LibreOffice slice is Companion/read-only: a user-installed extension is the only future UNO boundary, the TypeScript/JavaScript child reads only explicit Writer/Calc selection, and unavailable/no-selection states fail honestly. `produce` is unsupported until revision/target-hash preconditions, ReviewGate staging, native write, and post-write reread are implemented. Pairs ADR-004 cap § execution v13, ADR-010 communication § transports v12, and ADR-005 §10 v35.
   - v77 2026-07-28: **§14 amendment — sources may expose a governed analytical cache and generic presentation metadata without introducing a second user-data truth or a parallel resource API (bao: resource layer for all feature packs).** User-facing data remains readable local Markdown, structured frontmatter, or another declared portable source format; DuckDB is permitted only as a rebuildable, source-owned analytical cache for columnar/time-series work. Every cross-pack or userland read/write stays on the existing `describe`/`query`/`produce` contract through `:17873`; a cache has one owner and serializes its writes, never becomes a shared writable database. `describe` gains cache/freshness/provenance/presentation facts so a generic frontend viewer can render a source by kind rather than storage engine, with raw-data drill-down. `ctrl-stock-cn` is the first reference implementation, initially limited to its time-series query path and its freshness/provenance descriptor facts. No schema, tool, database, or frontend implementation ships in this amendment.
@@ -659,7 +674,7 @@ Mcp manifest declares 6 axes; runtime atomically provisions all declared resourc
 | 1 | `capabilities` | subset of §2 namespaces + `file.{read,write}_allowlist` |
 | 2 | `brain_capabilities` | typed multi-provider (text.chat / image.generate / audio.stt …) with optional `provider_pin` |
 | 3 | `mcp_servers` | Pattern D bindings (spawn + tool allowlist) |
-| 4 | `skills` | SKILL.md refs resolved via 3-tier chain (`vault/skills/` > `~/.claude/skills/` > mcp bundle) — first hit wins, no merge |
+| 4 | `skills` | bundle-relative SKILL.md refs installed atomically into the one hot-scanned local registry (`~/.claude/skills` user override > `~/.ctrl/skills` CTRL-managed projection); UI pinning and gate discovery consume the same files, no merge and no vault-KB shadow registry |
 | 5 | `ui_surface` | 9-enum (none/notification/modal/clipboard/html-output/chat-stream/picker/form/canvas) |
 | 6 | `cap_asset` | install-time provisioning: `cap_asset.files` (immutable bundle) + `cap_asset.vault` (user-facing folder + seed) |
 | 7 | `provision` | install-time toolchain + env (v21): `tools[]` (id + check + install hints) resolved built-in-downloader-first → system pkg-mgr fallback; `env` values pull `{{secret:<key>}}` from keychain at inject time |
@@ -676,15 +691,19 @@ Compatibility is explicit rather than accidental: omitted `manifest_version` mea
 
 **Multi-modal category exception** to §2 frequency ≥3 rule: image.generate / image.edit / image.understand / audio.stt enter v1 even with 1 consumer each — "做海报得有 image 大模型, 我们是双重 brain" (bao 2026-05-30). Frequency rule still governs non-brain namespaces.
 
-### §7.1 Feature pack — the user-facing unit (v21, bao 2026-06-12)
+### §7.1 FCT — the sole user-facing reusable-capability unit (v84, bao 2026-08-05)
 
-**「功能包」(feature pack) = the USER-FACING name for an installable manifest.** Users say "装个功能包" / "卸了这个功能包"; the word `mcp` stays a code-internal term (manifest model here in §7, runtime in ADR-004) the user never sees. All PWA copy uses 功能包. Extends v12 (keycap→mcp, a code-side rename) — for the *user* the name is 功能包.
+**FCT is CTRL's sole product-facing noun for an installable or locally available reusable-capability unit.** It is written exactly as `FCT`, is not expanded in UI copy, and pluralizes as `FCTs`. Users create, find, install, remove, select, and use FCTs. `Feature Pack`, `pack`, `Skill`, `capability`, `Resource`, `MCP`, manifest, bundle, and package remain internal architecture, compatibility, or transparency terms; none is a parallel user shelf noun.
 
-A feature pack is the **universal shell** for *"plug any API/service in → orchestrate → surface a UI on demand"*. One schema fills wildly different worlds:
-- **CF Workers 开发**: `cli-wrapper` (wrangler) + secret (CF token) + actions (deploy/logs/preview) + deploy-log UI.
-- **HubStudio 营销**: `network` HTTP allowlist (HubStudio API) + secret (API key) + actions (manage accounts / batch-post) + `text.chat` AI rewrite (pipe) + account-matrix UI.
+FCT is a normalized projection, not a new runtime object. A canonical namespaced FCT ref (`pack:<id>` or `skill:<name>` during compatibility) resolves through the one §16 registry into:
 
-The shell is fixed; the content (接什么 API / 什么 secret / 什么动作 / 什么 UI) is per-pack. **想要什么出什么 UI** = the pack declares `ui_surface`, the workbench renders it; the AI creator generates that declaration from one intent sentence. CTRL stays a substrate — concrete scenarios (营销/开发/CRM) grow as packs, **not built-ins** (CTRL 不长胖,胖的是 pack 库; cf. vault/ctrl/decisions/0003).
+```text
+explicit Resources + optional skill_id + capability_scope + policy facts + install reference
+```
+
+The resolver must return exact facts before selection is committed. A stale, unavailable, ambiguous, or non-projectable entry fails visibly; it never falls back to a decorative label. Namespaced refs prevent package/Skill name collisions. The projection does not own a Resource, Skill, capability, session, transcript, operation, credential, or ReviewGate decision and does not become a sixth kernel primitive.
+
+The existing manifest/package shell remains the systematic implementation mechanism for product-grade FCTs: one schema can connect APIs/services, declare capabilities and UI descriptors, and install atomically. The runtime stays generic and source-neutral. In §§7.2–7.6, legacy `pack`/`feature-pack` names identify that internal manifest/package compatibility boundary only; product UI and current product prose use FCT.
 
 ### §7.2 Axis 7 `provision` — toolchain install + env (v21)
 
@@ -1346,6 +1365,12 @@ Pi's model-registry now requires explicit `$VAR` prefix for env var references. 
 
 ## §14 Unified Operation Interface — describe / query / produce (NEW v29, 2026-06-19)
 
+> **v83 status:** This section is migration history and adapter guidance only. Its
+> Source profiles, `QuerySource`, `RecordSink`, global `ProduceOp`, and namespaced
+> endpoint examples do not define the permanent substrate. §15 is authoritative:
+> `ResourceRef → ResourceOwner → describe/query/produce` through one registry.
+> New Resource kinds implement §15 and do not extend the legacy Source contracts.
+
 > bao 2026-06-19「修改架构」. Every content-type **feature point** (md / html / smart-table /
 > pdf / CRM-connector / vault-metadata / mcp-registry …) is operated by Irisy through ONE
 > uniform interface projected on the :17873 gate (§6), instead of bespoke per-capability tools.
@@ -1406,13 +1431,12 @@ add_view + the `run_ai_column` async job). The `smart_table.*` tools are this co
 instantiated; later sources (notes, connectors, blobs) follow the same shape so a new source
 becomes Irisy-operable with **zero bespoke tools**.
 
-### §14.6 Acceptance
-- [ ] Gate exposes describe / query / produce (or namespaced equivalents); read parallel, write
-  serial-through-gate.
-- [ ] A new source is Irisy-operable by implementing `QuerySource` + `describe` — no new bespoke
-  tools.
-- [ ] `query` never mutates; `produce` always passes the review gate.
-- [ ] smart-table validates the contract as the first RecordSource (ADR-003 §6.5).
+### §14.6 Historical migration acceptance (superseded by §15 v83)
+
+The former Source-centered acceptance list is retired. It is retained by the
+surrounding section only as migration provenance; current design acceptance is
+owned by §15 and does not permit namespaced equivalents or new `QuerySource`
+extension points.
 
 ### §14.7 subscribe — streaming read = the `watch` projection of `query` (NOT a fourth verb)
 
@@ -1505,6 +1529,8 @@ problem+json (RFC 7807) / gRPC rich error model (google.rpc.Status details). Rat
 
 ### §14.13 Unified write side — `RecordSink` trait + one typed `produce` verb (v45, bao 2026-07-02「你架构弄清楚了吗？是在建立整套系统吗？…好，做」)
 
+> **v83 convergence:** This section records the migration mechanism that reduced bespoke record tools; it is no longer the permanent substrate contract. `QuerySource`, `RecordSink`, and the global `ProduceOp` union may remain only behind migrating owners. The sole end-state behavioral interface is §15 `ResourceOwner::describe/query/produce`, whose descriptor schemas type owner-private payloads. New Resource kinds do not extend these legacy traits or enums.
+
 **Gap this closes**: the READ side is systematic — one `QuerySource` trait (`describe` + `rows`) + a shared `run_query` engine, so a new source is queryable with zero engine code (§14.5). The WRITE side drifted into fragmentation: native smart-table grew ~10 bespoke gate tools (`smart_table_update_cell/append_row/delete_row/batch_append_rows/batch_delete_rows/add_field/delete_field/create/add_view`) each hand-coded, while connectors got a SEPARATE generic `source_produce` (§14.12). Two write patterns; adding Sheets/Docs/Calendar would re-hand-code every operation. That is endpoint-accretion, not a system. Governing design: `vault/ctrl/history/architecture/unified-productivity-suite-architecture.md`.
 
 **Decision — mirror `QuerySource` on the write side so "three verbs" becomes literal**:
@@ -1579,3 +1605,282 @@ LibreOffice is the first reference consumer and remains an ADR-005 Companion. It
 - §6 MCP bus ← orig-013 (kernel as MCP server, 2026-05-22, accepted)
 - §7 Composition ← orig-024 (6-axis manifest, 2026-05-30, status proposed → accepted-at-decision here, implementation deferred per "实施时决")
 - §8 Vault — NEW v3 (2026-06-01). Driven by bao session "L1 vault button + vault MD management research + sourcing inbox workflow + 整体一次性 ship". Lock decisions in `vault/ctrl/history/brainstorm/vault-md-management-2026-06-01.md` §10. Feature-layer boundary (Daily Note + Sourcing) aligns with memory `feedback_build_system_not_business`; storage philosophy aligns with `decision_ctrl_obsidian_philosophy` (vim test) + `decision_vmark_not_substrate_use_open_stack` (no VMark sidecar). Wiki-link Tiptap extension ports from seahop/kairo (MIT) — see THIRD_PARTY_LICENSES/kairo-MIT.txt.
+
+## §15 Resource authority — ResourceRef, descriptors, and canonical operations (v83)
+
+### §15.1 ResourceRef grammar and security
+
+`ResourceRef` is the sole cross-module address for a Resource. Its canonical text grammar is:
+
+```text
+resource-ref = "ctrl://" authority "/" kind "/" id ["?" revision]
+authority    = "local" | "app" | "pack" | "connector"
+kind         = 1*( ALPHA | DIGIT | "-" | "_" )
+id           = pct-encoded-segment *("/" pct-encoded-segment)
+revision     = "rev=" pct-encoded-token
+```
+
+The complete UTF-8 text is at most 4096 bytes. `kind` is 1–64 ASCII bytes. `id` contains 1–32 segments; each decoded, NFC-normalized segment is 1–255 UTF-8 bytes. `rev`, when present, is 1–256 UTF-8 bytes after decoding and NFC normalization. Exactly zero or one `?rev=...` query is permitted. Authorities are the four exact lowercase literals above; `kind` remains case-preserving.
+
+Parsing is fail-closed. It rejects empty segments, credentials, unknown authorities, any other or repeated query key, fragments, raw non-ASCII text, controls including NUL, malformed percent escapes, percent-encoded `/` or `\`, decoded `/` or `\`, and decoded `.` or `..` segments. Percent-decoding occurs to bytes before UTF-8 validation. The canonical form decodes RFC 3986 unreserved bytes, NFC-normalizes decoded text, leaves only unreserved bytes literal, and percent-encodes every other UTF-8 byte with uppercase hexadecimal. Consequently canonically equivalent Unicode input has one identity even when the accepted input used a different normalization form or lowercase percent hex.
+
+A ref is an opaque logical address, never an ambient filesystem path or network URL. Resolution occurs only through the one local registry owner for `(authority, kind)`, which applies caller/capability scope and returns typed unavailable or denied errors without leaking hidden paths. Untrusted manifests cannot register `local` or overwrite an existing owner.
+
+Filesystem-backed resolution MUST be race-free from resolve through use. On macOS and Linux, an owner opens its already-authorized root as a directory handle with `O_NOFOLLOW`, traverses each component relative to the current handle with `openat(..., O_NOFOLLOW)` (`O_DIRECTORY` for intermediate components), and checks the actually opened object with `fstat`. Authorization consumes that opened-handle identity and metadata, and subsequent use retains the resulting owned handle; it never reconstructs and reopens a path. On Windows, this implementation slice returns typed `ResourceUnavailable { reason: PlatformPrimitiveUnavailable }` until an equivalent root-relative, no-follow primitive is accepted. No platform may fall back to lexical checks or canonicalize-then-open. Rename, symlink-swap, directory-entry replacement, mount/reparse-point, and root-replacement races must not escape the anchored root or substitute a different object after authorization.
+
+A temporary compatibility alias may map a legacy id to one canonical ResourceRef only when the alias is explicit, collision-free, audited, and bounded to a documented N/N-1 migration window. Aliases never weaken authorization, never appear as a second descriptor owner, and are not accepted for new persisted references. Outside the window the result is typed `ResourceUnavailable { reason: ExpiredAlias }`.
+
+### §15.2 One owner contract, descriptor authority, and registry dispatch
+
+The sole permanent behavioral path is `ResourceRef → ResourceOwner → describe/query/produce`. There is one Resource registry, keyed by `(authority, kind)`; it registers owners, never resource instances. The same selected owner owns identity, revision, provenance, freshness/degradation, presentation, query and produce schemas, secure logical-to-actual resolution, semantic validation, and execution. Production callers invoke `registry.describe/query/produce`; extracting a raw owner is not a normal application path.
+
+A descriptor's JSON Schemas are the sole cross-boundary payload-shape authority. For each invocation the registry binds one owner and one descriptor snapshot, verifies descriptor identity, applies coarse caller/capability policy, validates the untrusted request or operation against that snapshot, and dispatches to the same owner. The owner then deserializes the validated value into its private typed model, authorizes the actual resolved object, and executes. Schema validation never replaces capability or actual-handle authorization. A changed descriptor/schema revision yields typed conflict and retry rather than execution under mixed semantics. Descriptors contain references and schemas, never secrets or raw private content.
+
+`QuerySource`, `RecordSink`, `ProduceOp`, source profiles, and namespaced tools are migration adapters only. They may be called inside a migrating ResourceOwner but are not parallel registries, public kernel contracts, or extension points; new Resource kinds do not extend them, and each retires when its owners migrate. `ctrl://local/system/catalog` is an ordinary system Resource used to discover canonical refs. It is neither the owner registry nor an authorization prerequisite; a caller that already holds a ref addresses it directly.
+
+The first canonical vertical is one Markdown note such as `ctrl://local/note/daily/2026-08-05.md`. The note owner resolves and reads it through §15.1 stable handles and describes `text/markdown` plus revision and schemas.
+
+**Markdown note write contract (v87).** That owner may now advertise exactly one bounded produce operation, `replace_content`, whose input requires the caller's `expected_revision` alongside the new content. Every clause below is a precondition of the write, not advice:
+
+1. **Staging before authorization.** The owner stages the change and returns §15.5 Outcome facts — target, before/after, and the revision precondition — before any approval is requested. An operation that cannot be staged is not eligible for review.
+2. **Revision precondition, rechecked at commit.** The staged revision is verified again immediately before mutation through a freshly resolved stable handle. A moved revision returns typed `Feedback` with a precondition code and `retryable: true`; nothing is written.
+3. **Write recovery point.** The previous bytes are durably captured outside the user's content tree, beneath the kernel-managed derivative state root, before the file is modified. A recovery point that cannot be written aborts the operation.
+4. **Atomic commit.** The new content is written to a temporary sibling, flushed, and renamed over the target so a reader never observes a partial file.
+5. **Post-write reread.** The owner reopens the note through a stable handle and compares the actual committed revision against the expected one. Success is reported only from that observed state; `effect.verified_by` names the check performed.
+6. **Partial failure and rollback.** If the reread does not match, the owner restores the recovery point, reports typed `Feedback` describing the rollback, and does not claim success. If restoration itself fails, the failure is reported as non-retryable with the recovery point's location so the data is recoverable by hand.
+
+7. **Serialized per resource.** The recheck, commit, reread, and any rollback are one critical section for that ref. Two writers that both passed the recheck would otherwise interleave, and the loser's rollback would revert content the winner already reported as verified.
+8. **No-follow staging.** The temporary sibling uses a unique name and is created with exclusive, no-follow semantics, so a pre-planted link or file cannot redirect the write outside the authorized root or be shared with another writer. Every staging failure unlinks the temporary file, so one interrupted write cannot leave a leftover that blocks all later writes to that note.
+
+Clause 7's serialization registry is process-wide and keyed by vault-relative file identity, not by ResourceRef text: a revision-pinned and an unpinned ref address the same file, and a legacy bespoke vault write must serialize against a canonical `produce` on that file rather than holding a separate lock.
+
+Scope is deliberately narrow: one whole-note replacement on one local Markdown file. Partial-range writes, multi-file transactions, external application writes, and durable `OperationRef` effects remain out of scope and unsupported. Other Resource kinds continue to return structured unsupported until their own owners meet this same list.
+
+The exact agent-facing surface is:
+
+```text
+describe(ref)
+query(ref, request)
+produce(ref, operation)
+```
+
+These signatures are canonical. MCP is a thin transport binding; it cannot rename the verbs, add per-kind equivalents, or expose a parallel raw downstream surface. `query` is read-only. Every supported mutation/effect goes through `produce` and ReviewGate according to policy. All cross-domain calls pass through `:17873`; internal execution remains on the five locked primitives.
+
+### §15.3 OperationRef lifecycle
+
+A non-immediate `produce` returns an `OperationRef` containing an opaque operation id, canonical ResourceRef, operation kind, idempotency key, created time, state, and descriptor-declared retention/expiry facts. The owner persists enough state to provide these guarantees:
+
+- **Idempotency:** the same authorized idempotency key and semantically identical request resolves to the same operation/result; conflicting reuse fails typed and never executes twice.
+- **Response-loss retry:** after timeout or lost response, the caller retries with the same idempotency key and receives the existing OperationRef or terminal result.
+- **Retention/expiry:** terminal results remain queryable for the descriptor-declared bounded retention window. After expiry, lookup returns typed `OperationUnavailable { reason: Expired, operation_id, retryable: false }`, never a fabricated unknown result.
+- **Restart recovery:** in-flight durable operations are recovered from owner state after restart and continue or reach a truthful terminal state. If the operation is intrinsically non-recoverable, the descriptor declares that before execution and restart yields typed `OperationUnavailable { reason: RestartRecoveryUnsupported, ... }`.
+- **Unavailable owner:** missing pack, disconnected application, revoked capability, or incompatible operation version returns typed unavailable with reason and retryability. It does not silently create a replacement operation.
+
+Operation status and progress are queried through the addressed Resource contract (including `query(..., { watch: true })` when supported); there is no bespoke job API.
+
+### §15.4 FCT projection and Skill boundary
+
+A Skill is a local plain-text `SKILL.md` playbook and remains an internal method authority. It may be returned as the optional `skill_id` of a selected FCT projection and guide how canonical operations are chosen. It is not a parallel user-facing reusable-unit noun or Library shelf. A Skill never spawns, owns, resumes, forks, or persists a session; never owns a transcript, Resource, capability, credential, operation, or ReviewGate decision; and never implies that a required package is installed. Session ownership remains ADR-005.
+
+A selected FCT is resolved before turn assembly through the canonical system catalog Resource, `query(ctrl://local/system/catalog, { ref, operation: "selection-projection" })`, or its exact in-process ResourceOwner equivalent. Stable FCT refs are unversioned and resolve against current local truth on every turn. The result contains canonical dependency ResourceRefs, optional `skill_id`, an enforceable gate scope, policy facts, and install state/reference. Work/session-owned explicit Resources always remain; FCT dependency Resources append in deterministic order and deduplicate by canonical ref, and an FCT can never replace the user's current content. A zero-Resource projection is valid only when it changes the optional Skill or enforceable gate scope.
+
+The projected gate scope is authorization input, not prompt-only metadata: it constrains both `:17873` tool visibility and invocation for that turn, derived least-privilege from existing manifest capability/tool facts and current policy. Resolution is read-only and does not bypass registry or gate authorization. The catalog remains discovery, not dispatch or authorization.
+
+Selection is persisted as one stable FCT ref on the canonical Irisy session, never as duplicated expanded facts. The obsolete global raw-Skill pin is discarded during migration; sessions start at Auto rather than guessing ownership. Package updates are observed by live resolution. If a selected FCT is removed, stale, or no longer authorized, the UI reports that failure once, clears that session to Auto, resets the runtime owner, and does not send the turn under stale or silently widened context.
+
+#### §15.4.1 Capability availability is user-owned state (v88)
+
+`installed` was the only state an installed capability could reach, so the only way to stop one being offered was to uninstall it — discarding its files and local configuration to express a preference. Availability is therefore accepted as a third state distinct from installed and uninstalled.
+
+The state is a per-ref enable flag owned by the user and stored as plain text at `~/.ctrl/capabilities.toml` as a list of disabled refs. It is not a new registry, primitive, identity, or authorization axis: it narrows what the existing catalogue offers. Plain text is binding rather than incidental — the user must be able to read why a capability stopped appearing and re-enable it with an ordinary editor when the app will not start.
+
+Rules, all binding:
+
+1. **The catalogue Resource owns it.** `enable` and `disable` are bounded `produce` operations on `ctrl://local/system/catalog`, returning §15.5 Outcome facts with the availability before/after as the staged change. Install and uninstall keep their existing surface; adding them here would create a second surface for the same act.
+2. **Disabled is still installed.** A disabled capability remains listed with its owner shown, so it can be found and re-enabled. Disabling never deletes files, configuration, or credentials, and re-enabling requires no reinstall.
+3. **Disabled is not selectable.** The catalogue reports it as unselectable AND refuses to project it, so a stale caller-held ref cannot bypass the state.
+4. **Unreadable state fails closed.** A present but malformed state file is reported as owner-unavailable rather than treated as "nothing disabled", because silently re-offering a capability the user turned off is the worse failure.
+5. **Availability is a privilege change.** An external caller's request is review-eligible, and the owner stages before committing so the reviewer sees which capability and which direction.
+6. **Verified, not assumed.** The state file is rewritten atomically and reread before the Outcome reports success, per §15.5.2.
+7. **Ownership is stated, not implied.** A management surface names what owns each capability (installed package, local Skill) so removal is never a guess about what will be deleted.
+
+8. **Ownership is reachable, by ref.** Showing a capability's own files in the OS file manager is a Tauri shell/OS command, not a gate tool, because it is a user action on their own machine rather than a capability an agent should hold. It is addressed by capability ref, never by path: the kernel resolves `pack:<id>` and `skill:<name>` beneath their install roots, refuses a ref that is not a single directory segment, and refuses a target that canonicalizes outside its root.
+
+## §15.5 Outcome — owners return typed results, not strings (v86)
+
+An operation's result is a typed, owner-produced `Outcome`. This closes the gap that made every consequential surface improvise: the canonical three-verb path already returns structured errors, while roughly a hundred remaining tools collapse typed failures with `e.to_string()`, so a caller receives one human sentence and can only reprint it. `Feedback` has been accepted since §14.11 and defined in code with `code`/`severity`/`field`/`retryable`/`details`, yet it has no production producer. Presentation cannot be richer than the facts it is given, so this is a fact-owner obligation, not a frontend concern.
+
+### §15.5.1 Shape
+
+An Outcome carries, as applicable to the addressed Resource and operation:
+
+- **target** — the exact object acted on, expressed as a canonical ref plus owner-meaningful coordinates. Never a filesystem path or owner internal.
+- **staged** — the proposed `before`/`after` representation when a mutation is proposed but not yet committed.
+- **precondition** — the revision, hash, or equivalent identity the operation depends on.
+- **provenance** — source identity plus the raw-input and transformed-output references required for drill-down.
+- **effect** — for a committed mutation, what became true, plus the post-commit verification the owner performed.
+- **feedback** — on rejection, degradation, or failure, the existing `Feedback` including `retryable` and any correction.
+
+An Outcome is descriptor-typed like any other payload: the owner declares its schema, and the registry validates against one descriptor snapshot. It introduces no new verb, primitive, transport, registry, or authorization axis.
+
+### §15.5.2 Rules
+
+An owner MUST NOT reduce a typed failure to a message string at a boundary. Converting an owner error into a transport error message discards `code`, `retryable`, `reason`, field identity, and correction, and is a defect in the change that introduces it. Existing string-flattened tools are declared debt and are tracked by a non-decreasing ratchet.
+
+Success requires evidence. A mutation Outcome may report success only after the owner has verified the committed state; an owner that cannot verify reports degradation truthfully rather than optimistically.
+
+A caller may render an Outcome, but never invent one. No surface may synthesize a target, staged change, precondition, or effect the owner did not supply, and no surface may present a caller's or model's prose as an Outcome fact.
+
+### §15.5.3 ReviewGate requests derive from the prepared Outcome
+
+A review request for a canonical `produce` MUST be built from the prepared operation's Outcome facts — target, staged before/after, and precondition — not from the tool name plus an argument summary. The current request carries only caller, tool, and argument summary, which is why an approval surface cannot state what will change; that is a fact deficit here, not a presentation choice.
+
+The existing security properties are unchanged and remain binding: the request is gate-derived, never caller or model prose; approval travels a surface the requesting caller cannot reach; and no downstream server, extension, or Skill may self-approve. Enriched facts widen what the human sees, never who may decide.
+
+The first implementation vertical is one Markdown note write: staged before/after, revision precondition, review, commit, and post-write reread carried in one Outcome. Broader migration follows per owner.
+
+## §17.6 Every domain needs a verifiable pipeline (v86)
+
+A capability domain is claimed only when an executable pipeline proves it. For each domain in §17.1 the evidence is a named, runnable path establishing: which tools classify into it, that a scope granting it admits exactly those and no others, that a scope omitting it denies them at both visibility and invocation, and that any owner requiring it as capability scope enforces that requirement. Domains consumed owner-side rather than by tool classification, such as `project`, are proven through their owner's authorization path.
+
+A domain without such evidence is `declared`, not `verified`, and must be reported that way rather than assumed. The evidence set is generated from the real owners, never hand-maintained in parallel.
+
+## §16 One local FCT discovery registry (migrated from ADR-007 v3; amended v84)
+
+CTRL has one hot-scanned local registry for the existing installed package manifests, local Skills, capability descriptors, provider results, and install references. The registry exposes one normalized product projection:
+
+```text
+FctItem {
+  ref: "pack:<id>" | "skill:<name>",
+  name,
+  summary,
+  source_kind,
+  install_state,
+  selection_kind
+}
+```
+
+This is an in-memory/adapted view of the existing authorities, never a second persisted registry or cache. Filesystem changes become visible on the next scan without a restart. Library, Irisy conversational discovery, gate discovery tools, FCT resolution, and internal Skill pin resolution consume this same registry. No shadow knowledge-base index, provider-specific search store, raw-Skill shelf, pack shelf, or second discovery registry is permitted.
+
+External sources enter through normalized provider adapters. Every adapter maps provider data into the bounded FCT envelope while preserving internal source identity/kind, name, summary, provenance URL, install reference, compatibility facts, and availability. Raw provider JSON and provider credentials never become the registry contract. Deduplication resolves aliases to one canonical namespaced FCT ref while retaining source provenance; package/Skill name collisions cannot collapse because their ref namespaces differ.
+
+Public local install is anonymous: the kernel fetches a user-selected public install reference, validates redirects/scheme/size/integrity/manifest policy, stages it, validates it, and atomically installs into the owner directory. A GitHub account or cloud service is not required. An optional developer GitHub PAT may enable direct code-search during development or advanced use; it is stored only in the OS keychain, never in manifests, logs, prompts, registry records, or install URLs. Install execution always remains local even when search results came from cloud augmentation.
+
+`ctrl-cloud` is an optional normalized search adapter governed by ADR-006 v13. If unavailable, the hot-scanned local registry, installed descriptors, explicit public install references, and anonymous local install continue to work.
+
+## §17 Capability domain registry — the sole enumerated capability authority (v85)
+
+This section is the sole accepted enumeration of CTRL's capability domains. Before v85 the enumeration existed only in `src-tauri/src/kernel/visibility.rs`, so the vocabulary that authorizes every cross-domain call had no owning decision. That code is now an implementation of this registry, not its authority.
+
+A capability domain is an authorization unit, not a product shelf, a user-visible menu, a tool namespace, a Resource kind, or an FCT. It answers exactly one question: which existing capability surface may a caller see and invoke for this turn.
+
+### §17.1 The registry
+
+`system` is always visible and cannot be scoped away. The remaining domains are grants.
+
+A domain is consumed in two distinct places, and both are load-bearing. Most domains gate the visible/callable tool surface by classifying tool names. A domain may also be consumed owner-side: it is passed to the selected ResourceOwner as capability scope, and that owner may require it before resolving a ref. `project` is the current owner-side-only case — no tool name classifies into it, yet the Project Resource owner denies access without it. Absence of a tool prefix therefore does not mean a domain is dead, and a domain may not be removed on tool-classification evidence alone.
+
+| Domain | Authorizes | Notes |
+|---|---|---|
+| `system` | kernel status, vault root, and the three canonical verbs | always on; never scoped away |
+| `vault` | vault file read/write/search/index/graph surface | largest domain; per-Resource authorization still applies |
+| `notes` | note map/get/periodic/history/open and doc block/frontmatter operations | includes `note_`, `notes_`, `doc_` |
+| `smart_table` | record grid describe/query/produce surface | |
+| `tasks` | inline checkbox task records | |
+| `calendar` | note-per-event calendar records | |
+| `source` | generic installed-connector describe/query/produce | grant must be narrowed per source; see §17.5 |
+| `project` | explicit Project Resource operations | owner-side scope only; no tool prefix classifies into it |
+| `providers` | provider catalogue and binding reads | credentials never included |
+| `registry` | installed capability descriptor reads | |
+| `kv` | small internal key/value state | not a user data store |
+| `llm` | direct completion calls | |
+| `memory` | Irisy persistent-memory read/write | |
+| `mcp` | installed package lifecycle and every downstream `<server>_<tool>` | source-aware classification is mandatory |
+| `market` | fixed market-data endpoints | cannot reach an arbitrary URL |
+| `websearch` | fixed search backends | exact-match only; never a raw fetch |
+| `discover` | fixed capability-catalog backends | |
+| `skill` | read-only local `SKILL.md` listing and reading | method text only |
+| `diagnostics` | read-only metadata diagnostics | capture/export stay off the agent surface |
+| `net` | raw outbound HTTP | excluded from every default grant |
+
+### §17.2 Rules
+
+This registry is amendable, never frozen, but it is not amendable unilaterally. Adding, renaming, merging, removing, or rescoping a domain requires explicit discussion with bao and bao's decision first; only then is the section amended. An agent, reviewer, implementation convenience, or code-side refactor may propose a change and must present the evidence for it, but may not enact one, and may not introduce a domain in code ahead of the decision. Silent divergence between this table and the implementation is a defect in the change, not an acceptable interim state.
+
+Adding, renaming, merging, or removing a domain requires an amendment to this section in the same change as the code. A tool must classify into exactly one domain, and a tool whose name cannot be classified defaults to `mcp` rather than to a first-party domain. Any tool reachable through an installed downstream server is `mcp` regardless of name collision.
+
+`net` must never enter a default grant. A domain that reaches the network must either be restricted to fixed, non-user-supplied endpoints or remain in `net`. An exact `tool:<name>` grant authorizes one tool and never implies its domain or a sibling tool.
+
+Absent caller scope resolves to a declared default, never to the full surface. First-party in-app callers receive the first-party default set; every other caller receives `system` only.
+
+### §17.3 Relationship to other authority
+
+Domains authorize; they do not enumerate product capability. The agent-facing surface remains exactly `describe`, `query`, and `produce` (§15.2). FCT selection projects a least-privilege subset of this registry plus exact tool grants (§15.4). ADR-010 § trust-domains owns where enforcement happens; this section owns what the vocabulary is. ADR-005 owns which user intents CTRL serves and maps each intent to domains from this table.
+
+### §17.4 Declared limits
+
+Domain grants do not by themselves bound Resource-level reach. `describe`, `query`, and `produce` are always-on `system` tools by construction, so tool-surface scoping never decides which refs a caller may address. Domain scope bounds which *tool surface* is visible and callable, and additionally supplies owner-side capability scope; §15.2 descriptor binding plus the selected owner's actual-object authorization is the real control for Resource content, and §15.4 exact `tool:<name>` grants narrow a specific downstream capability. An owner that requires a domain (such as the Project owner requiring `project`) enforces it itself; an owner that requires none is reachable through the always-on verbs alone. Reading §17.2 as complete least-privilege for user data would be wrong.
+
+Owner-side capability scope is currently **caller-declared**: a caller's `X-Ctrl-Intent` supplies the scope the gate forwards to the selected owner, and its `X-Ctrl-Caller` decides whether the review path applies at all. On loopback behind a per-boot bearer that is the accepted trust model, with domain scoping as defense in depth rather than the primary control. It is recorded here because that model now gates a real mutation (§15.2 v87): an owner MUST NOT treat declared scope as proof of user intent, and any future non-loopback or multi-principal caller requires an accepted binding of scope to an authenticated principal before it may write.
+
+### §17.5 Per-source authorization is required for `source`
+
+A whole-domain `source` grant is insufficient. Granting `source` today authorizes every installed connector at once, so authorizing one application silently authorizes all of them. That contradicts least privilege and contradicts the product promise that connecting one application has a bounded scope.
+
+A `source` grant MUST therefore be narrowed to explicit source identities. The mechanism is the existing exact-grant shape from §15.4, not a new registry or a second authorization axis: an FCT projection emits `source:<id>` entries, the gate authorizes a connector operation only when the addressed `source_id` is named, and a bare `source` domain grant authorizes no connector. `source:<id>` never implies a sibling source, never implies `mcp`, and never widens to raw downstream tools.
+
+**Implemented (v89).** The narrowing is enforced at the gate's single visibility decision rather than inside each connector verb: a scoped caller reaches `source_describe`/`source_query`/`source_produce` under the `source` domain, but the ADDRESSED `source_id` must be named as `source:<id>` or the call is denied. A connector verb whose `source_id` is absent or blank is denied too, because an unaddressed call cannot be narrowed and allowing it would reopen the whole-domain hole. `source:<id>` is parsed as narrowing, not as a domain token, so it never opens `mcp` and never grants a sibling, prefix, or suffix relative. An unscoped in-process intent still reaches connectors, since it has no external caller to narrow. First-party callers are not exempt: the PWA's default scope holds the `source` domain and therefore names no connector, so its own connector reads declare `source:<id>` through the gate bridge's intent argument.
+
+## Design Acceptance (non-release, v90 record writes)
+
+- [x] A note's tasks, one calendar event, and a smart table's cells are each a canonical Resource whose only write is one bounded field change. (`src-tauri/src/kernel/task_resource.rs` 12 tests; `calendar_resource.rs` 11 tests; `table_resource.rs` 10 tests)
+- [x] Each write stages the real before/after of the field it changes, so a review request never has to name a tool instead. (`staging_reports_the_field_before_and_after_without_writing` in all three)
+- [x] A stale revision writes nothing and reports both revisions as a retryable conflict, which is what catches a task line or table row that has moved. (`a_stale_revision_writes_nothing_and_reports_the_current_one` in all three)
+- [x] Success is reported only from a post-write reread; a write that does not read back as asked is undone and reported as a rollback, and a rollback that itself failed is reported as not retryable and names its recovery point. (`record_write.rs` — `a_rollback_distinguishes_restored_from_not_restored`; `task_resource.rs` — `a_write_that_does_not_read_back_is_rolled_back_and_reported`)
+- [x] The previous bytes are captured beneath the kernel derivative state root before the source is touched, and a recovery point that cannot be written aborts the operation. Its key includes the content root, since a ResourceRef names a note relative to one and the capture truncates. It is discarded once the write verifies, so copies of user content do not accumulate outside the content tree. (`record_write::RecoveryPoint`; `two_roots_holding_the_same_relative_note_get_separate_recovery_points`, `a_discarded_recovery_point_leaves_nothing_behind`)
+- [x] The undo restores the exact bytes that were read, so a rollback does not reformat frontmatter comments or key order. (`kernel::vault::restore_raw`; `task_resource.rs` — `a_rollback_restores_a_note_with_frontmatter_byte_for_byte`)
+- [x] Verification compares the reread against the value the source stores, not against the caller's raw request, so a write the source legitimately normalizes is not reported as a failure. That operand is computed by actually storing the value — apply, render, parse back — rather than by restating the normalization rules, which is what makes it unable to drift from the store. (`tasks_source::normalized_field_value`, `calendar_source::normalized_field_value`, `SmartTable::normalized_cell_value`; `the_normalized_value_is_what_update_actually_stores`, `a_multi_tag_write_verifies_instead_of_rolling_back`, `a_status_synonym_verifies_instead_of_rolling_back`)
+- [x] A value the format cannot hold is refused before anything is written, rather than written and rolled back. A checkbox line and a table row are both single lines with delimited parts, so a value carrying a delimiter or a newline would silently land in a neighbouring field. (`a_value_that_cannot_be_stored_is_refused_before_anything_is_written`, `a_value_that_would_break_the_row_is_refused_before_anything_is_written`)
+- [x] Staging shows the value as it will be stored, so a reviewer approves what actually lands. (`staging_shows_the_value_as_it_will_be_stored`, `a_padded_value_stages_and_verifies_as_its_stored_form`)
+- [x] A one-field change touches one line: `tasks_source` writes through `vault::write_body` and edits the addressed line in place rather than splitting and rejoining the body, so the frontmatter keeps its bytes, a plain note gains no block, and every untouched line keeps its own terminator — including in a note that mixes them. (`a_field_change_leaves_the_frontmatter_bytes_untouched`, `a_plain_note_does_not_gain_a_frontmatter_block`, `a_crlf_note_with_frontmatter_changes_only_the_addressed_line`, `a_note_with_mixed_line_endings_keeps_each_line_as_it_was`)
+- [x] A note that is not there is reported as missing rather than as a retryable outage, so a caller is not told to keep asking for something that does not exist. (`task_resource::read`)
+- [x] The operation schema states the shapes each field accepts, so a plausible value does not have to be discovered through a conflict. (`value.description` in the task and calendar descriptors)
+- [x] The stale-precondition reply, the unverified reply, and the empty-field rendering are defined once for all record writes rather than copied per owner. (`src-tauri/src/kernel/record_write.rs`; `packages/ctrl-web/src/lib/record-write.ts`)
+- [x] Each owner reuses its source's existing validator and writer rather than adding a second one that could disagree with what the reader reads back. (`tasks_source::update`; `CalendarSource::produce`; `SmartTable::produce`)
+- [x] Every vault note write is a rename over a flushed temp sibling, so clause 4 holds for each of those reused writers instead of only for the owners that reimplement it. The staging name is unique and opened `O_EXCL | O_NOFOLLOW`, so a planted symlink cannot capture the write, and the note's permissions survive the replace. (`kernel::vault::write_atomically`; `a_write_leaves_no_temporary_sibling_and_never_lists_one`, `a_planted_link_at_the_staging_name_cannot_capture_the_write`, `a_replace_preserves_the_notes_permissions`)
+- [x] A revision-pinned ref verifies its own write. The reread goes through an unpinned ref, since the write moves the revision off the caller's pin by definition and rereading through it would report a landed write as unverified. (`task_resource.rs` — `a_revision_pinned_ref_still_verifies_its_own_write`)
+- [x] A commit that fails is reported as a retryable owner outage rather than as a bad argument, and leaves no recovery copy, since the source was never modified. The copy's lifetime is enforced by `Drop` rather than by each path remembering, because the paths that must clean up are the error paths. (`a_commit_failure_is_reported_as_unavailable_and_leaves_no_copy`; `record_write::RecoveryPoint`)
+- [ ] Exercise the branch where the post-write reread itself fails. It reports written-but-unverified, keeps the recovery point, and names it; forcing the failure needs filesystem injection the owners do not have.
+- [x] A surface reads the typed Outcome and distinguishes verified, conflict, and failed. (`packages/ctrl-web/e2e/today.spec.ts` — conflict shows both revisions and the task stays open)
+- [ ] Cover the smart-table cell edit at the UI level. Its wire contract is verified (`packages/ctrl-web/src/lib/record-write.test.ts`) but the grid renders to a canvas, so there is no DOM cell for a browser test to drive; a record-card view harness is the likely route.
+- [ ] Give an event a first-party editing surface. The canonical write exists and is exercised, but today an event field is changed through the assistant rather than from the schedule.
+- [ ] Bring smart-table column operations (add, retype, drop) onto the canonical verb. They still use the bespoke tool, which owns the in-place frontmatter `schema` patch; a canonical form needs its own staged shape for a schema change.
+
+## Design Acceptance (non-release, v88 availability state)
+
+- [x] Prove a disabled capability stays installed and listed, is refused by `selection-projection`, and re-enables without reinstalling. (`src-tauri/src/kernel/fct_catalog.rs` — `disabling_reports_a_verified_state_change_and_stops_selection`, `enabling_restores_selection_without_reinstalling`)
+- [x] Prove the state file is plain text, atomically rewritten, and that a malformed file fails closed instead of reading as "nothing disabled". (`src-tauri/src/kernel/capability_state.rs`; `an_unreadable_state_file_fails_closed_rather_than_re_enabling`)
+- [x] Prove `enable`/`disable` stage before committing and report success only from a reread. (`a_staged_change_carries_the_facts_a_reviewer_needs`; `effect.verified_by` assertions)
+- [x] Prove the management surface states each capability's owner and offers disable for Skills, which have no removal path. (`packages/ctrl-web/e2e/capability-manage.spec.ts`)
+- [x] Prove reveal is ref-addressed and refuses traversal or an out-of-root target. (`src-tauri/src/commands/system.rs` — `a_traversing_ref_is_refused_before_any_filesystem_use`; `ownership can be opened, addressed by ref rather than by path`)
+- [ ] Exercise the availability change over the wire as an external caller so the review-eligible path is covered, not only the in-process owner. Blocked by `ReviewGate::enforcing()` returning false under `cfg!(test)`.
+
+## Design Acceptance (non-release, v85 migration)
+
+- [ ] Prove the implemented domain vocabulary equals §17.1 with no code-only domain and no unclassifiable first-party tool.
+- [ ] Prove `net` is absent from every default grant and that each network-capable domain is endpoint-restricted.
+- [ ] Implement §17.5 `source:<id>` narrowing and prove a grant for one connector authorizes no other installed connector, no sibling source, and no raw downstream tool.
+- [ ] Land the §15.5 Outcome envelope on one real mutation vertical with staged/precondition/effect and post-commit verification evidence.
+- [ ] Prove a ReviewGate request for canonical `produce` carries §15.5.3 target, staged before/after, and precondition, with the existing gate-derived and non-self-approval properties intact.
+- [ ] Publish the §17.6 per-domain pipeline evidence, generated from real owners, and mark each domain `verified` or `declared`.
+- [ ] Establish a non-decreasing ratchet over boundary error-string flattening and reduce it as owners adopt `Feedback`.
+
+## Design Acceptance (non-release, v84 migration)
+
+- [ ] Inventory every live bespoke resource/job endpoint and map it to a canonical ResourceRef owner plus `describe(ref)` / `query(ref, request)` / `produce(ref, operation)`.
+- [ ] Publish conformance fixtures for ResourceRef parse rejection, canonicalization, alias expiry, owner collision, scope-preserving resolution, and stable-handle/no-follow race faults (symlink swap, rename, entry/root replacement).
+- [ ] Demonstrate response-loss retry, idempotency conflict, retention expiry, restart recovery, and typed unavailable behavior for at least one durable Effect owner.
+- [ ] Prove Library, Irisy, gate discovery, FCT selection resolution, and internal pinned-Skill resolution observe the same hot-scanned local registry projection with no second index.
+- [ ] Prove anonymous public install works with `ctrl-cloud` disabled and no developer PAT.
+
+These are migration/design acceptance criteria, not release-completion claims. Existing implementations may drift until Track implementation work closes them with fresh evidence.
