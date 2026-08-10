@@ -794,34 +794,11 @@ mod tests {
             "${PACK_DIR}/server.mjs".to_string(),
             "--untrusted-test".to_string(),
         ];
+        // This drives a real `node` stdio child through a real MCP handshake, so it
+        // is also the test that catches a child which starts but declines to serve.
+        // (ADR-010 communication § transports v13)
         let host = McpHost::new();
         let server_id = "source:ctrl-libreoffice";
-        {
-            let probed = resolve_local_source("node", &args, &pack_dir, true, true);
-            if let McpServerSource::Local { command, args: a, sandbox_pack_dir, .. } = &probed {
-                eprintln!("PROBE command={command:?}");
-                eprintln!("PROBE args={a:?}");
-                eprintln!("PROBE sandbox={sandbox_pack_dir:?}");
-                eprintln!("PROBE script_exists={}", std::path::Path::new(&a[0]).exists());
-            }
-            let mut c = probed.to_command().unwrap().unwrap();
-            let out = c.stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn();
-            match out {
-                Ok(mut child) => {
-                    use tokio::io::AsyncWriteExt as _;
-                    let init = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"p\",\"version\":\"1\"}}}\n";
-                    let _ = child.stdin.as_mut().unwrap().write_all(init.as_bytes()).await;
-                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                    let o = child.wait_with_output().await.unwrap();
-                    eprintln!("PROBE stdout={:?}", String::from_utf8_lossy(&o.stdout));
-                    eprintln!("PROBE stderr={:?}", String::from_utf8_lossy(&o.stderr));
-                }
-                Err(e) => eprintln!("PROBE spawn_error={e}"),
-            }
-        }
         assert_eq!(
             installed_pack_actor_ids("ctrl-libreoffice"),
             [server_id.to_string(), "libreoffice".to_string(),]

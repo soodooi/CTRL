@@ -1,7 +1,12 @@
 // Verifies the fail-closed optional child contract.
 // (ADR-002 substrate §14 v78; ADR-004 cap §1 v13; ADR-010 communication § transports v13)
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   handleMessage,
   normalizeSelection,
@@ -125,3 +130,59 @@ test('MCP tool call reports unavailable as an error result, never empty success'
   assert.equal(reply.result.content[0].text, 'LibreOffice source is unavailable');
   assert.doesNotMatch(reply.result.content[0].text, /bridge|token|url|env/i);
 });
+
+// The self-start guard compares this module's URL against argv[1]. `import.meta.url`
+// is always fully resolved, so comparing it to an UNRESOLVED argv[1] made the server
+// silently do nothing whenever any component of the invocation path was a symlink:
+// it exited without output and without an error, and the kernel saw the connection
+// close during initialize. A CI runner whose workspace sits under a symlinked path
+// hit this, and so would any user whose install root is a link.
+// (ADR-010 communication § transports v13)
+test('the server starts when spawned through a symlinked path', () => {
+  const real = dirname(fileURLToPath(import.meta.url));
+  const link = join(mkdtempSync(join(tmpdir(), 'ctrl-lo-link-')), 'pack');
+  symlinkSync(real, link);
+  const initialize = `${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'probe', version: '1' },
+    },
+  })}\n`;
+
+  for (const entry of [join(real, 'server.mjs'), join(link, 'server.mjs')]) {
+    const child = spawnSync(process.execPath, [entry, '--untrusted-test'], {
+      input: initialize,
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
+    assert.equal(child.stderr, '', `${entry} must not error`);
+    const [line] = child.stdout.split('\n');
+    assert.ok(line, `${entry} produced no initialize response`);
+    assert.equal(JSON.parse(line).result.serverInfo.name, 'ctrl-libreoffice');
+  }
+});
+
+// Importing must NOT start the server, or a test that imports this module would
+// consume the parent's stdin.
+test('importing the module does not start the stdio server', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'ctrl-lo-import-'));
+  const probe = join(scratch, 'probe.mjs');
+  const target = pathToFileURLString(join(dirname(fileURLToPath(import.meta.url)), 'server.mjs'));
+  writeFileSync(
+    probe,
+    `import ${JSON.stringify(target)};\nprocess.stdout.write('imported-without-serving\\n');\n`,
+  );
+  const output = execFileSync(process.execPath, [probe], {
+    encoding: 'utf8',
+    timeout: 15_000,
+  });
+  assert.equal(output.trim(), 'imported-without-serving');
+});
+
+function pathToFileURLString(path) {
+  return new URL(`file://${path}`).href;
+}

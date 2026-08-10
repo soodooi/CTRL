@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
@@ -196,6 +197,26 @@ export function runStdioServer() {
   });
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Start only when run as a program, not when imported by a test.
+// (ADR-010 communication § transports v13)
+//
+// Compared through realpath on BOTH sides. `import.meta.url` is always fully
+// resolved, while argv[1] is whatever the parent passed, so any symlink in the
+// path made these unequal and the server silently did nothing: it exited without
+// writing a byte and without an error, and the caller saw the connection close
+// during initialize. A CI runner whose workspace sits under a symlinked path hit
+// exactly that, and so would any user whose vault or install root is a link.
+const startedAsProgram = (() => {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(invoked)).href;
+  } catch {
+    // The path may not exist to be resolved; fall back to the plain comparison
+    // rather than refusing to start.
+    return import.meta.url === pathToFileURL(invoked).href;
+  }
+})();
+if (startedAsProgram) {
   runStdioServer();
 }
