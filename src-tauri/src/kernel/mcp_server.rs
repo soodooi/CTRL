@@ -3147,6 +3147,15 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         let fm = args.frontmatter.unwrap_or(serde_json::Value::Null);
+        // The same per-file lock every other vault writer takes. This was the one
+        // mutator without it, and it rewrites the WHOLE file: unlocked, it could
+        // commit inside a canonical owner's critical section, between that owner's
+        // commit and its verifying reread. The owner would then observe bytes it did
+        // not write, restore its own pre-image, and destroy both this write and its
+        // own already-correct one — the precise interleaving clause 7 exists to
+        // prevent. (ADR-002 substrate §15.2 v87 clause 7)
+        let lock = self.vault_write_lock(&args.path).await;
+        let _guard = lock.lock().await;
         vault::write(&root, &args.path, &args.body, &fm).map_err(map_vault_err)?;
         // Write-through for smart tables: a generic vault.write that touches a
         // `tables/*.md` file (the dedicated smart_table.* tools are not the only
