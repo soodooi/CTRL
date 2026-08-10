@@ -184,6 +184,13 @@ impl RecoveryPoint {
             // Durability is the whole point, so flush before the source is touched.
             .and_then(|()| handle.sync_all())
             .map_err(|_| unavailable())?;
+        // The file's bytes being durable is not enough: its DIRECTORY ENTRY must be
+        // too, or a crash can leave a recovery point that cannot be found by name —
+        // which is the only way clause 6 and the `rollback_failed` reply reach it.
+        // (ADR-002 substrate §15.2 v87 clause 3)
+        if let Ok(directory) = std::fs::File::open(&root) {
+            let _ = directory.sync_all();
+        }
         Ok(Self {
             path,
             retain: std::cell::Cell::new(false),
@@ -192,6 +199,16 @@ impl RecoveryPoint {
 
     pub fn location(&self) -> String {
         self.path.to_string_lossy().into_owned()
+    }
+
+    /// The captured bytes, for a caller performing clause 6 restoration.
+    ///
+    /// `None` means the copy could not be read back, which is exactly the
+    /// `rollback_failed` case: it must never be reported as an empty previous
+    /// content, because restoring that would destroy the source instead of
+    /// undoing the write. (ADR-002 substrate §15.2 v87 clause 6)
+    pub fn previous(&self) -> Option<String> {
+        std::fs::read_to_string(&self.path).ok()
     }
 
     /// Drop the recovery point once the write is verified. Dropping the value is

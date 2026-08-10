@@ -121,40 +121,32 @@ impl MarkdownNoteOwner {
     }
 
     /// Durably capture the previous bytes before mutating. Failure aborts the
-    /// write. (ADR-002 §15.2 v87 clause 3)
+    /// write. (ADR-002 substrate §15.2 v87 clause 3)
+    ///
+    /// This delegates to the shared `record_write::RecoveryPoint` rather than
+    /// keeping a second implementation: one recovery point serves every canonical
+    /// write, and the copy this owner used to make was keyed on the ref alone. A
+    /// ResourceRef names a note relative to a root, so two vault roots holding
+    /// `Inbox.md` collided on one key — and the capture truncates, so the second
+    /// write destroyed the first's only way back. The shared key includes the
+    /// content root. (ADR-002 substrate §15.2 v90)
     fn write_recovery_point(
         &self,
         resource: &ResourceRef,
         previous: &str,
-    ) -> Result<PathBuf, ResourceError> {
-        let root = self
-            .recovery_root
-            .as_deref()
-            .ok_or(ResourceError::Unavailable {
-                reason: ResourceUnavailableReason::OwnerUnavailable,
-                retryable: false,
-            })?;
-        let unavailable = || ResourceError::Unavailable {
+    ) -> Result<super::record_write::RecoveryPoint, ResourceError> {
+        // The content root is the scope the ref is resolved against, so it is part
+        // of the recovery key. (ADR-002 substrate §15.2 v90)
+        let scope = self.root.as_deref().ok_or(ResourceError::Unavailable {
             reason: ResourceUnavailableReason::OwnerUnavailable,
             retryable: false,
-        };
-        std::fs::create_dir_all(root).map_err(|_| unavailable())?;
-        // `.bak` rather than `.md`: a recovery file must never be addressable as
-        // an ordinary note even if the root is ever misconfigured.
-        let key = format!("{:x}", Sha256::digest(resource.to_string().as_bytes()));
-        let path = root.join(format!("{key}.bak"));
-        // Durability is the point of a recovery point, so flush the file and its
-        // directory entry before the note is touched.
-        {
-            let mut file = std::fs::File::create(&path).map_err(|_| unavailable())?;
-            file.write_all(previous.as_bytes())
-                .map_err(|_| unavailable())?;
-            file.sync_all().map_err(|_| unavailable())?;
-        }
-        if let Ok(directory) = std::fs::File::open(root) {
-            let _ = directory.sync_all();
-        }
-        Ok(path)
+        })?;
+        super::record_write::RecoveryPoint::capture(
+            self.recovery_root.as_deref(),
+            scope,
+            resource,
+            previous,
+        )
     }
 
     /// Flushed temporary sibling renamed over the target, so a reader never
@@ -477,9 +469,12 @@ impl ResourceOwner for MarkdownNoteOwner {
             Ok(note) if note.revision == expected_revision => note.revision.clone(),
             _ => {
                 // Clause 6: restore the recovery point and report the rollback
-                // rather than claiming success.
-                let restored = std::fs::read_to_string(&recovery)
-                    .ok()
+                // rather than claiming success. A copy that cannot be read back is
+                // NOT an empty previous content: restoring that would destroy the
+                // note instead of undoing the write, so it is a failed rollback.
+                // (ADR-002 substrate §15.2 v87 clause 6)
+                let restored = recovery
+                    .previous()
                     .and_then(|previous| Self::commit_atomically(&path, &previous).ok())
                     .is_some();
                 let feedback = if restored {
@@ -495,6 +490,11 @@ impl ResourceOwner for MarkdownNoteOwner {
                         )]),
                     }
                 } else {
+                    // The one case the copy must outlive this call: the note holds
+                    // a state the owner did not intend and could not undo, so the
+                    // copy is the user's only way back and the reply names it.
+                    // (ADR-002 substrate §15.2 v87 clause 6)
+                    recovery.retain();
                     Feedback {
                         code: "rollback_failed".to_owned(),
                         message: "the note could not be verified or restored; the recovery point holds the previous content".to_owned(),
@@ -503,7 +503,7 @@ impl ResourceOwner for MarkdownNoteOwner {
                         retryable: false,
                         details: serde_json::Map::from_iter([(
                             "recovery_point".to_owned(),
-                            json!(recovery.to_string_lossy()),
+                            json!(recovery.location()),
                         )]),
                     }
                 };
@@ -520,6 +520,13 @@ impl ResourceOwner for MarkdownNoteOwner {
                 return serde_json::to_value(outcome).map_err(invalid_payload);
             }
         };
+
+        // The write is verified, so the copy has done its job. It is a verbatim
+        // copy of the user's content sitting outside the tree they chose for it,
+        // so keeping it past this point would leave their note duplicated in
+        // cleartext under the state root indefinitely.
+        // (ADR-002 substrate §15.2 v87 clause 3)
+        recovery.discard();
 
         let outcome = Outcome {
             resource: resource.clone(),
@@ -819,9 +826,15 @@ mod tests {
             fs::read_to_string(temporary.path().join("note.md")).unwrap(),
             "after"
         );
-        // The recovery point holds the previous content, outside the note itself.
-        let saved = fs::read_dir(&recovery).expect("recovery dir").count();
-        assert_eq!(saved, 1);
+        // A VERIFIED write leaves no copy behind. The recovery point exists to
+        // make clause 6 possible, not to archive the user's content: it is a
+        // verbatim cleartext copy sitting outside the tree they chose for it, so
+        // once the write is verified it must be gone.
+        // (ADR-002 substrate §15.2 v87 clause 3)
+        let saved = fs::read_dir(&recovery)
+            .map(|entries| entries.count())
+            .unwrap_or(0);
+        assert_eq!(saved, 0, "a verified write must not leave a copy behind");
         // No temporary sibling is left behind by the atomic commit.
         let leftovers = fs::read_dir(temporary.path())
             .unwrap()
@@ -829,6 +842,46 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().contains("ctrl-tmp"))
             .count();
         assert_eq!(leftovers, 0);
+    }
+
+    /// Two vaults can each hold `Inbox.md`. A ResourceRef names a note RELATIVE
+    /// to a root, so a recovery key built from the ref alone collides across
+    /// roots — and the capture truncates, so the second write would destroy the
+    /// first's only way back. The content root is part of the key.
+    /// (ADR-002 substrate §15.2 v90)
+    #[test]
+    fn two_vaults_holding_the_same_relative_note_get_separate_recovery_points() {
+        let shared_recovery = tempfile::tempdir().expect("recovery root");
+        let first_vault = tempfile::tempdir().expect("first vault");
+        let second_vault = tempfile::tempdir().expect("second vault");
+        let resource: ResourceRef = "ctrl://local/note/Inbox.md".parse().unwrap();
+
+        let first = MarkdownNoteOwner::new(first_vault.path().to_path_buf())
+            .with_recovery_root(shared_recovery.path().to_path_buf());
+        let second = MarkdownNoteOwner::new(second_vault.path().to_path_buf())
+            .with_recovery_root(shared_recovery.path().to_path_buf());
+
+        let first_point = first
+            .write_recovery_point(&resource, "first vault content")
+            .expect("capture first");
+        let second_point = second
+            .write_recovery_point(&resource, "second vault content")
+            .expect("capture second");
+
+        assert_ne!(
+            first_point.location(),
+            second_point.location(),
+            "one recovery file for two different notes loses one of them"
+        );
+        assert_eq!(
+            first_point.previous().as_deref(),
+            Some("first vault content"),
+            "the second capture must not have overwritten the first"
+        );
+        assert_eq!(
+            second_point.previous().as_deref(),
+            Some("second vault content")
+        );
     }
 
     #[tokio::test]
