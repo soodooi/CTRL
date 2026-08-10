@@ -45,6 +45,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      # The optional-pack host tests spawn a real `node` stdio child and complete
+      # an MCP handshake against it, which is the point of those tests — a mocked
+      # child would not prove the transport works. So this job needs a Node
+      # toolchain even though it builds no JavaScript.
+      # (ADR-004 cap § execution v13)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - name: cargo test --lib
         run: cargo test --lib --manifest-path src-tauri/Cargo.toml
       - name: verify generated MCP schema against runtime router

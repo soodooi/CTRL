@@ -21,7 +21,7 @@ It defines no metric, baseline, contract face, or architectural status
 ## Overview
 
 - **109** registered static MCP tools (ceiling 109, target null)
-- **136** registered Tauri commands (ceiling 136)
+- **140** registered Tauri commands (ceiling 140)
 - **2** exact-name MCP/Tauri overlaps (ceiling 2, target 0)
 - **4** exact-or-explicit semantic MCP/Tauri overlaps (ceiling 4, target 0)
 
@@ -228,13 +228,13 @@ The read/write labels below are navigation heuristics and are not governance dec
 | `vault_write` | 3 | probable write | Write a markdown file to the user's vault (creates parents) |  |
 | `vault_write_image` | 4 | probable write | Write a binary image asset to the vault (optionally with sidecar .md frontmatter) | yes |
 
-## Tauri command registration by module (136)
+## Tauri command registration by module (140)
 
 | commands module | count |
 |---|---:|
 | `commands/notes_ui.rs` | 40 |
-| `commands/kernel.rs` | 13 |
-| `commands/system.rs` | 12 |
+| `commands/kernel.rs` | 16 |
+| `commands/system.rs` | 13 |
 | `commands/storage.rs` | 10 |
 | `commands/diagnostics.rs` | 6 |
 | `commands/git.rs` | 6 |
