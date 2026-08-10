@@ -824,6 +824,21 @@ mod tests {
             Err(McpHostError::PrivateServer(_))
         ));
 
+        // Spawning a managed local child requires a wired OS-sandbox arm. Where
+        // there is none the spawn is REFUSED — the child runs third-party pack code
+        // and the deny-network/deny-write profile is the reason the wrapper exists,
+        // so running it unsandboxed would be worse than not running it. The handshake
+        // therefore cannot succeed there, and asserting that it does would be
+        // asserting macOS-only behaviour. (ADR-004 cap § execution v15)
+        if !cfg!(target_os = "macos") {
+            assert!(
+                host.list_tools(server_id).await.is_err(),
+                "an unwired sandbox arm must refuse the spawn, not serve tools"
+            );
+            host.unregister(server_id).await.unwrap();
+            return;
+        }
+
         let tools = host.list_tools(server_id).await.unwrap();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name.as_ref(), "read_selected_context");
@@ -847,5 +862,37 @@ mod tests {
             host.list_tools(server_id).await,
             Err(McpHostError::NotInstalled(_))
         ));
+    }
+
+    /// The refusal is the accepted behaviour, so it is asserted rather than left
+    /// as whatever the platform happens to do. `wrap_program` must not return the
+    /// pack's own command on a platform whose sandbox arm is not wired, because
+    /// that would run third-party code with the user's full privileges.
+    /// (ADR-004 cap § execution v15)
+    #[test]
+    fn an_unwired_sandbox_arm_refuses_to_spawn_instead_of_running_unsandboxed() {
+        let pack_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("packages/ctrl-mcps/optional/ctrl-libreoffice");
+        let command = crate::kernel::pack_sandbox::wrap_program(
+            "node",
+            &["${PACK_DIR}/server.mjs".to_string()],
+            &pack_dir,
+            &[],
+            false,
+        );
+        let program = command.get_program().to_string_lossy().into_owned();
+        if cfg!(target_os = "macos") {
+            assert_eq!(
+                program, "/usr/bin/sandbox-exec",
+                "a wired arm must run the child THROUGH the sandbox"
+            );
+        } else {
+            assert_ne!(
+                program, "node",
+                "an unwired arm must never spawn the pack's own command"
+            );
+        }
     }
 }
