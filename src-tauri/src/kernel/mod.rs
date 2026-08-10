@@ -58,8 +58,10 @@ pub mod scheduler;
 // Vault embeddings substrate (ADR-002 v5 §10) — local Ollama
 // nomic-embed-text + SQLite BLOB flat cosine search. Memory
 // `decision_vault_adr_002_section_8`.
+pub mod session_resource;
 pub mod table_resource;
 pub mod task_resource;
+pub mod transcript_format;
 pub mod vault_embeddings;
 // Mcp output capture (ADR-002 v5 §9) — single SmartTable per mcp.
 pub mod mcp_capture;
