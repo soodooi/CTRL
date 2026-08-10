@@ -370,7 +370,11 @@ mod tests {
         std::fs::create_dir(&fake_dir).unwrap();
         let fake_node = fake_dir.join("node");
         std::fs::write(&fake_node, b"not node").unwrap();
-        assert!(!is_trusted_adapter(&pack, fake_node.to_str().unwrap(), &args));
+        assert!(!is_trusted_adapter(
+            &pack,
+            fake_node.to_str().unwrap(),
+            &args
+        ));
 
         let embedded = embedded_adapter_args();
         assert_eq!(embedded[0], "--input-type=module");

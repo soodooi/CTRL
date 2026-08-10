@@ -164,7 +164,13 @@ fn validate_mcp_id(id: &str) -> Result<(), String> {
 /// Reduce a user-supplied filename to a safe basename. Empty / unsafe
 /// inputs fall back to `server.ts`.
 fn sanitize_server_filename(raw: &str) -> String {
-    let basename = raw.rsplit('/').next().unwrap_or("").rsplit('\\').next().unwrap_or("");
+    let basename = raw
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .rsplit('\\')
+        .next()
+        .unwrap_or("");
     let safe: String = basename
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
@@ -180,10 +186,7 @@ fn sanitize_server_filename(raw: &str) -> String {
 /// before calling this primitive; `install_mcp_from_mcp` instead synthesizes a
 /// controlled MCP-proxy adapter manifest and never accepts a feature-pack
 /// manifest from its caller. (ADR-002 substrate § 7.4 v34)
-pub(crate) fn install_into(
-    dir: &Path,
-    args: &InstallMcpArgs,
-) -> Result<McpSummary, String> {
+pub(crate) fn install_into(dir: &Path, args: &InstallMcpArgs) -> Result<McpSummary, String> {
     let id = args
         .manifest
         .get("id")
@@ -366,8 +369,8 @@ fn install_mcpb_blocking(mcpb_path: &Path, dir: &Path) -> Result<InstallMcpbResu
     // 2. read + parse manifest.json.
     let manifest_bytes = fs::read(staging.join("manifest.json"))
         .map_err(|e| format!("read manifest.json from mcpb: {e}"))?;
-    let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
-        .map_err(|e| format!("parse manifest.json: {e}"))?;
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&manifest_bytes).map_err(|e| format!("parse manifest.json: {e}"))?;
     // Bundle installs share the same fail-closed write boundary as gate and
     // legacy manifest installs. (ADR-002 substrate § 7.4 v34)
     if let Err(error) = validate_feature_pack_install(&manifest) {
@@ -472,7 +475,11 @@ pub async fn run_action(
 
 // pub(crate) so the gate's mcp_pack_run tool reuses the exact action runner
 // (provision + shell steps) the Tauri command uses — no duplicate logic.
-pub(crate) fn run_action_blocking(dir: &Path, mcp_id: &str, action_id: &str) -> Result<String, String> {
+pub(crate) fn run_action_blocking(
+    dir: &Path,
+    mcp_id: &str,
+    action_id: &str,
+) -> Result<String, String> {
     let bytes = fs::read(dir.join(mcp_id).join("manifest.json"))
         .map_err(|e| format!("read manifest for '{mcp_id}': {e}"))?;
     let manifest: serde_json::Value =
@@ -580,7 +587,10 @@ fn run_shell(
         #[cfg(not(windows))]
         let sep = ":";
         let existing = std::env::var("PATH").unwrap_or_default();
-        cmd.env("PATH", format!("{}{}{}", tool_dirs.join(sep), sep, existing));
+        cmd.env(
+            "PATH",
+            format!("{}{}{}", tool_dirs.join(sep), sep, existing),
+        );
     }
     let output = cmd.output().map_err(|e| format!("spawn shell: {e}"))?;
     if output.status.success() {
@@ -636,7 +646,11 @@ pub async fn install_mcp_from_mcp(
             validate_mcp_id(&id)?;
             id
         }
-        None => format!("mcp-{}-{}", server_id.trim_start_matches("mcp-"), slugify(&args.tool_name)),
+        None => format!(
+            "mcp-{}-{}",
+            server_id.trim_start_matches("mcp-"),
+            slugify(&args.tool_name)
+        ),
     };
 
     // Register descriptor with mcp_host (in-memory) so connect / invoke
@@ -696,7 +710,7 @@ pub async fn install_mcp_from_mcp(
     });
     let install_args = InstallMcpArgs {
         manifest: manifest.clone(),
-        server_code: String::new(),       // MCP-sourced mcps have no local TS server.
+        server_code: String::new(), // MCP-sourced mcps have no local TS server.
         server_code_filename: String::new(),
     };
     let dir = mcp_dir()?;
@@ -799,7 +813,6 @@ fn derive_server_id(source: &crate::kernel::mcp_host::McpServerSource) -> String
     format!("mcp-{:x}", h.finish())
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct RunMcpArgs {
     pub mcp_id: String,
@@ -851,16 +864,14 @@ pub(crate) async fn run_mcp_inner(
     // path lands.
     let dispatch = classify_mcp(&args.mcp_id);
     let result = match dispatch {
-        McpDispatch::TextChat { system } => {
-            run_text_chat(kernel, &args, &stream_id, system).await
-        }
-        McpDispatch::McpInvoke { server_id, tool_name } => {
-            run_mcp_invoke(kernel, &args, &stream_id, &server_id, &tool_name).await
-        }
-        McpDispatch::SkillRun { id, skill } => {
-            crate::commands::skills::run_skill(&kernel.bridge, &stream_id, &id, &skill, &args.input)
-                .await
-        }
+        McpDispatch::TextChat { system } => run_text_chat(kernel, &args, &stream_id, system).await,
+        McpDispatch::McpInvoke {
+            server_id,
+            tool_name,
+        } => run_mcp_invoke(kernel, &args, &stream_id, &server_id, &tool_name).await,
+        // Compatibility manifests may report an unavailable execution face,
+        // but Skills never acquire session ownership. (ADR-005 irisy §11 v40)
+        McpDispatch::Unavailable { reason } => Err(reason),
         McpDispatch::Stub => Ok(serde_json::json!({
             "stub": true,
             "mcp_id": args.mcp_id,
@@ -903,7 +914,10 @@ pub(crate) async fn run_mcp_inner(
                     "duration_ms": duration_ms,
                 }),
             });
-            Ok(RunMcpResult { output, duration_ms })
+            Ok(RunMcpResult {
+                output,
+                duration_ms,
+            })
         }
         Err(err_msg) => {
             tracing::error!(
@@ -944,9 +958,18 @@ pub(crate) async fn run_mcp_inner(
 /// user-installed MCP / builtin mcps take precedence over hardcoded
 /// fallbacks.
 enum McpDispatch {
-    TextChat { system: &'static str },
-    McpInvoke { server_id: String, tool_name: String },
-    SkillRun { id: String, skill: String },
+    TextChat {
+        system: &'static str,
+    },
+    McpInvoke {
+        server_id: String,
+        tool_name: String,
+    },
+    // Typed compatibility refusal for faces that no longer own execution.
+    // (ADR-005 irisy §11 v40)
+    Unavailable {
+        reason: String,
+    },
     Stub,
 }
 
@@ -966,28 +989,29 @@ fn classify_from_installed_manifest(mcp_id: &str) -> Option<McpDispatch> {
     let kind = source.get("type").and_then(|v| v.as_str())?;
     match kind {
         "mcp" => {
-            let server_id = source.get("server_id").and_then(|v| v.as_str())?.to_string();
-            let tool_name = source.get("tool_name").and_then(|v| v.as_str())?.to_string();
+            let server_id = source
+                .get("server_id")
+                .and_then(|v| v.as_str())?
+                .to_string();
+            let tool_name = source
+                .get("tool_name")
+                .and_then(|v| v.as_str())?
+                .to_string();
             if server_id.is_empty() || tool_name.is_empty() {
                 return None;
             }
-            Some(McpDispatch::McpInvoke { server_id, tool_name })
+            Some(McpDispatch::McpInvoke {
+                server_id,
+                tool_name,
+            })
         }
         "skill" => {
-            // Local skill name — the active brain CLI runs it natively. This is
-            // the supported run model (cc-switch-native); a skill source with
-            // only a remote `upstream` and no local `skill` isn't runnable yet.
-            let skill = source
-                .get("skill")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
-            if skill.is_empty() {
-                return None;
-            }
-            Some(McpDispatch::SkillRun {
-                id: mcp_id.to_string(),
-                skill,
+            // A Skill may scope Irisy's method projection but cannot become an
+            // independently runnable MCP/session owner. (ADR-005 irisy §11 v40)
+            Some(McpDispatch::Unavailable {
+                reason:
+                    "Skills are method-only context for Irisy and cannot own or spawn a session"
+                        .to_string(),
             })
         }
         _ => None,
@@ -1029,9 +1053,7 @@ async fn run_text_chat(
     system: &'static str,
 ) -> Result<serde_json::Value, String> {
     use crate::kernel::event::{Cell, CellKind};
-    use crate::kernel::provider::{
-        routing::route_text_chat, Consumer, LlmMessage, LlmPrompt,
-    };
+    use crate::kernel::provider::{routing::route_text_chat, Consumer, LlmMessage, LlmPrompt};
 
     let runtime = &kernel.runtime;
 
@@ -1044,22 +1066,23 @@ async fn run_text_chat(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let messages: Vec<LlmMessage> = if let Some(arr) = args.input.get("messages").and_then(|v| v.as_array()) {
-        arr.iter()
-            .filter_map(|m| {
-                let role = m.get("role")?.as_str()?.to_string();
-                let content = m.get("content")?.as_str()?.to_string();
-                Some(LlmMessage { role, content })
-            })
-            .collect()
-    } else if !user_text.is_empty() {
-        vec![LlmMessage {
-            role: "user".into(),
-            content: user_text,
-        }]
-    } else {
-        return Err("input must include either `text` (string) or `messages` (array)".into());
-    };
+    let messages: Vec<LlmMessage> =
+        if let Some(arr) = args.input.get("messages").and_then(|v| v.as_array()) {
+            arr.iter()
+                .filter_map(|m| {
+                    let role = m.get("role")?.as_str()?.to_string();
+                    let content = m.get("content")?.as_str()?.to_string();
+                    Some(LlmMessage { role, content })
+                })
+                .collect()
+        } else if !user_text.is_empty() {
+            vec![LlmMessage {
+                role: "user".into(),
+                content: user_text,
+            }]
+        } else {
+            return Err("input must include either `text` (string) or `messages` (array)".into());
+        };
 
     if messages.is_empty() {
         return Err("input.messages is empty after parsing".into());
@@ -1225,7 +1248,13 @@ pub async fn open_workspace(mcp_id: String, app: tauri::AppHandle) -> Result<(),
 
 fn slugify(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string()
@@ -1269,7 +1298,11 @@ fn safe_pack_path(pack: &Path, rel: &str) -> Result<PathBuf, String> {
     for comp in rp.components() {
         match comp {
             Component::Normal(c) => out.push(c),
-            _ => return Err(format!("file path has an illegal component (no '..' or absolute): {rel}")),
+            _ => {
+                return Err(format!(
+                    "file path has an illegal component (no '..' or absolute): {rel}"
+                ))
+            }
         }
     }
     // Defense in depth: the joined path must still be inside the pack dir.
@@ -1376,8 +1409,8 @@ pub async fn set_mcp_config(
         return Err(format!("mcp {} not installed", args.mcp_id));
     }
     let path = target.join("config.json");
-    let body = serde_json::to_vec_pretty(&args.config)
-        .map_err(|e| format!("serialize config: {e}"))?;
+    let body =
+        serde_json::to_vec_pretty(&args.config).map_err(|e| format!("serialize config: {e}"))?;
     fs::write(&path, &body).map_err(|e| format!("write {path:?}: {e}"))?;
     tracing::info!(mcp_id = %args.mcp_id, "set_mcp_config ok");
     Ok(())
@@ -1512,7 +1545,10 @@ mod tests {
         // A missing action id is a clean error, not a panic — the brain
         // smoke-probes by id and must get a degradable result.
         let err = run_action_blocking(&dir, "smoke-echo", "nope").unwrap_err();
-        assert!(err.contains("not found"), "expected not-found error, got: {err}");
+        assert!(
+            err.contains("not found"),
+            "expected not-found error, got: {err}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1563,11 +1599,14 @@ mod tests {
             "actions": [{ "id": "a", "name": "A", "input": "none", "output": "silent",
                 "steps": [{ "type": "shell", "command": "echo hi" }] }]
         });
-        install_into(&dir, &InstallMcpArgs {
-            manifest,
-            server_code: String::new(),
-            server_code_filename: String::new(),
-        })
+        install_into(
+            &dir,
+            &InstallMcpArgs {
+                manifest,
+                server_code: String::new(),
+                server_code_filename: String::new(),
+            },
+        )
         .expect("install ok");
         assert_eq!(list_installed_in(&dir).len(), 1);
 
@@ -1585,21 +1624,29 @@ mod tests {
     #[test]
     fn write_pack_file_lands_skill_and_blocks_traversal() {
         let dir = fresh_tmp("writefile");
-        install_into(&dir, &InstallMcpArgs {
-            manifest: serde_json::json!({
-                "id": "sk-pack", "name": "Sk", "icon": "S", "mcp_color": "jade",
-                "version": "0.1.0", "variant": "builtin",
-                "actions": [{ "id": "a", "name": "A", "input": "none", "output": "silent",
-                    "steps": [{ "type": "shell", "command": "echo hi" }] }]
-            }),
-            server_code: String::new(),
-            server_code_filename: String::new(),
-        })
+        install_into(
+            &dir,
+            &InstallMcpArgs {
+                manifest: serde_json::json!({
+                    "id": "sk-pack", "name": "Sk", "icon": "S", "mcp_color": "jade",
+                    "version": "0.1.0", "variant": "builtin",
+                    "actions": [{ "id": "a", "name": "A", "input": "none", "output": "silent",
+                        "steps": [{ "type": "shell", "command": "echo hi" }] }]
+                }),
+                server_code: String::new(),
+                server_code_filename: String::new(),
+            },
+        )
         .expect("install ok");
 
         // A skill markdown lands in its declared subdir (cap_asset shape).
-        write_pack_file(&dir, "sk-pack", "skills/analyze/SKILL.md", "# Analyze\nsteps")
-            .expect("write skill ok");
+        write_pack_file(
+            &dir,
+            "sk-pack",
+            "skills/analyze/SKILL.md",
+            "# Analyze\nsteps",
+        )
+        .expect("write skill ok");
         let landed = dir.join("sk-pack/skills/analyze/SKILL.md");
         assert!(landed.exists());
         assert!(fs::read_to_string(&landed).unwrap().contains("# Analyze"));
@@ -1629,7 +1676,10 @@ mod tests {
             server_code_filename: "server.ts".to_string(),
         };
         let err = install_into(&dir, &args).unwrap_err();
-        assert!(err.contains("illegal"), "expected illegal-chars error, got: {err}");
+        assert!(
+            err.contains("illegal"),
+            "expected illegal-chars error, got: {err}"
+        );
     }
 
     // Directory authority keeps uninstall able to stop drifted private Actors.
@@ -1669,4 +1719,60 @@ mod tests {
 
         let _ = fs::remove_dir_all(&dir);
     }
+}
+
+// ── Local application connectors (U19) ──────────────────────────────────────
+// A connector for a local application is bundled but never auto-seeded: it
+// bridges software the user may not have, so it lands only on an explicit
+// action. Before these commands the ctrl-libreoffice bridge existed in the
+// bundle and in the kernel with no path by which a user could reach it.
+// (ADR-004 cap §1 v13; ADR-005 irisy §12 v42 U19)
+
+/// Bundled local-app connectors and whether each is already connected.
+#[tauri::command]
+pub async fn list_local_app_connectors(
+    _kernel: State<'_, KernelHandle>,
+) -> Result<Vec<crate::shell::builtin_mcps::OptionalConnector>, String> {
+    Ok(crate::shell::builtin_mcps::list_optional_connectors())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ConnectLocalAppArgs {
+    pub connector_id: String,
+}
+
+/// Explicitly connect one bundled local-app connector: install its files, then
+/// bring its managed child up so its records are queryable without a restart.
+///
+/// Returns the refreshed connector row, so the caller renders the kernel's state
+/// rather than assuming the connect worked.
+#[tauri::command]
+pub async fn connect_local_app(
+    args: ConnectLocalAppArgs,
+    kernel: State<'_, KernelHandle>,
+) -> Result<crate::shell::builtin_mcps::OptionalConnector, String> {
+    crate::shell::builtin_mcps::connect_optional_connector(&args.connector_id)?;
+    // Reuse the boot reconnect path rather than a second spawn implementation:
+    // it is idempotent and already owns descriptor construction and sandboxing.
+    crate::kernel::mcp_host::reconnect_installed_pack_servers(&kernel.runtime.mcp_host).await;
+    crate::shell::builtin_mcps::list_optional_connectors()
+        .into_iter()
+        .find(|connector| connector.id == args.connector_id)
+        // A connector that vanished between copy and re-list is a real failure,
+        // not something to paper over with an optimistic row.
+        .ok_or_else(|| "the connector was installed but is no longer listed".to_owned())
+}
+
+// Conversation history. The transcript directory is the list, so this projects
+// the files rather than maintaining a second index that can disagree with them.
+// (ADR-002 substrate §15 v83; ADR-005 irisy §11.2 v44)
+
+/// Every transcript on disk, most recently active first.
+#[tauri::command]
+pub async fn list_session_transcripts(
+    _kernel: State<'_, KernelHandle>,
+) -> Result<Vec<serde_json::Value>, String> {
+    crate::kernel::session_resource::SessionResourceOwner::from_default_root()
+        .list()
+        .map_err(|error| error.to_string())
 }

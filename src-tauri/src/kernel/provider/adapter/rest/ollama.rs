@@ -182,14 +182,8 @@ impl Provider for RestOllamaProvider {
         let max_tokens = prompt.max_tokens.map(u64::from);
         tokio::spawn(async move {
             let sink = CtrlChannelSink::new(tx);
-            if let Err(e) = run_rest_ollama(
-                &sink,
-                &endpoint,
-                &model,
-                &prompt_text,
-                max_tokens,
-            )
-            .await
+            if let Err(e) =
+                run_rest_ollama(&sink, &endpoint, &model, &prompt_text, max_tokens).await
             {
                 sink.error(&format!("Ollama transport failure: {e}"));
             }
@@ -211,7 +205,10 @@ impl Provider for RestOllamaProvider {
             }
         };
         let response = match client
-            .get(format!("{}/api/tags", self.endpoint().trim_end_matches('/')))
+            .get(format!(
+                "{}/api/tags",
+                self.endpoint().trim_end_matches('/')
+            ))
             .timeout(std::time::Duration::from_secs(2))
             .send()
             .await

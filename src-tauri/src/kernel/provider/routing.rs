@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use super::registry::ProviderRegistry;
 use super::r#trait::{Consumer, ProviderRuntimeStatus};
+use super::registry::ProviderRegistry;
 use super::types::{ChatChunk, ChatOpts, ChatPrompt, ProviderError};
 
 pub type ChunkRx = mpsc::Receiver<Result<ChatChunk, ProviderError>>;
@@ -94,8 +94,7 @@ pub async fn route_text_chat(
         match rx.recv().await {
             Some(Ok(first_chunk)) => {
                 registry.clear_failure(manifest_id);
-                let (tx_bridge, rx_bridge) =
-                    mpsc::channel::<Result<ChatChunk, ProviderError>>(64);
+                let (tx_bridge, rx_bridge) = mpsc::channel::<Result<ChatChunk, ProviderError>>(64);
                 if tx_bridge.send(Ok(first_chunk)).await.is_err() {
                     // Bridge closure is a typed provider-route failure.
                     // (ADR-002 substrate § provider v71)

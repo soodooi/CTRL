@@ -20,7 +20,15 @@
 // UI registry (lib/ui-registry) so the agent / user / content-type can
 // invoke any UI piece on demand.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -34,25 +42,9 @@ import {
   loadIrisySystemPromptWithSoul,
   loadBrainState,
 } from '@/lib/irisy-prompts';
-// ADR-005 irisy § persona-shell v5 (2026-06-09): humanizePiError shared with
+// ADR-005 irisy §11 v40 (2026-06-09): humanizePiError shared with
 // IrisyChat so brain errors surface instead of being swallowed by the stream.
 import { cleanReplyText, humanizePiError } from '@/lib/irisy-render-filter';
-// Irisy functional roles (ADR-003 §8.6 + ADR-005 v6): the role switcher above
-// the chat box. A role = (persona, toolset, knowledge base); switching swaps
-// the persona WITHOUT resetting the conversation. Linked to the L1 scene.
-import {
-  DEFAULT_ROLE_ID,
-  roleById,
-  roleForScene,
-  roleForPack,
-  packsForRole,
-  kbScopeAmbient,
-  inKbScope,
-  type RoleId,
-  type Role,
-} from '@/lib/roles';
-// Irisy functional roles still compose the Assistant prompt internally. They
-// are not a second user-visible identity axis. (ADR-005 irisy §11 v38)
 import { SessionTabs } from '@/components/irisy/SessionTabs';
 import {
   deriveSessionLabel,
@@ -60,13 +52,15 @@ import {
   migrateLegacySingleSession,
   useIrisySessionsStore,
 } from '@/lib/irisy-sessions';
-import { transcriptKey } from '@/lib/transcript-store';
-import { FeedbackButton } from '@/components/ambient/FeedbackButton';
+// The conversation is a kernel-owned Resource; the store is its projection.
+// (ADR-005 irisy §11.2 v44)
+import {
+  hydrateSessionsFromKernel,
+  loadSessionMessages,
+  persistSettledTurns,
+} from '@/lib/session-hydration';
 // ADR-003 frontend §7.6 v2 (IME input, 2026-06-14): shared CJK IME guard.
 import { isImeComposing } from '@/lib/ime';
-import { type Capability } from '@/lib/capability-catalog';
-import { STOCK_CARD_TOOLS, type StockResult } from '@/components/featurepack/stock/StockCard';
-import { StockCockpit, type CockpitData } from '@/components/featurepack/stock/StockCockpit';
 import {
   detectPart,
   renderPart,
@@ -74,47 +68,45 @@ import {
   splitStreamingArtifact,
   type PartSpec,
 } from '@/lib/ui-registry';
+import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
+import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
 import {
-  loadConnectors,
-  invokeConnectorTool,
-  type ConnectorTool,
-  type ConnectorManifest,
-} from '@/lib/connector';
+  fctChoiceFact,
+  fctOptionSelection,
+  listFcts,
+  mergeFctResources,
+  resolveFctSelection,
+  FCT_LIBRARY_OPTION,
+  type FctItem,
+  type FctSelectionProjection,
+} from '@/lib/fct';
+import { DecisionSurface } from '@/components/decisions/DecisionSurface';
+import { unavailableFact, type DecisionFact } from '@/lib/decision-registry';
+import type { LocalAppConnector, SelectionFact } from '@/lib/local-apps';
+import { autoProjection, buildTurnContext } from '@/lib/irisy-turn';
+
+/** A queued decision plus the handler its `navigates` option runs, so recovery
+ *  routes per fact instead of every fact landing on one destination.
+ *  (ADR-003 frontend § decision-registry v43) */
+interface PendingDecision {
+  fact: DecisionFact;
+  recover?: () => void;
+}
 import { Discover } from './Discover';
-import { RemoteRoute } from '@/routes/remote';
-import {
-  FeaturePackScene,
-  type FeaturePack,
-} from '@/components/featurepack/FeaturePackScene';
-import {
-  runInstalledPackAction,
-  loadPackRecords,
-  loadInstalledPacks,
-  PACKS_CHANGED_EVENT,
-} from '@/lib/feature-pack';
-import { NotesSurface } from '@/components/notes/NotesSurface';
-import { TablesPanel } from '@/components/tables/TablesPanel';
-import { TodayView } from '@/components/today/TodayView';
+import { TodayPanel } from './TodayPanel';
+import { SourcesPanel } from '@/components/sources/SourcesPanel';
 import { CodingAgentPanel } from '@/components/coding/CodingAgentPanel';
+import { ResourceViewerHost } from '@/components/viewers/ResourceViewerHost';
 import { Sidebar, type SidebarSection } from './Sidebar';
-import { WorkspacePanel } from './WorkspacePanel';
 import {
   vaultRead,
   vaultWrite,
   vaultSearch,
   vaultList,
   resetEngine,
-  captureScreenAndOcr,
-  listMcps,
-  listLocalSkills,
-  gateInvoke,
-  type LocalSkill,
-  type IrisySessionTurn,
-  type McpSummary,
 } from '@/lib/kernel';
 import { listSmartTables } from '@/lib/smart-tables';
 import { platform } from '@/lib/bridge';
-import { SessionHistory } from './SessionHistory';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
 import { getVersion } from '@tauri-apps/api/app';
 import styles from './AmbientHome.module.css';
@@ -144,6 +136,11 @@ interface Msg {
   /** ADR-005 §8.6 — the engine's accumulated reasoning for this turn, shown as a
    *  collapsible "thinking" trace (see it think, not just the final answer). */
   reasoning?: string;
+  /** The turn ended before Irisy finished. Partial output is preserved for
+   *  transparency, but it is not a result: no content actions are offered on it,
+   *  and the failure itself is reported as a decision fact.
+   *  (ADR-003 frontend § decision-registry v44; ADR-005 §12 U12) */
+  failed?: boolean;
 }
 
 /** Humanize an engine tool id for the step summary: `mcp_ctrl_vault_search` →
@@ -202,42 +199,6 @@ function applyToolStep(
   return list;
 }
 
-/** First `.md` string value in a tool's input args (the note path), or null. */
-function extractNotePath(input?: string): string | null {
-  if (!input) return null;
-  try {
-    const obj = JSON.parse(input) as Record<string, unknown>;
-    for (const v of Object.values(obj)) {
-      if (typeof v === 'string' && /\.md$/.test(v)) return v;
-    }
-  } catch {
-    /* input isn't a JSON object — no path to surface */
-  }
-  return null;
-}
-
-/** Note files this turn's tool calls WROTE — so the chat can offer a shortcut to
- *  open them in the Notes workspace (ADR-005 §8.6.2 / output-routing: Irisy is the
- *  pipe that routes output into the owning module's workspace). Notes only (not
- *  tables/sheets). */
-function noteTargetsOf(tools?: ToolStepView[]): string[] {
-  if (!tools) return [];
-  const out = new Set<string>();
-  for (const t of tools) {
-    if (t.status !== 'completed') continue;
-    if (!/vault_write|doc_produce|note_/.test(t.title)) continue;
-    const p = extractNotePath(t.input);
-    if (p && !/\.sheet\.md$/.test(p) && !p.startsWith('tables/')) out.add(p);
-  }
-  return [...out];
-}
-
-/** Slugify a pack/action name into a command token, e.g. "Record a trade" →
- *  "record-a-trade" (ADR-005 §8.6.2 — registry-driven command surface). */
-function slugCmd(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'action';
-}
-
 /** A `/` slash command (ADR-005 §8.6.2 terminal command surface). `run` = an
  *  immediate local action; `template` = prefill the composer for the user to
  *  complete then send (a natural-language shortcut Irisy handles via its tools —
@@ -250,142 +211,72 @@ interface SlashCommand {
 }
 
 type Surface = 'empty' | 'chat' | 'chat-part';
-type AgentMode = 'irisy' | 'coding';
-
-const AGENT_MODE_STORAGE_KEY = 'ctrl:active-agent-mode:v1';
-
-function initialAgentMode(): AgentMode {
-  if (typeof window === 'undefined') return 'irisy';
-  return window.localStorage.getItem(AGENT_MODE_STORAGE_KEY) === 'coding' ? 'coding' : 'irisy';
-}
-
-// A sidebar tool click, forwarded from the shell. `nonce` makes each
-// request a fresh object so the effect runs exactly once per click.
-export interface ToolRequest {
-  connectorId: string;
-  toolName: string;
-  nonce: number;
-}
-
-// A request to open a feature pack's scene panel alongside Irisy. `nonce`
-// makes each open a fresh object so the effect runs once per request.
-export interface PackRequest {
-  pack: FeaturePack;
-  nonce: number;
-}
 
 export interface AmbientHomeProps {
-  view: 'chat' | 'discover';
-  onView: (v: 'chat' | 'discover') => void;
+  section: SidebarSection;
   modelLabel: string;
-  /** Active provider slug — feeds Sidebar's semantic 2-letter badge
-   *  (decision 0007 §display). Optional only because some test/preview
-   *  mounts skip it; production always passes it down from
-   *  AmbientWorkbench's useActiveProvider hook. */
-  providerId?: string | null;
-  onOpenPicker: () => void;
-  onToggleDrawer: () => void;
-  /** Hide the undecorated native launcher without quitting the app. */
+  onOpenProviderSettings: () => void;
   onHideLauncher: () => void;
-  /** Tool the shell sidebar asked to run (null until a click). */
-  toolRequest: ToolRequest | null;
-  /** Feature pack to open in the scene panel alongside Irisy (null until a
-   *  pack is selected). */
-  packRequest: PackRequest | null;
-  /** Bumped to open the Today (LifeOS tasks) surface alongside Irisy. */
-  openTodayNonce: number;
-  /** Bumped to open Notes alongside Irisy (output left, Irisy right). */
-  openNotesNonce: number;
-  /** Bumped to open the smart-table browser alongside Irisy (same scenePane). */
-  openTablesNonce: number;
-  /** Bumped to open the coding terminal alongside Irisy (same scenePane). */
-  openCodingNonce: number;
-  /** Bumped to open the Mobile (remote window) scene alongside Irisy. */
-  openMobileNonce: number;
-  /** Bumped by the shell when "Irisy" is selected, to reset the chat. */
-  irisyNonce: number;
-  /** Collapsed (display:none) while a route owns the main column. The
-   *  component stays MOUNTED so chat state + nonce effects survive route
-   *  visits — never unmount it, or the nonce effects replay on remount. */
-  hidden: boolean;
-  /** L1 rail lives INSIDE the home layout, between the work area and Irisy
-   *  (ADR-003 §7 `[Tab | L2 | L1 | Irisy]`). The shell forwards its select
-   *  handler + active highlight so the rail drives the same navigation. */
-  onSidebarSelect: (s: SidebarSection) => void;
-  activeSection: string;
-  /** True while the kernel is still seeding builtin mcps on a fresh install
-   *  (first_run_state = 'copying'). Surfaces a "Setting up CTRL…" hint so the
-   *  empty Tools/Discover lists don't read as broken. ADR-006 § cold-start-loop
-   *  §6.1 G3. */
+  /** Routed content occupies the left workspace without replacing the persistent shell. */
+  workspaceContent?: ReactNode;
+  onSidebarSelect: (section: SidebarSection) => void;
   settingUp?: boolean;
 }
 
 const SPRING = { type: 'spring', stiffness: 420, damping: 36 } as const;
 
 export function AmbientHome({
-  view,
-  onView,
+  section,
   modelLabel,
-  providerId,
-  onOpenPicker,
-  onToggleDrawer,
+  onOpenProviderSettings,
   onHideLauncher,
-  toolRequest,
-  packRequest,
-  openTodayNonce,
-  openNotesNonce,
-  openTablesNonce,
-  openCodingNonce,
-  openMobileNonce,
-  irisyNonce,
-  hidden,
+  workspaceContent,
   onSidebarSelect,
-  activeSection,
   settingUp = false,
 }: AmbientHomeProps): ReactElement {
-  // One user-visible Irisy, two isolated identity controllers. Internal mode
-  // values preserve storage compatibility; the UI says Assistant/Coding and
-  // never exposes engine brands as identities. (ADR-001 spine §4 v21;
-  // ADR-003 frontend §8.5/§8.6 v39; ADR-005 irisy §8.7/§11 v38)
-  const [agentMode, setAgentMode] = useState<AgentMode>(initialAgentMode);
-  const selectAgentMode = useCallback((nextMode: AgentMode): void => {
-    setAgentMode(nextMode);
-    if (nextMode === 'coding') {
-      setScene(null);
-      setPart(null);
-    }
-  }, []);
-  useEffect(() => {
-    window.localStorage.setItem(AGENT_MODE_STORAGE_KEY, agentMode);
-  }, [agentMode]);
-
-  const [localSkills, setLocalSkills] = useState<LocalSkill[]>([]);
-  const [assistantSkillId, setAssistantSkillId] = useState(() =>
-    typeof window === 'undefined'
-      ? ''
-      : window.localStorage.getItem('ctrl:irisy-assistant-skill:v1') ?? '',
-  );
-  const assistantSkillIdRef = useRef(assistantSkillId);
-  const [assistantSkillSwitching, setAssistantSkillSwitching] = useState(false);
-  useEffect(() => {
-    void listLocalSkills().then(setLocalSkills).catch(() => setLocalSkills([]));
-  }, []);
-  useEffect(() => {
-    assistantSkillIdRef.current = assistantSkillId;
-    if (assistantSkillId) {
-      window.localStorage.setItem('ctrl:irisy-assistant-skill:v1', assistantSkillId);
-    } else {
-      window.localStorage.removeItem('ctrl:irisy-assistant-skill:v1');
-    }
-  }, [assistantSkillId]);
 
   const [input, setInput] = useState('');
   const sessions = useIrisySessionsStore((state) => state.sessions);
   const activeSessionId = useIrisySessionsStore((state) => state.activeSessionId);
   const setSessionMessages = useIrisySessionsStore((state) => state.setMessages);
+  const setSessionResources = useIrisySessionsStore((state) => state.setResources);
+  const setSelectedFct = useIrisySessionsStore((state) => state.setSelectedFct);
   const createSession = useIrisySessionsStore((state) => state.createSession);
   const renameSession = useIrisySessionsStore((state) => state.renameSession);
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const selectedFctRef = activeSession?.selectedFctRef ?? '';
+  const [fcts, setFcts] = useState<FctItem[]>([]);
+  const [fctSwitching, setFctSwitching] = useState(false);
+  // The override panel is opened explicitly; Auto stays the resting state.
+  // (ADR-003 frontend §8.5 v42; ADR-005 irisy §12 v42 U17)
+  const [fctChoiceOpen, setFctChoiceOpen] = useState(false);
+  // One refetch path, so an availability change in Library and a pack event both
+  // show the kernel's state rather than a local guess.
+  // (ADR-005 irisy §12 v42 U15)
+  const refreshFcts = useCallback((): void => {
+    void listFcts().then(setFcts).catch(() => setFcts([]));
+  }, []);
+  useEffect(() => {
+    const refresh = (): void => {
+      refreshFcts();
+    };
+    refresh();
+    window.localStorage.removeItem('ctrl:irisy-assistant-skill:v1');
+    window.addEventListener(PACKS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
+  }, [refreshFcts]);
+  const activeResources = activeSession?.resources ?? [];
+  const codingResourceRef = activeResources.find((resource) =>
+    resource.startsWith('ctrl://local/project/'),
+  ) ?? null;
+  // Any other Work Resource the session owns renders through the same canonical
+  // descriptor -> content-type projection. The pane does not branch on kind, so a
+  // note, a table, or anything else the user is working on becomes visible and,
+  // when its owner advertises a write, editable through the governed path.
+  // (ADR-003 frontend §8.5 v40; ADR-005 irisy §12 v42 U1/U6)
+  const workResourceRef = activeResources.find(
+    (resource) => !resource.startsWith('ctrl://local/project/'),
+  ) ?? null;
   const messages = (activeSession?.messages ?? []).filter(isAmbientMsg);
   const setMessages = useCallback(
     (updater: Msg[] | ((previous: Msg[]) => Msg[])): void => {
@@ -399,15 +290,33 @@ export function AmbientHome({
   );
 
   useEffect(() => {
-    migrateLegacySingleSession(transcriptKey('ambient'));
-    ensureActiveIrisySession();
+    migrateLegacySingleSession('ctrl:transcript:v1:ambient');
+    // The transcript directory is the truth, so the view is rebuilt from it and
+    // anything the browser still holds alone is written there first. A session
+    // is only created when the kernel has none, so hydration never races an
+    // empty new tab into existence ahead of the real history.
+    // (ADR-005 irisy §11.2 v44)
+    void hydrateSessionsFromKernel().finally(() => {
+      ensureActiveIrisySession();
+    });
   }, []);
+
+
 
   const [streaming, setStreaming] = useState(false);
   // Abort handle for the in-flight turn so the composer's Stop button can cancel
   // streaming WITHOUT locking the textarea. bao (feedback, repeated): never block
   // input while Irisy is responding — see memory feedback-irisy-never-block-input.
   const abortRef = useRef<AbortController | null>(null);
+
+  // Opening a conversation reads it from disk, so switching back to a tab shows
+  // what the transcript actually holds — including edits the user made in their
+  // own editor. Skipped while a turn is in flight: the file does not have the
+  // streaming reply yet, so loading then would blank it. (ADR-005 irisy §11.2 v44)
+  useEffect(() => {
+    if (!activeSessionId || abortRef.current) return;
+    void loadSessionMessages(activeSessionId);
+  }, [activeSessionId]);
   // Every transcript-owner change queues one runtime reset. A send awaits the
   // queue, so a newly visible Irisy transcript can never race the stale ACP
   // owner from the prior tab. (ADR-005 irisy §8.7/§11 v38)
@@ -419,34 +328,61 @@ export function AmbientHome({
     engineResetRef.current = next;
     return next;
   }, []);
-  const selectAssistantSkill = useCallback((skillId: string): void => {
-    if (skillId === assistantSkillIdRef.current || assistantSkillSwitching) return;
-    setAssistantSkillSwitching(true);
-    abortRef.current?.abort();
-    setStreaming(false);
-    // A pinned playbook primes only a fresh Assistant ACP owner. Commit the
-    // visible selection after reset; Coding's separate owner is untouched.
-    // (ADR-001 spine §4 v21; ADR-005 irisy §11 v38)
-    void queueEngineReset()
-      .then(() => {
-        assistantSkillIdRef.current = skillId;
-        setAssistantSkillId(skillId);
-      })
-      .catch((error: unknown) => {
-        setMessages((previous) => [
-          ...previous,
-          {
-            id: `a-skill-${Date.now()}`,
-            role: 'assistant',
-            content: `I could not change the active skill: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ]);
-      })
-      .finally(() => setAssistantSkillSwitching(false));
-  }, [assistantSkillSwitching, queueEngineReset, setMessages]);
-  // A tab switch changes Irisy's ACP context owner. Abort only Irisy's active
-  // transport and re-prime from the selected durable transcript; Coding's
-  // independent controller is untouched.
+  // Pending decisions, rendered one at a time by the decision surface registry.
+  // Plain confirmations (copied/saved/exported) stay notices; anything the user
+  // must decide or recover from becomes a fact. The queue exists so a second
+  // failure cannot silently discard the first one the user has not seen.
+  // (ADR-003 frontend § decision-registry v43)
+  const [decisions, setDecisions] = useState<PendingDecision[]>([]);
+  const raiseDecision = useCallback((fact: DecisionFact, recover?: () => void) => {
+    setDecisions((queue) =>
+      queue.some((entry) => entry.fact.id === fact.id) ? queue : [...queue, { fact, recover }],
+    );
+  }, []);
+  // Ids must be unique per raise: the queue dedupes by id, so a clock-based id
+  // would let two same-class failures inside one millisecond collapse into one.
+  const decisionIdRef = useRef(0);
+  const nextDecisionId = useCallback((prefix: string): string => {
+    decisionIdRef.current += 1;
+    return `${prefix}-${decisionIdRef.current}`;
+  }, []);
+  const pendingDecision = decisions[0] ?? null;
+
+  const selectFct = useCallback(async (ref: string): Promise<boolean> => {
+    if (!activeSessionId || ref === selectedFctRef || fctSwitching) return false;
+    setFctSwitching(true);
+    try {
+      // Selection commits only after the live catalog proves that the stable ref
+      // resolves into exact turn facts. Expanded facts are never persisted.
+      // (ADR-002 substrate §15.4 v84; ADR-003 frontend §8.5 v41)
+      if (ref) await resolveFctSelection(ref);
+      abortRef.current?.abort();
+      setStreaming(false);
+      await queueEngineReset();
+      setSelectedFct(activeSessionId, ref || null);
+      return true;
+    } catch (error: unknown) {
+      // A failed selection is a decision fact, not an assistant turn. Rendering
+      // it as prose fabricated a reply Irisy never produced and dropped the
+      // recovery path. (ADR-003 frontend § decision-registry v43; U12)
+      raiseDecision(
+        unavailableFact({
+          id: nextDecisionId('fct-select'),
+          subject: 'That FCT could not be used, so the session is unchanged.',
+          target: ref,
+          reason: error instanceof Error ? error.message : String(error),
+          retryable: true,
+          recoveryLabel: 'Manage in Library',
+        }),
+        () => onSidebarSelect('library'),
+      );
+      return false;
+    } finally {
+      setFctSwitching(false);
+    }
+  }, [activeSessionId, fctSwitching, queueEngineReset, raiseDecision, selectedFctRef, setSelectedFct]);
+  // A tab switch changes the sole Irisy ACP context owner. Abort the active
+  // transport and re-prime from the selected durable transcript.
   const previousSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
     const previous = previousSessionIdRef.current;
@@ -455,24 +391,31 @@ export function AmbientHome({
     abortRef.current?.abort();
     void queueEngineReset().catch(() => undefined);
   }, [activeSessionId, queueEngineReset]);
-  // Conversation history drawer (reads hermes session store). bao: Irisy must
-  // have a history entry — restores what the AmbientHome rewrite dropped.
-  const [showHistory, setShowHistory] = useState(false);
   const [part, setPart] = useState<PartSpec | null>(null);
   const [editing, setEditing] = useState(false);
-  // The feature pack shown in the scene panel (right column); Irisy stays in
-  // the left column. Independent of `part` (Irisy's own morphed output).
-  const [scene, setScene] = useState<
-    FeaturePack | 'today' | 'notes' | 'tables' | 'mobile' | null
-  >(
-    null,
+  // Project Resource registration writes through the canonical Irisy session.
+  // Read current store state inside this stable callback so a resource write
+  // cannot retrigger the child registration effect through callback identity.
+  // (ADR-003 frontend §8.5 v40; ADR-005 irisy §11 v40)
+  const onCodingResourceChange = useCallback(
+    (resourceRef: string | null): void => {
+      if (!activeSessionId) return;
+      const current = useIrisySessionsStore
+        .getState()
+        .sessions.find((session) => session.id === activeSessionId)
+        ?.resources ?? [];
+      const otherResources = current.filter(
+        (resource) => !resource.startsWith('ctrl://local/project/'),
+      );
+      const next = resourceRef ? [...otherResources, resourceRef] : otherResources;
+      if (current.length === next.length && current.every((resource, index) => resource === next[index])) {
+        return;
+      }
+      setSessionResources(activeSessionId, next);
+    },
+    [activeSessionId, setSessionResources],
   );
-  // The active internal Assistant role composes prompt/resource defaults. It is
-  // not shown as a competing user identity. (ADR-005 irisy §11 v38)
-  const [roleId, setRoleId] = useState<RoleId>(DEFAULT_ROLE_ID);
-  // Installed feature packs, shown next to the role dropdown so the role's
-  // toolset is visible (bao 2026-06-26: feature packs must show too). The role
-  // decides which ones are in scope via packsForRole. Kept in sync on change.
+  // Installed packs are retained only as Library input.
   const [installedPacks, setInstalledPacks] = useState<FeaturePack[]>([]);
   useEffect(() => {
     const load = () => {
@@ -482,41 +425,30 @@ export function AmbientHome({
     window.addEventListener(PACKS_CHANGED_EVENT, load);
     return () => window.removeEventListener(PACKS_CHANGED_EVENT, load);
   }, []);
-  // The smart table the user currently has open (lifted from TablesPanel) so
-  // Irisy gets it as ambient context — "operate on THIS table" works without
-  // the user naming the file. Stable callback so TablesPanel's effect is calm.
-  const [activeTablePath, setActiveTablePath] = useState<string | null>(null);
-  const onActiveTable = useCallback((p: string | null) => setActiveTablePath(p), []);
-  const assistantResourceKey = useMemo(() => {
-    if (scene && typeof scene === 'object') {
-      return `pack:${scene.id}:${scene.kbDir ?? ''}:role:${roleId}`;
-    }
-    const table = scene === 'tables' ? activeTablePath ?? '' : '';
-    return `scene:${scene ?? 'current'}:${table}:role:${roleId}`;
-  }, [activeTablePath, roleId, scene]);
+  const assistantResourceKey = useMemo(
+    () => activeResources.join('\u0000'),
+    [activeResources],
+  );
   const previousAssistantResourceKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (agentMode !== 'irisy') return;
     const previous = previousAssistantResourceKeyRef.current;
     previousAssistantResourceKeyRef.current = assistantResourceKey;
     if (previous === null || previous === assistantResourceKey) return;
     abortRef.current?.abort();
     setStreaming(false);
-    // Resource is a real prompt/capability scope. Re-prime only Assistant when
-    // its scene, selected table, pack KB, or internal role binding changes.
-    // Coding's owner remains untouched. (ADR-003 frontend §8.6 v39;
-    // ADR-005 irisy §11 v38)
+    // Resource changes re-prime the sole Irisy runtime before its next turn.
+    // (ADR-003 frontend §8.6 v40; ADR-005 irisy §11 v40)
     void queueEngineReset().catch((error: unknown) => {
-      setMessages((messages) => [
-        ...messages,
-        {
-          id: `a-resource-${Date.now()}`,
-          role: 'assistant',
-          content: `I could not switch to this resource: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ]);
+      raiseDecision(
+        unavailableFact({
+          id: nextDecisionId('resource-switch'),
+          subject: 'Irisy could not switch to this resource.',
+          reason: error instanceof Error ? error.message : String(error),
+          retryable: true,
+        }),
+      );
     });
-  }, [agentMode, assistantResourceKey, queueEngineReset, setMessages]);
+  }, [assistantResourceKey, queueEngineReset, raiseDecision]);
   const [isNarrow, setIsNarrow] = useState(false);
   // Irisy column width — a fixed default the user can drag via the divider
   // between Irisy and the output bar (bao 2026-06-13). Window resizing keeps
@@ -529,11 +461,49 @@ export function AmbientHome({
   // for pure chat or narrower to give a workspace scene room.
   const [irisyWidth, setIrisyWidth] = useState(440);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const useFctFromLibrary = useCallback(async (ref: string): Promise<void> => {
+    if (!(await selectFct(ref))) return;
+    onSidebarSelect('work');
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [onSidebarSelect, selectFct]);
+  // Opening a search hit makes it the session's Work Resource, so search-to-open
+  // uses the same Resource path as everything else and the turn that follows is
+  // grounded in it. (ADR-005 irisy §12 v42 U4)
+  const openWorkResource = useCallback(
+    (resourceRef: string): void => {
+      if (!activeSessionId) return;
+      const current = useIrisySessionsStore
+        .getState()
+        .sessions.find((session) => session.id === activeSessionId)
+        ?.resources ?? [];
+      if (current.includes(resourceRef)) return;
+      // Replace a previously opened non-project Resource rather than accumulating
+      // every note the user ever looked at.
+      const kept = current.filter((resource) =>
+        resource.startsWith('ctrl://local/project/'),
+      );
+      setSessionResources(activeSessionId, [...kept, resourceRef]);
+    },
+    [activeSessionId, setSessionResources],
+  );
+  // A local application's explicit selection becomes editable context for the
+  // next turn. It is prefilled into the composer rather than sent as a message,
+  // so the user still says what they want done and can see exactly what CTRL
+  // read. No assistant turn is fabricated.
+  // (ADR-002 substrate §14.12; ADR-005 irisy §12 v42 U22)
+  const useLocalAppSelection = useCallback(
+    (connector: LocalAppConnector, facts: SelectionFact[]): void => {
+      const body = facts.map((fact) => `${fact.label}: ${fact.value}`).join('\n');
+      setInput(
+        (current) =>
+          `${current ? `${current}\n\n` : ''}Selection from ${connector.name}:\n${body}\n\n`,
+      );
+      onSidebarSelect('work');
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [onSidebarSelect],
+  );
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  // ADR-005 §8.6.2 output-routing — note-write tool_call_id → path, so we can
-  // auto-open the note the moment its write completes (post review-gate).
-  const pendingNoteWrites = useRef<Map<string, string>>(new Map());
-
   // Keep the newest message pinned to the bottom. The stream loop scrolls on
   // each token, but segment gaps (tool calls), the trailing "working" row, and
   // late-rendering markdown grow the height afterwards — so also pin whenever
@@ -563,29 +533,11 @@ export function AmbientHome({
   const newChat = useCallback(() => {
     createSession();
     setPart(null);
-    setScene(null);
     setInput('');
-    // The new Irisy tab gets a fresh engine session; Coding's singleton and
-    // workspace sessions remain untouched. (ADR-005 irisy §8.7 v37)
+    // The new Irisy tab gets a fresh engine session.
+    // (ADR-005 irisy §11 v40)
     void queueEngineReset().catch(() => undefined);
   }, [createSession, queueEngineReset]);
-
-  // Load a past hermes session into the conversation view. bao: Irisy must have
-  // history. Resetting the engine makes the next turn re-hydrate from THIS loaded
-  // transcript (§8.4) rather than continuing the engine's previous context.
-  const loadPastSession = useCallback((turns: IrisySessionTurn[], _title: string) => {
-    setMessages(
-      turns.map((t, i) => ({
-        id: `h-${i}`,
-        role: t.role === 'assistant' ? 'assistant' : 'user',
-        content: t.content,
-      })),
-    );
-    setPart(null);
-    setScene(null);
-    setShowHistory(false);
-    void queueEngineReset().catch(() => undefined);
-  }, [queueEngineReset, setMessages]);
 
   // ADR-005 §8.6.2 fork / checkpoint (Claude /rewind · Gemini /restore): rewind to
   // a past turn and continue in a NEW direction. Truncate the transcript to that
@@ -634,61 +586,143 @@ export function AmbientHome({
     [irisyWidth],
   );
 
-  const surface: Surface =
-    part || scene ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
+  const surface: Surface = part ? 'chat-part' : messages.length > 0 ? 'chat' : 'empty';
   // Gate the first-run CTA on whether any model is wired up yet.
   const hasProvider = modelLabel !== 'Model';
 
   const send = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    // Serialize visible transcript ownership with ACP ownership before creating
-    // the turn. A failed reset leaves the draft intact and does not dispatch
-    // against the prior session. (ADR-005 irisy §8.7 v37)
+    if (!trimmed || !activeSessionId) return;
+
+    // Claim visible turn ownership before the first await. Session, Work
+    // Resources, FCT selection, Stop, and interrupt transitions abort this
+    // controller, so a stale closure cannot dispatch captured context.
+    // (ADR-005 irisy §11 v41)
+    const sessionId = activeSessionId;
+    const workResources = [...activeResources];
+    const resourceKey = workResources.join('\u0000');
+    const fctRef = selectedFctRef;
+    const previousController = abortRef.current;
+    previousController?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    const ownsTurn = (): boolean => {
+      if (abortRef.current !== ctrl || ctrl.signal.aborted) return false;
+      const state = useIrisySessionsStore.getState();
+      const current = state.sessions.find((session) => session.id === state.activeSessionId);
+      return state.activeSessionId === sessionId
+        && (current?.resources ?? []).join('\u0000') === resourceKey
+        && (current?.selectedFctRef ?? '') === fctRef;
+    };
+    const releaseTurn = (): void => {
+      if (abortRef.current === ctrl) abortRef.current = null;
+    };
+
+    // Serialize canonical transcript ownership with ACP ownership. Every await
+    // is followed by the same monotonic request-owner check.
     try {
       await engineResetRef.current;
     } catch (error: unknown) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `a-reset-${Date.now()}`,
-          role: 'assistant',
-          content: `I could not switch Irisy to this session: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ]);
+      if (ownsTurn()) {
+        raiseDecision(
+          unavailableFact({
+            id: nextDecisionId('session-switch'),
+            subject: 'Irisy could not switch to this session, so nothing was sent.',
+            reason: error instanceof Error ? error.message : String(error),
+            retryable: true,
+          }),
+        );
+      }
+      releaseTurn();
       return;
     }
-    // ADR-005 irisy § persona-shell v5 (2026-06-09): never block input — if a
-    // turn is still streaming, abort it and send the new one (parity with the
-    // docked IrisyChat) instead of silently dropping the keystroke.
-    abortRef.current?.abort();
+    if (!ownsTurn()) return;
+
+    // Interrupt-and-redirect crosses the cancel-and-drain boundary before this
+    // owner may create a new turn. (ADR-005 irisy §11 v40)
+    if (previousController) {
+      try {
+        await queueEngineReset();
+      } catch (error: unknown) {
+        if (ownsTurn()) {
+          raiseDecision(
+            unavailableFact({
+              id: nextDecisionId('turn-stop'),
+              subject: 'Irisy could not stop the previous turn, so nothing was sent.',
+              reason: error instanceof Error ? error.message : String(error),
+              retryable: true,
+            }),
+          );
+        }
+        releaseTurn();
+        return;
+      }
+      if (!ownsTurn()) return;
+    }
+
+    let projection: FctSelectionProjection = autoProjection();
+    if (fctRef) {
+      try {
+        projection = await resolveFctSelection(fctRef);
+      } catch (error: unknown) {
+        if (ownsTurn()) {
+          // Report the stale selection once as a decision fact and return the
+          // session to Auto; the turn is not sent under stale context.
+          // (ADR-002 substrate §15.4 v84; ADR-003 § decision-registry v43; U12)
+          raiseDecision(
+            unavailableFact({
+              id: nextDecisionId('fct-stale'),
+              subject: 'The selected FCT is no longer available. This session is back on Auto.',
+              target: fctRef,
+              reason: error instanceof Error ? error.message : String(error),
+              retryable: true,
+              recoveryLabel: 'Manage in Library',
+            }),
+            () => onSidebarSelect('library'),
+          );
+          setSelectedFct(sessionId, null);
+          void queueEngineReset().catch(() => undefined);
+        }
+        releaseTurn();
+        return;
+      }
+      if (!ownsTurn()) return;
+    }
+    // One place decides what the turn is grounded in, and it is asserted in
+    // lib/irisy-turn.test.ts. (ADR-005 irisy §12 v42 U1)
+    const turnContext = buildTurnContext({
+      sessionId,
+      workResources,
+      projection,
+      task: trimmed,
+    });
+
     setInput('');
     const userMsg: Msg = { id: `u-${Date.now()}`, role: 'user', content: trimmed };
-    if (activeSessionId && !messages.some((message) => message.role === 'user')) {
-      renameSession(activeSessionId, deriveSessionLabel(trimmed));
+    if (!messages.some((message) => message.role === 'user')) {
+      renameSession(sessionId, deriveSessionLabel(trimmed));
     }
-    // Readiness gate (bao 2026-06-12: check the env + guide, don't go silent):
-    // with no model wired, don't stream into the void — the user would just
-    // see a spinner forever if the backend hangs. Irisy speaks up and opens
-    // the model picker so it's fixable in one step.
+    // Readiness gate (bao 2026-06-12: check the env + guide, don't go silent).
+    // No configured provider is an `unavailable` decision with an explicit
+    // recovery, not an assistant turn Irisy never produced. The user message is
+    // kept so the request is not lost.
+    // (ADR-003 frontend § decision-registry v43; ADR-005 §12 U12)
     if (!hasProvider) {
-      setMessages((prev) => [
-        ...prev,
-        userMsg,
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          content:
-            "I don't have a model yet, so I can't reply. I've opened the model picker — pick a provider and paste your key, then ask me again.",
-        },
-      ]);
-      onOpenPicker();
+      setMessages((prev) => [...prev, userMsg]);
+      raiseDecision(
+        unavailableFact({
+          id: nextDecisionId('provider-missing'),
+          subject: 'No model is configured yet, so this cannot be answered.',
+          reason: 'no provider is bound for the Irisy role',
+          retryable: true,
+          recoveryLabel: 'Open provider settings',
+        }),
+        onOpenProviderSettings,
+      );
+      releaseTurn();
       return;
     }
     const asstId = `a-${Date.now()}`;
-    // Show Irisy's read of the intent before the stream starts (ADR-003 §8.2B
-    // routing pill; keyword pass, not a model call per §8.2). Transparency, not
-    // a backend fork — the turn still streams through the one provider.
     const route = classifyIntent(trimmed);
     setMessages((prev) => [
       ...prev,
@@ -697,113 +731,46 @@ export function AmbientHome({
     ]);
     setStreaming(true);
     setEditing(false);
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    // Record the question before the answer is attempted, so a crash or a killed
+    // process during the turn cannot lose what the user asked. The empty
+    // assistant placeholder is not written; only settled turns are.
+    // (ADR-005 irisy §11.2 v44)
+    void persistSettledTurns(sessionId);
 
     try {
-      // Assemble the per-turn system prompt (persona + SOUL + brain_state) so
-      // the model has its identity, guardrails and live provider — without it
-      // the home composer leaked internals, monologued, and couldn't name its
-      // own model. Shared with IrisyChat via composeSystemPrompt.
-      // The active role chooses the persona (ADR-005 v6). The default role keeps
-      // its vault override (a user-edited irisy-system.md still wins); other
-      // roles supply their persona verbatim. SOUL.md is appended either way.
-      const role = roleById(roleId);
-      // Persona = the active ROLE's persona (bao 2026-07-03: only TWO personas
-      // — personal assistant + coding; a feature pack does NOT carry its own
-      // persona, it composes ON TOP of the assistant via its kb + on-demand
-      // skills + tools. roleForPack lands an unknown pack on the assistant, so
-      // "stocks = assistant + stock pack" falls out naturally).
-      const baseOverride = roleId === DEFAULT_ROLE_ID ? undefined : role.persona;
-      const [base, brain, allMcps] = await Promise.all([
-        loadIrisySystemPromptWithSoul(baseOverride),
+      // Identity is fixed; Resource and optional Skill carry per-turn context.
+      // (ADR-005 irisy §11 v40)
+      const [base, brain] = await Promise.all([
+        loadIrisySystemPromptWithSoul(),
         loadBrainState(),
-        // listMcps fails in browser-only dev (no kernel) — degrade to no packs.
-        listMcps().catch(() => [] as McpSummary[]),
       ]);
-      // toolset (ADR-003 §8.6): the role decides which installed packs Irisy
-      // sees this turn (empty toolset = all; otherwise a whitelist).
-      const roleMcps = packsForRole(role, allMcps);
-      // Ambient context: if a smart table is open, tell Irisy which file it is
-      // so "filter / sort / AI-fill / add a row to THIS table" resolves to a
-      // path without the user naming it (the smart_table.* gate tools need it).
-      const ambient: LLMMessage[] = [];
-      // Dedicated KB (bao 2026-06-25): an open feature pack's knowledge_base wins
-      // (e.g. ghostfolio -> Stocks/), else the role's kbScope. null = whole vault.
-      const activeScope =
-        scene && typeof scene === 'object' && scene.kbDir ? scene.kbDir : role.kbScope;
-      const kb = kbScopeAmbient(activeScope);
-      if (kb) ambient.push({ role: 'system', content: kb });
-      // Domain skills pointer (bao 2026-07-03: skills load ON DEMAND — inject
-      // one line telling Irisy WHERE this pack's skills live, never their
-      // contents; it reads a skill only when the task matches). Pack skills
-      // live in the pack KB (vault), NOT ~/.claude/skills, so they are read
-      // via vault_read — the skill_read/skill_list gate tools only see
-      // ~/.claude/skills and cannot reach a pack KB (bao 2026-07-07 standard).
-      if (scene && typeof scene === 'object' && scene.kbDir) {
-        ambient.push({
-          role: 'system',
-          content:
-            `This pack's domain skills live under "${scene.kbDir}/skills" in the vault. ` +
-            `When a task matches a skill's territory, load it on demand with ` +
-            `vault_read on that path (e.g. "${scene.kbDir}/skills/<name>.md") — ` +
-            `do not recite skills unprompted.`,
-        });
-      }
-      if (scene === 'tables' && activeTablePath) {
-        if (activeTablePath.toLowerCase().endsWith('.sheet.md')) {
-          ambient.push({
-            role: 'system',
-            content:
-              `Ambient context: the user is viewing the Univer spreadsheet at "${activeTablePath}" ` +
-              `(an Excel-style free grid with 400+ formulas, stored as a workbook snapshot in the .sheet.md body). ` +
-              `When they refer to "this sheet" / a cell / a formula, act on that file; it is NOT a smart-table, ` +
-              `so smart_table.* tools do not apply — read/edit it via the vault tools on that path.`,
-          });
-        } else {
-          ambient.push({
-            role: 'system',
-            content:
-              `Ambient context: the user is viewing the smart table at "${activeTablePath}". ` +
-              `It may have SAVED VIEWS (each a lens = filter + sort + group); before acting on "this view" or ` +
-              `a filtered subset, query the table through the gate to see its current rows + view state rather ` +
-              `than assuming. When they ask to filter / sort / group / AI-fill a column / add a row / edit ` +
-              `"this table" (or refer to it without naming a file), call the smart_table.* gate tools with path="${activeTablePath}".`,
-          });
-        }
-      }
-      // Coding companion note: the Coding scene now talks to opencode
-      // directly over ACP (its own chat surface, ADR-001 §4 v16) rather than
-      // through a PTY Irisy watches — so there is no terminal-stdout ambient
-      // context to inject here anymore. Irisy stays available alongside the
-      // Coding scene for everything else (questions, notes, other modules).
+      if (!ownsTurn()) return;
       const history: LLMMessage[] = [
         {
           role: 'system',
           content: composeSystemPrompt({
             base,
             brainState: brain,
-            // Only inject the mcp list when the role actually exposes packs —
-            // an empty list would render a "none yet" section every turn.
-            ...(roleMcps.length > 0 ? { mcps: roleMcps } : {}),
           }),
         },
-        ...ambient,
         ...[...messages, userMsg].map((m) => ({
           role: m.role,
           content: m.content,
         })),
       ];
       let acc = '';
-      // ADR-005 irisy § persona-shell v5 (2026-06-09): the transport does not
+      // ADR-005 irisy §11 v40 (2026-06-09): the transport does not
       // throw — brain timeout / crash / no-auth arrive as a chunk carrying
       // `error`. Surface it (parity with IrisyChat) instead of `continue`-ing
       // past it, which froze the bubble or misreported "No AI provider".
       let streamError = false;
       for await (const chunk of engineTransport().stream(history, {
         signal: ctrl.signal,
-        skill_id: assistantSkillIdRef.current || undefined,
+        context: turnContext,
       })) {
+        // Only the current request owner may route results or mutate visible UI.
+        // (ADR-003 frontend §8.5 v40; ADR-005 irisy §11 v40)
+        if (!ownsTurn()) break;
         if (typeof chunk !== 'string' && chunk?.error) {
           if (chunk.error === 'aborted') break;
           const { summary } = humanizePiError(String(chunk.error), modelLabel);
@@ -813,42 +780,19 @@ export function AmbientHome({
           streamError = true;
           break;
         }
-        // ADR-005 §8.6 — a tool step the engine streamed: fold it into THIS
-        // turn's step list so the user sees Irisy's work live (drill-down §6).
+        // Tool/result routing remains transcript-only until an owning Resource
+        // descriptor is returned. Notes and pack scenes have no Work authority.
         if (typeof chunk !== 'string' && chunk?.tool) {
           const step = chunk.tool;
-          // ADR-005 §8.6.2 output-routing — AUTO-open a note Irisy writes (no
-          // manual click): remember the path on the `call`, and the moment the
-          // write COMPLETES (post-approval), route the workspace to that note.
-          if (step.phase === 'call' && /vault_write|doc_produce|note_/.test(step.title)) {
-            const p = extractNotePath(step.input);
-            if (p && !/\.sheet\.md$/.test(p) && !p.startsWith('tables/')) {
-              pendingNoteWrites.current.set(step.tool_call_id, p);
-            }
-          }
-          if (step.phase === 'result') {
-            const p = pendingNoteWrites.current.get(step.tool_call_id);
-            if (p) {
-              pendingNoteWrites.current.delete(step.tool_call_id);
-              // Only when the write actually landed (approved, not denied/failed).
-              const denied = /denied|declined|not approved|rejected/i.test(step.output ?? '');
-              if (step.status !== 'failed' && !denied) openNoteInWorkspace(p);
-            }
-            // Stock feature-pack tool result -> verdict card in the workspace
-            // pane; the raw JSON stays in the chat tool drill-down (ADR-003
-            // output routing + drill-down transparency).
-            const stockTool = [...STOCK_CARD_TOOLS].find((t) => step.title?.includes(t));
-            if (stockTool && step.status !== 'failed' && step.output) {
-              setPart({ kind: 'stock', variant: stockTool, content: step.output, title: step.title });
-            }
-          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === asstId ? { ...m, tools: applyToolStep(m.tools, step) } : m,
             ),
           );
           requestAnimationFrame(() => {
-            scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+            if (ownsTurn()) {
+              scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+            }
           });
           continue;
         }
@@ -882,15 +826,16 @@ export function AmbientHome({
           );
         }
         requestAnimationFrame(() => {
-          scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+          if (ownsTurn()) {
+            scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+          }
         });
       }
-      // Finalize: refine the part from the complete reply (e.g. json -> table).
+      if (!ownsTurn()) return;
+      // Finalize only while this request still owns the visible turn.
       const detected = detectPart(acc);
       if (detected) setPart(detected);
-      // Empty stream usually means no provider is configured yet — but NOT when
-      // the user hit Stop (aborted on purpose), so guard on the abort signal.
-      if (acc.trim().length === 0 && !ctrl.signal.aborted && !streamError) {
+      if (acc.trim().length === 0 && !streamError) {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === asstId
@@ -904,51 +849,74 @@ export function AmbientHome({
         );
       }
     } catch (err) {
+      if (!ownsTurn()) return;
+      // A failed turn is a decision fact, not an answer. Writing the raw error
+      // into the transcript made Irisy appear to say it, and offering the content
+      // actions invited saving a stack trace into a note.
+      // (ADR-003 frontend § decision-registry v43/v44; ADR-005 §12 U12)
       const msg = err instanceof Error ? err.message : String(err);
-      const friendly = /provider|no provider|unreachable|configured/i.test(msg)
-        ? 'No AI provider is set up yet. Open Settings -> Providers to add one.'
-        : `Error: ${msg}`;
+      const missingProvider = /provider|no provider|unreachable|configured/i.test(msg);
       setMessages((prev) =>
-        prev.map((m) => (m.id === asstId ? { ...m, content: friendly } : m)),
+        prev.flatMap((m) => {
+          if (m.id !== asstId) return [m];
+          // Keep partial output the engine did produce, marked as unfinished;
+          // drop an empty placeholder rather than leaving a blank reply.
+          return m.content.trim() ? [{ ...m, failed: true }] : [];
+        }),
+      );
+      raiseDecision(
+        unavailableFact({
+          id: nextDecisionId('turn-failed'),
+          subject: missingProvider
+            ? 'No model is configured, so this could not be answered.'
+            : 'Irisy could not finish this answer.',
+          reason: msg,
+          retryable: true,
+          recoveryLabel: missingProvider ? 'Open provider settings' : undefined,
+        }),
+        missingProvider
+          ? onOpenProviderSettings
+          : // Retry through the ref, not this closure: a captured `send` would
+            // replay with the session/resource state of the failed turn.
+            () => void sendRef.current?.(trimmed),
       );
     } finally {
-      // ADR-005 irisy § persona-shell v5 (2026-06-09): only the currently-active
+      // ADR-005 irisy §11 v40 (2026-06-09): only the currently-active
       // turn clears streaming — a superseded (interrupt-redirected) turn must not
       // flip it off or null the new turn's controller under it.
       if (abortRef.current === ctrl) {
         setStreaming(false);
         abortRef.current = null;
       }
+      // The turn has settled, so record it. This runs for a cancelled or failed
+      // turn too: what the user actually said and whatever the engine actually
+      // produced is history either way. Writing only settled turns keeps the
+      // file free of half-streamed text. (ADR-005 irisy §11.2 v44)
+      void persistSettledTurns(sessionId);
     }
-  }, [messages, streaming, hasProvider, onOpenPicker, scene, roleId, activeTablePath, activeSessionId, renameSession]);
+  }, [messages, hasProvider, onOpenProviderSettings, queueEngineReset, activeSessionId, activeResources, selectedFctRef, renameSession, setMessages, setSelectedFct]);
 
-  // Stop the in-flight turn (composer Stop button / Esc). Aborts the transport's
-  // stream; the textarea stays editable throughout so the user never loses input.
+  // Latest `send`, so a retry raised by an earlier turn's failure runs against
+  // current session/resource state. (ADR-003 frontend § decision-registry v44)
+  const sendRef = useRef<((text: string) => Promise<void>) | null>(null);
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+
+  // Stop crosses the same request-owned cancel-and-drain boundary before the
+  // Hermes owner can be reused. The composer remains editable while it drains.
+  // (ADR-005 irisy §11 v40)
   const stopGeneration = useCallback(() => {
     abortRef.current?.abort();
     setStreaming(false);
-  }, []);
-
-  // ADR-005 §8.6.2 output-routing — open a note Irisy just wrote in the Notes
-  // workspace: switch the scene, then best-effort nudge the notes UI (NotesApp /
-  // the Tolaria embed both listen for `notes:open`) to the exact note.
-  const openNoteInWorkspace = useCallback((path: string) => {
-    setScene('notes');
-    void import('@tauri-apps/api/event')
-      .then(({ emit }) =>
-        new Promise((r) => setTimeout(r, 180)).then(() =>
-          emit('notes:open', { path, heading: null }),
-        ),
-      )
-      .catch(() => {
-        /* browser PWA (no Tauri) — the scene switch alone lands in Notes */
-      });
-  }, []);
+    void queueEngineReset().catch(() => undefined);
+  }, [queueEngineReset]);
 
   // Irisy capture/recall (bao 2026-06-12: the two AI chips under a reply).
   // Capture = append this reply to today's Irisy log note (vault is truth).
   // Recall = answer the last question grounded in matching notes (light RAG).
   const [notice, setNotice] = useState<string | null>(null);
+
   // Auto-dismiss the notice (copy/save feedback) so it doesn't linger.
   useEffect(() => {
     if (notice == null) return;
@@ -989,14 +957,7 @@ export function AmbientHome({
     if (!q) return;
     let context = '';
     try {
-      // kbScope (bao 2026-06-25): keep each role's knowledge base relatively
-      // independent — search wide, then drop hits outside the active role's
-      // scope (null scope = whole vault, so nothing is dropped).
-      const role = roleById(roleId);
-      // Same dedicated-KB resolution as handleSend: pack's kb wins, else role's.
-      const activeScope =
-        scene && typeof scene === 'object' && scene.kbDir ? scene.kbDir : role.kbScope;
-      const hits = (await vaultSearch(q, 20)).filter((p) => inKbScope(activeScope, p));
+      const hits = await vaultSearch(q, 20);
       const parts: string[] = [];
       for (const p of hits.slice(0, 3)) {
         try {
@@ -1014,55 +975,7 @@ export function AmbientHome({
       ? `Answer using my notes below. Cite the file names you used. If the notes don't cover it, say so.\n\n=== MY NOTES ===\n${context}\n\n=== QUESTION ===\n${q}`
       : `Answer from my knowledge base. (No notes matched "${q}" yet — answer from general knowledge and say the notes were empty.)\n\n${q}`;
     void send(prompt);
-  }, [messages, send, roleId, scene]);
-
-  const onPickCapability = useCallback((cap: Capability) => {
-    setInput(cap.starter ?? `${cap.label}: `);
-    inputRef.current?.focus();
-  }, []);
-
-  // Run a screenshot OCR: the kernel drives the interactive region capture +
-  // on-device Vision recognition, and the recognized text lands in the composer
-  // so the user can act on it (ask, translate, save). Only the desktop app can
-  // capture the screen — in the browser, fall back to the prompt pre-fill.
-  const runScreenshotOcr = useCallback(async () => {
-    if (platform() !== 'tauri') {
-      setInput('Extract the text from this image:\n\n');
-      inputRef.current?.focus();
-      setNotice('Screenshot OCR needs the desktop app — paste an image instead.');
-      return;
-    }
-    setNotice('Select a region to capture…');
-    try {
-      const { text, cancelled } = await captureScreenAndOcr();
-      if (cancelled) {
-        setNotice(null);
-        return;
-      }
-      if (!text.trim()) {
-        setNotice('No text found in that capture.');
-        return;
-      }
-      setInput(text);
-      inputRef.current?.focus();
-      setNotice(`Captured ${text.length} characters`);
-    } catch (e) {
-      setNotice(e instanceof Error ? `Capture failed: ${e.message}` : 'Capture failed.');
-    }
-  }, []);
-
-  // What a workspace-panel card (or its number key) runs. Native utilities like
-  // screenshot OCR do real work; everything else pre-fills the composer.
-  const runWorkspaceAction = useCallback(
-    (cap: Capability) => {
-      if (cap.id === 'screenshot-ocr') {
-        void runScreenshotOcr();
-        return;
-      }
-      onPickCapability(cap);
-    },
-    [onPickCapability, runScreenshotOcr],
-  );
+  }, [messages, send]);
 
   // Copy to clipboard (bao 2026-06-13: copying a reply / the whole chat is a
   // basic must-have). Uses the webview clipboard API; notice gives feedback.
@@ -1078,19 +991,6 @@ export function AmbientHome({
   // Export an artifact as a file (download = the local-first "share": the user
   // Today cockpit loader for the stock pack — calls its tools through the
   // :17873 gate (gateInvoke returns each tool's native object incl. its `card`
-  // block). Memoized so the cockpit's effect fetches once, not every render.
-  // Live data needs the kernel + pack running (desktop) — the standing gap.
-  const loadStockCockpit = useCallback(async (): Promise<CockpitData> => {
-    const grab = (tool: string): Promise<StockResult | undefined> =>
-      gateInvoke<StockResult>(tool, {}).catch(() => undefined);
-    const [mood, ladder, leaders] = await Promise.all([
-      grab('market_mood'),
-      grab('limit_ladder'),
-      grab('leaders'),
-    ]);
-    return { mood, ladder, leaders };
-  }, []);
-
   // gets a real plain-text file they own and can send anywhere).
   const downloadPart = useCallback((p: PartSpec) => {
     const ext =
@@ -1127,110 +1027,9 @@ export function AmbientHome({
     void copyText(text);
   }, [messages, copyText]);
 
-  // Run a connector tool — real HTTP call (or mock) -> morph to a
-  // table/record on the surface. Invoked from the sidebar's "Your tools".
-  const runConnectorTool = useCallback(
-    async (manifest: ConnectorManifest, tool: ConnectorTool) => {
-      if (streaming) return;
-      setStreaming(true);
-      try {
-        const out = await invokeConnectorTool(manifest, tool.name);
-        const content = JSON.stringify(out.result);
-        const kind = Array.isArray(out.result) ? 'table' : 'record';
-        setMessages((prev) => [
-          ...prev,
-          { id: `u-${Date.now()}`, role: 'user', content: `${manifest.title}: ${tool.title ?? tool.name}` },
-          { id: `a-${Date.now()}`, role: 'assistant', content: `Here is **${tool.title ?? tool.name}** from ${manifest.title}.` },
-        ]);
-        setPart({ kind, content, title: `${manifest.title} · ${tool.title ?? tool.name}` });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setMessages((prev) => [
-          ...prev,
-          { id: `u-${Date.now()}`, role: 'user', content: `${manifest.title}: ${tool.name}` },
-          { id: `a-${Date.now()}`, role: 'assistant', content: `Could not reach ${manifest.title}: ${msg}` },
-        ]);
-      } finally {
-        setStreaming(false);
-      }
-    },
-    [streaming],
-  );
-
-  // Run the tool the shell sidebar requested. Keyed on the request object
-  // (fresh per click) via a ref so a streaming toggle never re-fires it.
-  const runToolRef = useRef(runConnectorTool);
-  runToolRef.current = runConnectorTool;
-  useEffect(() => {
-    if (!toolRequest) return;
-    const m = loadConnectors().find((c) => c.id === toolRequest.connectorId);
-    const t = m?.tools.find((x) => x.name === toolRequest.toolName);
-    if (m && t) void runToolRef.current(m, t);
-  }, [toolRequest]);
-
-  // Open the requested feature pack in the scene panel (Irisy stays alongside
-  // in the left column). Keyed on the fresh request object per selection.
-  useEffect(() => {
-    if (packRequest) setScene(packRequest.pack);
-  }, [packRequest]);
-
-  // Open the Today (LifeOS tasks) surface alongside Irisy when sidebar asks.
-  useEffect(() => {
-    if (openTodayNonce > 0) setScene('today');
-  }, [openTodayNonce]);
-  // Open Notes alongside Irisy (output left, Irisy right) when sidebar asks.
-  useEffect(() => {
-    if (openNotesNonce > 0) setScene('notes');
-  }, [openNotesNonce]);
-  useEffect(() => {
-    if (openTablesNonce > 0) setScene('tables');
-  }, [openTablesNonce]);
-  useEffect(() => {
-    if (openCodingNonce > 0) {
-      setAgentMode('coding');
-      setScene(null);
-      setPart(null);
-    }
-  }, [openCodingNonce]);
-  useEffect(() => {
-    if (openMobileNonce > 0) setScene('mobile');
-  }, [openMobileNonce]);
-
-  // L1 ↔ Irisy role linkage applies only to Irisy-owned workspace contexts.
-  // Coding is a separate actor mode, not an Irisy role.
-  useEffect(() => {
-    let linked: RoleId | null = null;
-    if (scene === 'notes' || scene === 'tables') {
-      linked = roleForScene(scene);
-    } else if (scene && typeof scene === 'object') {
-      // A feature pack opened in the scene panel -> switch to the role that
-      // can use it (bao 2026-06-25: opening a pack switches the role).
-      linked = roleForPack(scene.id);
-    }
-    if (linked) setRoleId(linked);
-  }, [scene]);
-
-  // Reset the chat when the shell selects "Irisy" (nonce bump). Since this
-  // component stays mounted across routes (hidden, not unmounted), the
-  // effect fires only on a real bump — never replays on a route return.
-  useEffect(() => {
-    // Selecting Irisy in L1 returns to the conversation view (close any open
-    // scene / part panel) but must NOT wipe history — Irisy is the persistent
-    // pipe and "Irisy must have history" (ADR-003 §8 / ADR-005 irisy). Clearing
-    // is the dedicated New-chat button's job. (bao 2026-06-21: switching L1 back
-    // to Irisy was clearing the chat — over-eager newChat.)
-    if (irisyNonce > 0) {
-      setAgentMode('irisy');
-      setScene(null);
-      setPart(null);
-    }
-  }, [irisyNonce]);
-
   // ADR-005 §8.6.2 terminal command surface — `/` slash menu + ↑/↓ history recall.
   const [slashSel, setSlashSel] = useState(0);
   const [histIdx, setHistIdx] = useState<number | null>(null);
-  // `:` jump — go to a module workspace (Notes / Tables / Coding / Today / chat).
-  const [jumpSel, setJumpSel] = useState(0);
   // `@`-mention — reference a note / table (fetched once; filtered as you type).
   const [mentionSel, setMentionSel] = useState(0);
   const [mentionItems, setMentionItems] = useState<{ label: string; kind: string }[]>([]);
@@ -1252,45 +1051,8 @@ export function AmbientHome({
       }
     })();
   }, []);
-  // Status line data — engine + model + state (ADR-005 §8.6.2 ambient chrome).
-  // Run an installed pack's action inline; its output lands as an assistant turn.
-  const runPackAction = (pack: FeaturePack, action: { id: string; name: string }): void => {
-    const id = `a-${Date.now()}`;
-    setMessages((prev) => [...prev, { id, role: 'assistant', content: `Running ${action.name}…` }]);
-    void runInstalledPackAction(pack.id, action.id)
-      .then((out) =>
-        setMessages((prev) =>
-          prev.map((m) => (m.id === id ? { ...m, content: out.trim() || `${action.name} done.` } : m)),
-        ),
-      )
-      .catch((e: unknown) =>
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === id
-              ? {
-                  ...m,
-                  content: `Could not run ${action.name}: ${e instanceof Error ? e.message : String(e)}`,
-                }
-              : m,
-          ),
-        ),
-      );
-  };
-  // ADR-005 §8.6.2 — the command surface is a MECHANISM; its entries come from the
-  // REGISTRY (installed / created / shared / downloaded feature packs), NOT a
-  // hardcoded capability list. Core ships only the generic /new; every installed
-  // pack contributes its actions automatically (download a pack → its actions
-  // appear here, zero code). Irisy's inline abilities (summarize/plan/translate)
-  // are NOT commands — you just ask (philosophy #5, AI-is-a-pipe).
   const slashCommands: SlashCommand[] = [
     { cmd: '/new', label: 'New conversation', run: newChat },
-    ...installedPacks.flatMap((p) =>
-      p.actions.map((a) => ({
-        cmd: `/${slugCmd(a.name)}`,
-        label: `${a.name} · ${p.name}`,
-        run: () => runPackAction(p, a),
-      })),
-    ),
   ];
   const userHistory = messages.filter((m) => m.role === 'user').map((m) => m.content);
   const slashQuery = input.startsWith('/') && !/\s/.test(input) ? input.toLowerCase() : null;
@@ -1313,32 +1075,8 @@ export function AmbientHome({
       });
     }
   };
-  // `:` jump-to-module (a terminal go-to). Whole-input token, like the slash menu.
-  const jumpTargets: { cmd: string; label: string; go: () => void }[] = [
-    // Core module workspaces (the platform's own faces).
-    { cmd: ':chat', label: 'Irisy conversation', go: () => { setAgentMode('irisy'); setScene(null); } },
-    { cmd: ':notes', label: 'Notes', go: () => setScene('notes') },
-    { cmd: ':tables', label: 'Tables', go: () => setScene('tables') },
-    { cmd: ':coding', label: 'Irisy Coding conversation', go: () => { setAgentMode('coding'); setScene(null); setPart(null); } },
-    { cmd: ':today', label: 'Today', go: () => setScene('today') },
-    // Installed feature packs are jumpable too (registry-driven, ADR-005 §8.6.2).
-    ...installedPacks.map((p) => ({
-      cmd: `:${slugCmd(p.name)}`,
-      label: p.name,
-      go: () => setScene(p),
-    })),
-  ];
-  const jumpQuery = input.startsWith(':') && !/\s/.test(input) ? input.toLowerCase() : null;
-  const jumpMatches = jumpQuery ? jumpTargets.filter((j) => j.cmd.startsWith(jumpQuery)) : [];
-  const jumpOpen = jumpMatches.length > 0;
-  const jumpActive = Math.min(jumpSel, Math.max(0, jumpMatches.length - 1));
-  const applyJump = (j: { go: () => void }): void => {
-    setInput('');
-    setJumpSel(0);
-    j.go();
-  };
-  // `@`-mention: the trailing `@word` at the caret (never when another menu is up).
-  const mentionMatch = !slashOpen && !jumpOpen ? input.match(/@([^\s@]*)$/) : null;
+  // `@`-mention: the trailing `@word` at the caret.
+  const mentionMatch = !slashOpen ? input.match(/@([^\s@]*)$/) : null;
   const mentionQuery = mentionMatch ? (mentionMatch[1] ?? '').toLowerCase() : null;
   const mentionMatches =
     mentionQuery !== null
@@ -1388,27 +1126,6 @@ export function AmbientHome({
           ))}
         </div>
       )}
-      {/* `:` jump menu — go to a module workspace (ADR-005 §8.6.2). */}
-      {jumpOpen && (
-        <div className={styles.slashMenu} role="listbox">
-          {jumpMatches.map((j, i) => (
-            <button
-              type="button"
-              key={j.cmd}
-              className={styles.slashItem}
-              data-sel={i === jumpActive ? 'yes' : 'no'}
-              onMouseEnter={() => setJumpSel(i)}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applyJump(j);
-              }}
-            >
-              <span className={styles.slashCmd}>{j.cmd}</span>
-              <span className={styles.slashLabel}>{j.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
       {/* `@`-mention menu — reference a note or table (ADR-005 §8.6.2). */}
       {mentionOpen && (
         <div className={styles.slashMenu} role="listbox">
@@ -1443,35 +1160,10 @@ export function AmbientHome({
             setHistIdx(null);
             setSlashSel(0);
             setMentionSel(0);
-            setJumpSel(0);
             autoGrow();
           }}
           onKeyDown={(e) => {
             if (isImeComposing(e)) return;
-            // `:` jump menu navigation (ADR-005 §8.6.2).
-            if (jumpOpen) {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setJumpSel((s) => (s + 1) % jumpMatches.length);
-                return;
-              }
-              if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setJumpSel((s) => (s - 1 + jumpMatches.length) % jumpMatches.length);
-                return;
-              }
-              if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault();
-                const chosen = jumpMatches[jumpActive];
-                if (chosen) applyJump(chosen);
-                return;
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                setInput('');
-                return;
-              }
-            }
             // Slash menu navigation (ADR-005 §8.6.2).
             if (slashOpen) {
               if (e.key === 'ArrowDown') {
@@ -1620,21 +1312,6 @@ export function AmbientHome({
                   ))}
                 </div>
               )}
-              {/* ADR-005 §8.6.2 output-routing — a shortcut to open a note Irisy
-                  just wrote in the Notes workspace (bao: slash worked but no jump
-                  to the note page). */}
-              {noteTargetsOf(m.tools).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className={styles.openNoteChip}
-                  onClick={() => openNoteInWorkspace(p)}
-                >
-                  <span aria-hidden>📄</span>
-                  <span className={styles.openNoteName}>{p.split('/').pop()}</span>
-                  <span className={styles.openNoteGo}>Open in Notes →</span>
-                </button>
-              ))}
               {m.content && (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {stripDetectedPart(cleanReplyText(m.content)) ||
@@ -1659,7 +1336,10 @@ export function AmbientHome({
               ) : (
                 !m.content && <ReactMarkdown remarkPlugins={[remarkGfm]}>{'…'}</ReactMarkdown>
               )}
-              {m.id === lastAssistantId && m.content.trim() && !streaming && (
+              {/* Content actions belong to a RESULT. A failed turn offers none —
+                  copying or saving a partial/erroring reply is not a useful
+                  affordance. (ADR-003 frontend § decision-registry v44) */}
+              {m.id === lastAssistantId && m.content.trim() && !streaming && !m.failed && (
                 <div className={styles.aiChips}>
                   <button
                     type="button"
@@ -1716,103 +1396,84 @@ export function AmbientHome({
         </div>
         ))
       )}
+      {pendingDecision != null && (
+        <DecisionSurface
+          fact={pendingDecision.fact}
+          queued={decisions.length - 1}
+          onResolve={(optionId) => {
+            setDecisions((queue) =>
+              queue.filter((entry) => entry.fact.id !== pendingDecision.fact.id),
+            );
+            // Any option that is not a plain dismissal runs the fact's handler,
+            // so `retry` and `recover` both lead somewhere instead of only
+            // closing the card. (ADR-003 frontend § decision-registry v44)
+            if (optionId !== 'dismiss') pendingDecision.recover?.();
+          }}
+        />
+      )}
       {notice != null && <div className={styles.notice}>{notice}</div>}
     </div>
   );
 
-  // The persona switcher sits directly above the composer (bao 2026-06-26): the
-  // row above the chat box IS the persona picker. Translate / polish / summarize
-  // used to live here — but those are things Irisy does inline (just ask); they
-  // ARE Irisy, not separate personas (philosophy #5), so they don't belong here.
-  // Switching a persona swaps the system prompt WITHOUT resetting the
-  // conversation; one brand voice stays (ADR-005 single-brand lock).
-  const activeRole = roleById(roleId);
-  // Above the composer shows TWO things bound to the current L1 (bao 2026-06-26):
-  // (1) the persona (dropdown) and (2) the feature pack(s) of the L1 in scope.
-  // The packs follow the open scene — NOT all-installed (would pin ghostfolio
-  // everywhere) and NOT the role's toolset whitelist (would hide ghostfolio
-  // even on the Stocks L1, since Stocks = KB-assistant + ghostfolio is a config,
-  // not a role). When an L1 opens a pack (Stocks -> ghostfolio) scene IS that
-  // pack, so it shows; a built-in scene (coding) falls back to that role's
-  // installed toolset packs; plain home/notes shows none.
-  // One scene = one pack (bao 2026-07-03: a pack IS the scenario; no hardcoded
-  // same-category aggregation). The open pack scene shows exactly that pack;
-  // a built-in scene falls back to the role's toolset packs.
-  const contextPacks: FeaturePack[] =
-    scene && typeof scene === 'object'
-      ? [scene]
-      : activeRole.toolset.length === 0
-      ? []
-      : installedPacks.filter((p) => activeRole.toolset.includes(p.id));
-  const assistantResourceLabel =
-    contextPacks[0]?.name
-    ?? (scene === 'today'
-      ? 'Today'
-      : scene === 'notes'
-      ? 'Notes'
-      : scene === 'tables'
-      ? 'Smart Tables'
-      : scene === 'mobile'
-      ? 'Mobile'
-      : 'Current context');
   function PersonaRow(): ReactElement {
+    const selected = fcts.find((fct) => fct.ref === selectedFctRef);
     return (
-    // Identity, Resource, Skill are real runtime axes. Engine/persona names are
-    // deliberately absent from ordinary chrome. (ADR-003 frontend §8.6 v39)
-    <div className={styles.quickRow} role="group" aria-label="Irisy identity, resource, and skill">
-      <select
-        className={styles.agentModeSelect}
-        aria-label="Irisy identity"
-        value="irisy"
-        onChange={(event) => selectAgentMode(event.target.value as AgentMode)}
-      >
-        <option value="irisy">Assistant</option>
-        <option value="coding">Coding</option>
-      </select>
-      <span className={styles.contextChip} title="Resource is derived from the active content and explicit selection">
-        Resource: {assistantResourceLabel}
-      </span>
-      <select
-        className={styles.agentModeSelect}
-        aria-label="Skill"
-        value={assistantSkillId}
-        disabled={assistantSkillSwitching}
-        title={
-          assistantSkillId
-            ? localSkills.find((skill) => skill.name === assistantSkillId)?.description
-            : 'Let Irisy choose a skill for each request'
-        }
-        onChange={(event) => selectAssistantSkill(event.target.value)}
-      >
-        <option value="">Skill: Auto</option>
-        {localSkills.map((skill) => (
-          <option key={skill.name} value={skill.name}>{skill.name}</option>
-        ))}
-      </select>
-      {/* State on this same single line, pushed right (bao 2026-07-07: only one
-          line above the input). Version lives on the CTRL wordmark. */}
-      <span className={styles.statusGrow} />
-      <FeedbackButton />
-      <span className={styles.statusItem}>
-        <span className={styles.statusDot} data-state={streaming ? 'working' : 'ready'} />
-        {streaming ? 'Working' : 'Ready'}
-      </span>
-      {streaming ? (
+      // Composer owns per-session Use; Library owns creation and availability.
+      // The control is an Auto-first OVERRIDE: the chip states what the next turn
+      // will use, and the catalogue is only reachable through an explicitly
+      // opened, bounded `choice` panel or Library. Enumerating the installed
+      // inventory as ordinary chrome is forbidden.
+      // (ADR-003 frontend §8.5 v41/v42; ADR-005 irisy §11 v41, §12 v42 U17)
+      <>
+      {fctChoiceOpen ? (
+        <DecisionSurface
+          fact={fctChoiceFact(fcts, selectedFctRef)}
+          pending={fctSwitching}
+          onResolve={(optionId) => {
+            if (optionId === FCT_LIBRARY_OPTION) {
+              setFctChoiceOpen(false);
+              onSidebarSelect('library');
+              return;
+            }
+            const next = fctOptionSelection(optionId);
+            setFctChoiceOpen(false);
+            // `Keep current` resolves to no selection change at all.
+            if (next === undefined) return;
+            void selectFct(next ?? '');
+          }}
+        />
+      ) : null}
+      <div className={styles.quickRow} role="group" aria-label="FCT and turn action">
         <button
           type="button"
-          className={styles.send}
-          onClick={stopGeneration}
-          title="Stop generating"
-          aria-label="Stop generating"
+          className={styles.agentModeSelect}
+          aria-label="FCT"
+          aria-haspopup="dialog"
+          aria-expanded={fctChoiceOpen}
+          disabled={fctSwitching}
+          title={selected?.summary || 'Let Irisy choose the FCT for this turn'}
+          onClick={() => setFctChoiceOpen((open) => !open)}
         >
-          ■
+          FCT · {selected ? selected.name : 'Auto'}
         </button>
-      ) : (
-        <button type="submit" className={styles.send} disabled={!input.trim()} aria-label="Send">
-          ↑
-        </button>
-      )}
-    </div>
+        <span className={styles.statusGrow} />
+        {streaming ? (
+          <button
+            type="button"
+            className={styles.send}
+            onClick={stopGeneration}
+            title="Stop generating"
+            aria-label="Stop generating"
+          >
+            ■
+          </button>
+        ) : (
+          <button type="submit" className={styles.send} disabled={!input.trim()} aria-label="Send">
+            ↑
+          </button>
+        )}
+      </div>
+      </>
     );
   }
 
@@ -1847,30 +1508,16 @@ export function AmbientHome({
         ? `Update to CTRL v${update.latestVersion ?? 'latest'}`
         : `CTRL v${version} · click to check for updates`;
 
-  const contextLabel =
-    view === 'discover'
-      ? 'Discover'
-      : scene === 'today'
-      ? 'Today'
-      : scene === 'notes'
-      ? 'Notes'
-      : scene === 'tables'
-      ? 'Smart Tables'
-      : scene === 'mobile'
-      ? 'Mobile'
-      : scene
-      ? scene.name
+  const contextLabel = section === 'library'
+    ? 'Library'
+    : section === 'settings'
+      ? 'Settings'
       : part
-      ? part.title ?? part.kind
-      : 'Home';
+        ? part.title ?? part.kind
+        : 'Work';
 
   return (
-    <div className={styles.root} data-surface={surface} hidden={hidden}>
-      <SessionHistory
-        open={showHistory}
-        onClose={() => setShowHistory(false)}
-        onSelect={loadPastSession}
-      />
+    <div className={styles.root} data-surface={surface}>
       {/* The window's FIRST LINE (bao 2026-06-13): two first-class names —
           CTRL on the left (the whole app), Irisy on the right (the AI). The
           right segment is the SAME width as the Irisy pane below it, so the
@@ -1913,24 +1560,7 @@ export function AmbientHome({
           style={isNarrow ? undefined : { width: irisyWidth }}
         >
           <div className={styles.statusActions}>
-            {/* Persona switcher moved above the composer (bao 2026-06-26) —
-                see `personaRow`. The status bar keeps only chrome actions. */}
-            {agentMode === 'irisy' && (
-              <button
-                type="button"
-                className={styles.statusBtn}
-                onClick={() => setShowHistory(true)}
-                title="Conversation history"
-                aria-label="Conversation history"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M12 7v5l3 2" />
-                </svg>
-              </button>
-            )}
-            {agentMode === 'irisy' && view === 'chat' && messages.length > 0 && (
+            {section === 'work' && messages.length > 0 && (
               <>
                 <button
                   type="button"
@@ -1950,11 +1580,8 @@ export function AmbientHome({
                 </button>
               </>
             )}
-            {/* Right-corner provider/model picker REMOVED (bao, repeated): it
-                duplicated the L1-bound agent/persona pickers in `personaRow`
-                above the composer. Provider choice follows the L1 selection
-                there; this corner pill was redundant. onOpenPicker still fires
-                programmatically when no provider is connected (send path). */}
+            {/* Provider configuration lives only in Settings. The send path
+                navigates there when no provider is available. */}
             <button
               type="button"
               className={`${styles.statusBtn} ${styles.statusClose}`}
@@ -1985,100 +1612,16 @@ export function AmbientHome({
               ALWAYS pinned far-right (wide + draggable). DOM = visual order. */}
           <div className={`${styles.fourCol} ${isNarrow ? styles.splitVertical : ''}`}>
               <div className={styles.outbar}>
-                {view === 'discover' ? (
+                {section === 'settings' ? (
+                  <div className={styles.scenePane}>{workspaceContent}</div>
+                ) : section === 'library' ? (
                   <div className={styles.scenePane}>
-                    <button
-                      type="button"
-                      className={styles.sceneClose}
-                      onClick={() => onView('chat')}
-                      aria-label="Close Discover"
-                    >
-                      ✕
-                    </button>
                     <Discover
-                      onInstalled={() => onView('discover')}
-                      styles={styles}
                       installed={installedPacks}
-                      onOpenPack={(p) => {
-                        onView('chat');
-                        setScene(p);
-                      }}
-                    />
-                  </div>
-                ) : scene === 'today' ? (
-                  <div className={styles.scenePane}>
-                    <button
-                      type="button"
-                      className={styles.sceneClose}
-                      onClick={() => setScene(null)}
-                      aria-label="Close Today"
-                    >
-                      ✕
-                    </button>
-                    <TodayView />
-                  </div>
-                ) : scene === 'notes' ? (
-                  <div className={styles.scenePane}>
-                    <button
-                      type="button"
-                      className={styles.sceneClose}
-                      onClick={() => setScene(null)}
-                      aria-label="Close Notes"
-                    >
-                      ✕
-                    </button>
-                    <NotesSurface />
-                  </div>
-                ) : scene === 'tables' ? (
-                  <div className={styles.scenePane}>
-                    <button
-                      type="button"
-                      className={styles.sceneClose}
-                      onClick={() => setScene(null)}
-                      aria-label="Close Tables"
-                    >
-                      ✕
-                    </button>
-                    <TablesPanel onActiveTable={onActiveTable} />
-                  </div>
-
-                ) : scene === 'mobile' ? (
-                  <div className={styles.scenePane}>
-                    <button
-                      type="button"
-                      className={styles.sceneClose}
-                      onClick={() => setScene(null)}
-                      aria-label="Close Mobile"
-                    >
-                      ✕
-                    </button>
-                    <RemoteRoute />
-                  </div>
-                ) : scene ? (
-                  <div className={styles.scenePane}>
-                    <button
-                      type="button"
-                      className={styles.sceneClose}
-                      onClick={() => setScene(null)}
-                      aria-label="Close pack"
-                    >
-                      ✕
-                    </button>
-                    <FeaturePackScene
-                      // Key by pack id so switching packs fully resets scene
-                      // state (no stale records flash before the refetch).
-                      key={scene.id}
-                      pack={scene}
-                      onRunAction={(id) => runInstalledPackAction(scene.id, id)}
-                      onSendMessage={send}
-                      dashboard={
-                        scene.id === 'ctrl-stock-cn' ? (
-                          <StockCockpit load={loadStockCockpit} />
-                        ) : undefined
-                      }
-                      loadRecords={
-                        scene.hasRecords ? () => loadPackRecords(scene.id) : undefined
-                      }
+                      fcts={fcts}
+                      onUseFct={useFctFromLibrary}
+                      onFctsChanged={refreshFcts}
+                      onUseSelection={useLocalAppSelection}
                     />
                   </div>
                 ) : part ? (
@@ -2094,7 +1637,7 @@ export function AmbientHome({
                             type="button"
                             className={styles.partAction}
                             data-active={editing}
-                            onClick={() => setEditing((v) => !v)}
+                            onClick={() => setEditing((value) => !value)}
                             title={editing ? 'Done editing' : 'Edit the source'}
                           >
                             {editing ? 'Done' : '✎ Edit'}
@@ -2118,14 +1661,6 @@ export function AmbientHome({
                         </button>
                         <button
                           type="button"
-                          className={styles.partAction}
-                          onClick={() => void captureToNotes(part.content)}
-                          title="Save to Notes"
-                        >
-                          ↳ Save
-                        </button>
-                        <button
-                          type="button"
                           className={styles.partClose}
                           onClick={() => {
                             setPart(null);
@@ -2142,7 +1677,7 @@ export function AmbientHome({
                         <textarea
                           className={styles.partEditor}
                           value={part.content}
-                          onChange={(e) => setPart({ ...part, content: e.target.value })}
+                          onChange={(event) => setPart({ ...part, content: event.target.value })}
                           aria-label="Edit artifact source"
                           spellCheck={false}
                         />
@@ -2152,43 +1687,40 @@ export function AmbientHome({
                     </div>
                   </div>
                 ) : (
-                  <div className={styles.welcome}>
-                    <h1 className={styles.greeting}>
-                      {agentMode === 'coding' ? 'Irisy is ready to code.' : 'Hi, I’m Irisy.'}
-                    </h1>
-                    {agentMode === 'coding' ? (
-                      <p className={styles.setupHint}>
-                        The selected workspace, Coding sessions, attachments, and the governed
-                        create-feature-pack skill stay isolated in the dialog on the right.
+                  <div className={styles.scenePane}>
+                    {settingUp && (
+                      <p className={styles.setupHint} role="status">
+                        Setting up CTRL… updating your tools.
                       </p>
+                    )}
+                    {!hasProvider && (
+                      <button
+                        type="button"
+                        className={styles.ctaPrimary}
+                        onClick={onOpenProviderSettings}
+                      >
+                        Connect your AI to start →
+                      </button>
+                    )}
+                    {workResourceRef ? (
+                      <ResourceViewerHost resourceRef={workResourceRef} />
                     ) : (
+                      // With no Resource open the Work pane showed nothing. The
+                      // user's own content and day are better than empty chrome.
+                      // (ADR-005 irisy §12 v42 U3/U4/U5/U7)
                       <>
-                        {settingUp && (
-                          <p className={styles.setupHint} role="status">
-                            Setting up CTRL… updating your tools.
-                          </p>
-                        )}
-                        {!hasProvider && (
-                          <button type="button" className={styles.ctaPrimary} onClick={onOpenPicker}>
-                            Connect your AI to start →
-                          </button>
-                        )}
-                        <WorkspacePanel
-                          onRun={runWorkspaceAction}
-                          onConnectTools={() => onView('discover')}
-                        />
+                        <SourcesPanel onOpen={openWorkResource} />
+                        <TodayPanel />
                       </>
+                    )}
+                    <CodingAgentPanel onResourceChange={onCodingResourceChange} />
+                    {codingResourceRef && (
+                      <ResourceViewerHost resourceRef={codingResourceRef} />
                     )}
                   </div>
                 )}
               </div>
-            <Sidebar
-              active={activeSection}
-              onSelect={onSidebarSelect}
-              modelLabel={modelLabel}
-              providerId={providerId}
-              onModel={onOpenPicker}
-            />
+            <Sidebar active={section} onSelect={onSidebarSelect} />
             {!isNarrow && (
               <div
                 className={styles.divider}
@@ -2206,15 +1738,11 @@ export function AmbientHome({
               style={isNarrow ? undefined : { width: irisyWidth }}
               aria-label="Persistent agent dialog"
             >
-              <div className={styles.chatPane} hidden={agentMode !== 'irisy'}>
+              <div className={styles.chatPane}>
                 <SessionTabs />
                 {conversation}
                 {composer}
               </div>
-              <CodingAgentPanel
-                active={agentMode === 'coding'}
-                onAgentModeChange={selectAgentMode}
-              />
             </div>
           </div>
         </motion.div>

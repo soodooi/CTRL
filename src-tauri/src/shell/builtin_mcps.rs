@@ -44,7 +44,20 @@ const BUNDLE_RESOURCE_SUBPATH: &str = "mcps/builtin";
 ///      bundle.resources includes the directory so this path exists at
 ///      runtime on installed .app builds.
 fn find_source_dir() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("CTRL_BUILTIN_MCPS_DIR") {
+    find_source_dir_for(BUILTIN_SRC_RELATIVE, BUNDLE_RESOURCE_SUBPATH, "CTRL_BUILTIN_MCPS_DIR")
+}
+
+/// The same resolution for any bundled mcp source set. Optional connectors live
+/// beside the builtins and must not get a second, weaker path resolver: the
+/// release-only bundle path, the debug-only repo walk-up, and the no-follow copy
+/// are all security-relevant.
+/// (ADR-004 cap § execution v13)
+fn find_source_dir_for(
+    relative: &str,
+    bundle_subpath: &str,
+    env_override: &str,
+) -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var(env_override) {
         // ECC review H8: log loudly when the env override is honored so a
         // compromised env shows up in trace. This bypass exists for tests
         // + packaging; it should never appear in normal user logs.
@@ -52,7 +65,8 @@ fn find_source_dir() -> Option<PathBuf> {
         if p.is_dir() {
             tracing::warn!(
                 path = %p.display(),
-                "BuiltinMcps: CTRL_BUILTIN_MCPS_DIR override honored — \
+                env = %env_override,
+                "BuiltinMcps: bundled-source env override honored — \
                  this should only happen during tests / packaging"
             );
             return Some(p);
@@ -68,8 +82,7 @@ fn find_source_dir() -> Option<PathBuf> {
         if let Some(macos_dir) = exe.parent() {
             if macos_dir.file_name().is_some_and(|n| n == "MacOS") {
                 if let Some(contents_dir) = macos_dir.parent() {
-                    let candidate =
-                        contents_dir.join("Resources").join(BUNDLE_RESOURCE_SUBPATH);
+                    let candidate = contents_dir.join("Resources").join(bundle_subpath);
                     if candidate.is_dir() {
                         return Some(candidate);
                     }
@@ -95,7 +108,7 @@ fn find_source_dir() -> Option<PathBuf> {
         for start in starts {
             let mut cur: &Path = start.as_path();
             loop {
-                let candidate = cur.join(BUILTIN_SRC_RELATIVE);
+                let candidate = cur.join(relative);
                 if candidate.is_dir() {
                     return Some(candidate);
                 }
@@ -108,6 +121,116 @@ fn find_source_dir() -> Option<PathBuf> {
     }
 
     None
+}
+
+// ── Optional local-app connectors (ADR-004 cap § execution v13) ─────────────
+// Builtins are seeded on every boot. An optional connector is NOT: it bridges a
+// local application the user may not even have installed, so it lands only on an
+// explicit user action. Without this the ctrl-libreoffice bridge existed in the
+// bundle and in the kernel but had no path by which a user could ever reach it.
+
+const OPTIONAL_SRC_RELATIVE: &str = "packages/ctrl-mcps/optional";
+const BUNDLE_OPTIONAL_SUBPATH: &str = "mcps/optional";
+
+fn find_optional_source_dir() -> Option<PathBuf> {
+    find_source_dir_for(
+        OPTIONAL_SRC_RELATIVE,
+        BUNDLE_OPTIONAL_SUBPATH,
+        "CTRL_OPTIONAL_MCPS_DIR",
+    )
+}
+
+/// One bundled connector for a local application, plus whether it is connected.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OptionalConnector {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    /// True once its files are installed under `~/.ctrl/mcps/<id>`.
+    pub connected: bool,
+    /// The local application this bridges, when the manifest names one.
+    pub requires: Option<String>,
+}
+
+/// Bundled connectors, in stable id order. Empty when no bundled source set is
+/// reachable, which is reported as an empty list rather than an error: nothing to
+/// offer is a real state on a stripped build.
+pub fn list_optional_connectors() -> Vec<OptionalConnector> {
+    let Some(source) = find_optional_source_dir() else {
+        return Vec::new();
+    };
+    let installed = install_root();
+    let Ok(entries) = fs::read_dir(&source) else {
+        return Vec::new();
+    };
+    let mut out: Vec<OptionalConnector> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let id = entry.file_name().to_string_lossy().into_owned();
+            let manifest_path = entry.path().join("manifest.json");
+            let manifest: serde_json::Value =
+                serde_json::from_slice(&fs::read(&manifest_path).ok()?).ok()?;
+            let name = manifest
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(&id)
+                .to_owned();
+            let summary = manifest
+                .get("description")
+                .and_then(|value| {
+                    value
+                        .as_str()
+                        .or_else(|| value.get("short").and_then(serde_json::Value::as_str))
+                })
+                .unwrap_or_default()
+                .to_owned();
+            let requires = manifest
+                .pointer("/requires/application")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned);
+            let connected = installed
+                .as_ref()
+                .is_some_and(|root| root.join(&id).join("manifest.json").is_file());
+            Some(OptionalConnector {
+                id,
+                name,
+                summary,
+                connected,
+                requires,
+            })
+        })
+        .collect();
+    out.sort_by(|left, right| left.id.cmp(&right.id));
+    out
+}
+
+/// Copy one bundled connector into the install root on explicit user action.
+/// Returns the installed directory. Idempotent: an already-connected connector
+/// is reported as connected rather than re-copied over.
+pub fn connect_optional_connector(id: &str) -> Result<PathBuf, String> {
+    // A connector id addresses one directory in the bundled set; it is never a
+    // path. Reject anything that could climb out before touching the filesystem.
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id == "." || id == ".." {
+        return Err("that connector id does not name a single bundled directory".to_owned());
+    }
+    let source_root = find_optional_source_dir()
+        .ok_or_else(|| "no bundled connectors are available in this build".to_owned())?;
+    let source = source_root.join(id);
+    if !source.join("manifest.json").is_file() {
+        return Err("no bundled connector has that id".to_owned());
+    }
+    let destination = install_root()
+        .ok_or_else(|| "no home directory is known".to_owned())?
+        .join(id);
+    // A user who explicitly connects something they previously uninstalled means
+    // it, so clear the tombstone the same way a fresh install does.
+    clear_uninstalled(id);
+    copy_tree_no_overwrite(&source, &destination)
+        .map_err(|error| format!("could not install the connector: {error}"))?;
+    if !destination.join("manifest.json").is_file() {
+        return Err("the connector was copied but its manifest is missing".to_owned());
+    }
+    Ok(destination)
 }
 
 /// Resolve the on-disk install root — `~/.ctrl/mcps/`.
@@ -233,7 +356,11 @@ fn manifest_version(dir: &Path) -> Option<Vec<u32>> {
     let bytes = fs::read(dir.join("manifest.json")).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     let s = v.get("version")?.as_str()?;
-    Some(s.split('.').map(|p| p.parse::<u32>().unwrap_or(0)).collect())
+    Some(
+        s.split('.')
+            .map(|p| p.parse::<u32>().unwrap_or(0))
+            .collect(),
+    )
 }
 
 /// True when the BUNDLED builtin's manifest version is strictly greater than the
@@ -275,7 +402,8 @@ fn copy_tree_inner(src: &Path, dst: &Path, depth: u8) -> std::io::Result<usize> 
 
         // Defense-in-depth: reject path-special filename components even
         // though OS readdir shouldn't yield them.
-        if name_str == "." || name_str == ".." || name_str.contains('/') || name_str.contains('\\') {
+        if name_str == "." || name_str == ".." || name_str.contains('/') || name_str.contains('\\')
+        {
             tracing::warn!(
                 ?src_path,
                 name = %name_str,
@@ -412,7 +540,9 @@ fn provision_cap_asset_vault(install_dir: &Path) -> std::io::Result<usize> {
         .unwrap_or(&empty_seed);
 
     for entry in seed {
-        let Some(obj) = entry.as_object() else { continue };
+        let Some(obj) = entry.as_object() else {
+            continue;
+        };
         let Some(dest) = obj.get("dest").and_then(|d| d.as_str()) else {
             continue;
         };
@@ -529,8 +659,12 @@ pub fn ensure_builtins_installed() {
         // is pure definition (no user data — that's in the vault + keychain).
         if pre_existed && builtin_is_newer(&src_dir, &dst_dir) {
             match fs::remove_dir_all(&dst_dir) {
-                Ok(()) => tracing::info!(mcp = %id, "BuiltinMcps: bundled builtin is newer — re-seeding"),
-                Err(e) => tracing::warn!(error = %e, mcp = %id, "BuiltinMcps: re-seed remove failed; keeping installed"),
+                Ok(()) => {
+                    tracing::info!(mcp = %id, "BuiltinMcps: bundled builtin is newer — re-seeding")
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, mcp = %id, "BuiltinMcps: re-seed remove failed; keeping installed")
+                }
             }
         }
         match copy_tree_no_overwrite(&src_dir, &dst_dir) {
@@ -591,6 +725,69 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// The connector id addresses one bundled directory. These cases must be
+    /// refused before any filesystem work, so a crafted id cannot copy from or
+    /// into somewhere else.
+    #[test]
+    fn a_connector_id_that_is_not_a_single_directory_is_refused() {
+        for candidate in ["", ".", "..", "../../etc", "nested/id", "back\\slash"] {
+            let error = connect_optional_connector(candidate).expect_err("must refuse");
+            assert!(
+                error.contains("single bundled directory"),
+                "unexpected error for {candidate:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_connector_id_is_refused() {
+        let source = TempDir::new().unwrap();
+        std::env::set_var("CTRL_OPTIONAL_MCPS_DIR", source.path());
+        let error = connect_optional_connector("not-bundled").expect_err("must refuse");
+        std::env::remove_var("CTRL_OPTIONAL_MCPS_DIR");
+        assert!(error.contains("no bundled connector"), "{error}");
+    }
+
+    /// The bundled set is listed with its connect state, and a connector without a
+    /// manifest is skipped rather than offered as a broken row.
+    #[test]
+    fn optional_connectors_are_listed_from_the_bundled_set() {
+        let source = TempDir::new().unwrap();
+        let good = source.path().join("ctrl-demo-app");
+        fs::create_dir_all(&good).unwrap();
+        fs::write(
+            good.join("manifest.json"),
+            serde_json::json!({
+                "name": "Demo App",
+                "description": "bridges Demo App",
+                "requires": { "application": "Demo App" }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        // No manifest: not a connector.
+        fs::create_dir_all(source.path().join("stray-dir")).unwrap();
+
+        std::env::set_var("CTRL_OPTIONAL_MCPS_DIR", source.path());
+        let listed = list_optional_connectors();
+        std::env::remove_var("CTRL_OPTIONAL_MCPS_DIR");
+
+        assert_eq!(listed.len(), 1, "only manifest-bearing directories are offered");
+        let connector = &listed[0];
+        assert_eq!(connector.id, "ctrl-demo-app");
+        assert_eq!(connector.name, "Demo App");
+        assert_eq!(connector.summary, "bridges Demo App");
+        assert_eq!(connector.requires.as_deref(), Some("Demo App"));
+    }
+
+    #[test]
+    fn a_missing_bundled_set_reports_nothing_to_offer_rather_than_an_error() {
+        let empty = TempDir::new().unwrap();
+        std::env::set_var("CTRL_OPTIONAL_MCPS_DIR", empty.path());
+        assert!(list_optional_connectors().is_empty());
+        std::env::remove_var("CTRL_OPTIONAL_MCPS_DIR");
+    }
+
     #[test]
     fn copy_tree_creates_dst_when_missing() {
         let src = TempDir::new().unwrap();
@@ -613,7 +810,10 @@ mod tests {
         fs::create_dir(&dst).unwrap();
         fs::write(dst.join("persona.md"), "USER_EDIT").unwrap();
         let n = copy_tree_no_overwrite(src.path(), &dst).unwrap();
-        assert_eq!(n, 0, "no files should be copied when destination already has them");
+        assert_eq!(
+            n, 0,
+            "no files should be copied when destination already has them"
+        );
         let contents = fs::read_to_string(dst.join("persona.md")).unwrap();
         assert_eq!(contents, "USER_EDIT", "user edits must be preserved");
     }
@@ -633,17 +833,26 @@ mod tests {
         let dst = TempDir::new().unwrap();
         write_manifest(src.path(), "0.2.0");
         write_manifest(dst.path(), "0.1.0");
-        assert!(builtin_is_newer(src.path(), dst.path()), "0.2.0 > 0.1.0 upgrades");
+        assert!(
+            builtin_is_newer(src.path(), dst.path()),
+            "0.2.0 > 0.1.0 upgrades"
+        );
 
         write_manifest(dst.path(), "0.2.0");
-        assert!(!builtin_is_newer(src.path(), dst.path()), "equal versions do not re-seed");
+        assert!(
+            !builtin_is_newer(src.path(), dst.path()),
+            "equal versions do not re-seed"
+        );
 
         write_manifest(dst.path(), "0.3.0");
         assert!(!builtin_is_newer(src.path(), dst.path()), "never downgrade");
 
         // A missing/unreadable installed manifest is left untouched (tolerant).
         let empty = TempDir::new().unwrap();
-        assert!(!builtin_is_newer(src.path(), empty.path()), "missing dst manifest => no re-seed");
+        assert!(
+            !builtin_is_newer(src.path(), empty.path()),
+            "missing dst manifest => no re-seed"
+        );
     }
 
     #[test]

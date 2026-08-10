@@ -49,22 +49,22 @@ pub const DEFAULT_OUTBOX_CAPACITY: usize = 1024;
 /// Order matters: brew (mac) and /usr/local first, then per-user toolchains.
 /// Static slice → no per-spawn allocation for these.
 const PATH_EXTRAS_STATIC: &[&str] = &[
-    "/opt/homebrew/bin",      // macOS Apple Silicon brew
+    "/opt/homebrew/bin", // macOS Apple Silicon brew
     "/opt/homebrew/sbin",
-    "/usr/local/bin",         // macOS Intel brew + Linux
+    "/usr/local/bin", // macOS Intel brew + Linux
     "/usr/local/sbin",
-    "/snap/bin",              // Linux snap packages
+    "/snap/bin", // Linux snap packages
 ];
 
 /// Per-user dirs (relative to $HOME) we want on PATH. Same rationale as
 /// PATH_EXTRAS_STATIC; resolved lazily because $HOME isn't known at compile
 /// time.
 const PATH_EXTRAS_HOME_RELATIVE: &[&str] = &[
-    "/.cargo/bin",            // rustup
-    "/.local/bin",            // pip --user, pipx, etc
-    "/.bun/bin",              // bun
-    "/.npm-global/bin",       // npm prefix=~/.npm-global
-    "/go/bin",                // go install
+    "/.cargo/bin",      // rustup
+    "/.local/bin",      // pip --user, pipx, etc
+    "/.bun/bin",        // bun
+    "/.npm-global/bin", // npm prefix=~/.npm-global
+    "/go/bin",          // go install
 ];
 
 /// Build a PATH value with common user-binary dirs appended (deduped).
@@ -424,8 +424,16 @@ impl Actor for SubprocessActor {
                 }
             }
             OpKind::SubprocessResize => {
-                let cols = op.payload.get("cols").and_then(|v| v.as_u64()).unwrap_or(80) as u16;
-                let rows = op.payload.get("rows").and_then(|v| v.as_u64()).unwrap_or(24) as u16;
+                let cols = op
+                    .payload
+                    .get("cols")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(80) as u16;
+                let rows = op
+                    .payload
+                    .get("rows")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(24) as u16;
                 if let Some(master) = self.state.master.clone() {
                     tokio::task::spawn_blocking(move || {
                         let guard = master.blocking_lock();
@@ -621,7 +629,11 @@ mod tests {
                         }
                     }
                     OpKind::SubprocessExit => {
-                        exit_code = op.payload.get("code").and_then(|v| v.as_i64()).map(|c| c as i32);
+                        exit_code = op
+                            .payload
+                            .get("code")
+                            .and_then(|v| v.as_i64())
+                            .map(|c| c as i32);
                         break;
                     }
                     _ => {}
@@ -634,7 +646,10 @@ mod tests {
         actor.on_shutdown().await;
 
         assert!(saw_spawned, "expected SubprocessSpawned event");
-        assert!(saw_stdout, "expected stdout containing hello-from-subprocess");
+        assert!(
+            saw_stdout,
+            "expected stdout containing hello-from-subprocess"
+        );
         assert_eq!(exit_code, Some(7), "expected exit code 7");
     }
 }

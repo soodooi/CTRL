@@ -70,12 +70,10 @@ impl ChannelTx {
     }
 
     pub fn try_push(&self, event: Event) -> Result<(), ChannelError> {
-        self.inner
-            .try_send(event)
-            .map_err(|e| match e {
-                mpsc::error::TrySendError::Full(_) => ChannelError::Full,
-                mpsc::error::TrySendError::Closed(_) => ChannelError::ReceiverDropped,
-            })
+        self.inner.try_send(event).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => ChannelError::Full,
+            mpsc::error::TrySendError::Closed(_) => ChannelError::ReceiverDropped,
+        })
     }
 }
 

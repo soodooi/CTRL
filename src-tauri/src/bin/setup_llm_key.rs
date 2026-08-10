@@ -52,7 +52,10 @@ fn main() -> ExitCode {
             ExitCode::from(0)
         }
         Err(e) => {
-            eprintln!("✗ readback failed (write succeeded but read errored): {}", e);
+            eprintln!(
+                "✗ readback failed (write succeeded but read errored): {}",
+                e
+            );
             ExitCode::from(1)
         }
     }

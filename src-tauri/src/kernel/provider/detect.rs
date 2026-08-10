@@ -59,7 +59,11 @@ static DETECTION_CACHE: Mutex<Option<Vec<CliProviderEntry>>> = Mutex::new(None);
 /// Scan the augmented PATH for every CLI in [`CLI_PROVIDERS`].
 /// Cached after the first call.
 pub fn detect_cli_providers() -> Vec<CliProviderEntry> {
-    if let Some(cached) = DETECTION_CACHE.lock().unwrap_or_else(|p| p.into_inner()).clone() {
+    if let Some(cached) = DETECTION_CACHE
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+    {
         return cached;
     }
     let detected = scan_now();

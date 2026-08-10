@@ -4,6 +4,6 @@
   "groups": [
     { "title": "CTRL — data & vault", "skills": ["vault-smart-tables"] },
     { "title": "CTRL — Office", "skills": ["office"] },
-    { "title": "CTRL — build", "skills": ["create-feature-pack"] }
+    { "title": "CTRL — build", "skills": ["create-feature-pack", "create-local-app-adapter"] }
   ]
 }

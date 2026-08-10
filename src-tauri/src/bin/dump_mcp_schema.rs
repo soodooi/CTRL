@@ -7,6 +7,8 @@
 //
 // Usage:
 //   cargo run --manifest-path src-tauri/Cargo.toml --bin dump_mcp_schema
+//   cargo run --manifest-path src-tauri/Cargo.toml --bin dump_mcp_schema -- --check
+// (ADR-010 communication § endpoint-spec v14)
 
 use std::path::PathBuf;
 
@@ -16,11 +18,18 @@ fn main() {
         .parent()
         .expect("src-tauri has a parent (repo root)")
         .join("vault/ctrl/mcp-schema.json");
-    let json = serde_json::to_string_pretty(&spec).expect("serialize spec");
-    std::fs::write(&out, json + "\n").expect("write mcp-schema.json");
-    println!(
-        "wrote {} ({} tools)",
-        out.display(),
-        spec["toolCount"]
-    );
+    let json = serde_json::to_string_pretty(&spec).expect("serialize spec") + "\n";
+    if std::env::args().any(|arg| arg == "--check") {
+        let tracked = std::fs::read_to_string(&out).expect("read tracked mcp-schema.json");
+        if tracked != json {
+            eprintln!(
+                "mcp-schema.json is stale; regenerate with cargo run --manifest-path src-tauri/Cargo.toml --bin dump_mcp_schema"
+            );
+            std::process::exit(1);
+        }
+        println!("mcp-schema.json: PASS ({} tools)", spec["toolCount"]);
+        return;
+    }
+    std::fs::write(&out, json).expect("write mcp-schema.json");
+    println!("wrote {} ({} tools)", out.display(), spec["toolCount"]);
 }

@@ -26,7 +26,12 @@ use std::sync::Mutex;
 /// Default cache root: `$HOME/.ctrl/state/cache/`.
 pub fn default_cache_root() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".ctrl").join("state").join("cache"))
+    Some(
+        PathBuf::from(home)
+            .join(".ctrl")
+            .join("state")
+            .join("cache"),
+    )
 }
 
 /// Default eviction cap: 256 MB across all scopes.
@@ -40,8 +45,7 @@ pub struct Cache {
 
 impl Cache {
     pub fn open(root: &Path, max_bytes: u64) -> Result<Self, CacheError> {
-        std::fs::create_dir_all(root.join("blobs"))
-            .map_err(|e| CacheError::Io(e.to_string()))?;
+        std::fs::create_dir_all(root.join("blobs")).map_err(|e| CacheError::Io(e.to_string()))?;
         let conn = Connection::open_with_flags(
             root.join("index.db"),
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
@@ -171,11 +175,8 @@ impl Cache {
             for r in rows {
                 out.push(r.map_err(|e| CacheError::Db(format!("row: {e}")))?);
             }
-            conn.execute(
-                "DELETE FROM cache_index WHERE scope = ?1",
-                params![scope],
-            )
-            .map_err(|e| CacheError::Db(format!("clear: {e}")))?;
+            conn.execute("DELETE FROM cache_index WHERE scope = ?1", params![scope])
+                .map_err(|e| CacheError::Db(format!("clear: {e}")))?;
             out
         };
         let n = paths.len();

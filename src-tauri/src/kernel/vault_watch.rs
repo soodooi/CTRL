@@ -68,7 +68,9 @@ fn last_error() -> &'static Mutex<Option<String>> {
 }
 
 fn set_last_error(error: Option<String>) {
-    let mut guard = last_error().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut guard = last_error()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     *guard = error;
 }
 
@@ -95,7 +97,10 @@ pub fn diagnostics_snapshot() -> WatchDiagnosticsSnapshot {
             last_error,
         };
     };
-    let buffer = state.buffer.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let buffer = state
+        .buffer
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     WatchDiagnosticsSnapshot {
         started: true,
         event_count: buffer.len(),
@@ -122,19 +127,18 @@ pub fn start(vault_root: &Path) -> Result<(), WatchError> {
     let root_clone = vault_root.to_path_buf();
     // Watcher failures and lifecycle are projected as metadata without exposing
     // roots or creating a second watcher. (ADR-002 substrate § diagnostics-projection v72)
-    let mut watcher: RecommendedWatcher = notify::recommended_watcher(
-        move |res: Result<Event, notify::Error>| match res {
+    let mut watcher: RecommendedWatcher =
+        notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
             Ok(ev) => push_event(&ev, &root_clone),
             Err(e) => {
                 set_last_error(Some(e.to_string()));
                 tracing::warn!(error = %e, "vault_watch: watcher error");
             }
-        },
-    )
-    .map_err(|e| {
-        set_last_error(Some(e.to_string()));
-        WatchError::Notify(e.to_string())
-    })?;
+        })
+        .map_err(|e| {
+            set_last_error(Some(e.to_string()));
+            WatchError::Notify(e.to_string())
+        })?;
     watcher
         .watch(vault_root, RecursiveMode::Recursive)
         .map_err(|e| {

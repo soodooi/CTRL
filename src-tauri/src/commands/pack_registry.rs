@@ -241,7 +241,10 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0]["id"], "axel-belfort/stock-price");
         assert_eq!(out[0]["name"], "Stock Price — Real-Time Quotes");
-        assert_eq!(out[0]["url"], "https://github.com/Br0ski777/stock-price-x402");
+        assert_eq!(
+            out[0]["url"],
+            "https://github.com/Br0ski777/stock-price-x402"
+        );
         assert_eq!(out[0]["source"], "smithery");
     }
 

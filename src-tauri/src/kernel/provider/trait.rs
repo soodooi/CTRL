@@ -42,7 +42,9 @@ impl ProviderRuntimeAvailability {
 /// reserve namespace for v1.1+ (image generation, transcription) so a
 /// manifest can declare them today and the registry's `active_provider(
 /// capability)` lookup keeps working when they land.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
     #[serde(rename = "text.chat")]
@@ -130,7 +132,9 @@ pub trait Provider: Send + Sync {
 /// bind providers via their manifest `brain_capabilities`, not via a
 /// substrate-wide default. `Custom(String)` reserves namespace for future
 /// per-consumer overrides without re-bumping the enum.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum Consumer {
     /// Explicit `irisy.primary` binding. Unset until the user activates a
     /// provider through the production trial.

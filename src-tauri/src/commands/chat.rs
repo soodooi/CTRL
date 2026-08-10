@@ -17,9 +17,7 @@
 
 use crate::kernel::capability::{CapToken, CapabilityBroker};
 use crate::kernel::capability_resolver;
-use crate::kernel::provider::{
-    routing::route_text_chat, Consumer, LlmMessage, LlmPrompt,
-};
+use crate::kernel::provider::{routing::route_text_chat, Consumer, LlmMessage, LlmPrompt};
 use crate::shell::KernelHandle;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
@@ -114,13 +112,7 @@ pub async fn chat_stream(
         // The shared router is the only production text-chat candidate walker;
         // retain this command's event-stream surface after route selection.
         // (ADR-002 substrate § provider v71)
-        let result = route_text_chat(
-            &registry,
-            &Consumer::IrisyPrimary,
-            &prompt,
-            &opts,
-        )
-        .await;
+        let result = route_text_chat(&registry, &Consumer::IrisyPrimary, &prompt, &opts).await;
         let (_provider_id, mut rx) = match result {
             Ok(routed) => routed,
             Err(e) => {

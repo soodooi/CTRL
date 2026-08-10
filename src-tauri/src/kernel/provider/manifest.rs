@@ -69,9 +69,15 @@ pub enum HttpShape {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
 pub enum AuthSource {
-    Keychain { account: String },
-    Env { var: String },
-    ConfigKey { field: String },
+    Keychain {
+        account: String,
+    },
+    Env {
+        var: String,
+    },
+    ConfigKey {
+        field: String,
+    },
     /// No credentials needed (e.g. ollama on localhost). The adapter
     /// passes through with empty auth.
     None,

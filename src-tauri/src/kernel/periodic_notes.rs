@@ -75,17 +75,32 @@ mod tests {
         // "add to today's daily note" (task_produce) and note_periodic must
         // land on the same file.
         let date = d(2026, 12, 31);
-        assert_eq!(note_path(Period::Daily, date), format!("daily/{}.md", date.format("%Y-%m-%d")));
+        assert_eq!(
+            note_path(Period::Daily, date),
+            format!("daily/{}.md", date.format("%Y-%m-%d"))
+        );
     }
 
     #[test]
     fn iso_week_year_boundary_is_correct() {
         // 2026-01-01 falls in ISO week 2026-W01; 2027-01-01 is a Friday in
         // ISO 2026-W53 — the ISO YEAR (not calendar year) must be used.
-        assert_eq!(note_path(Period::Weekly, d(2026, 1, 1)), "weekly/2026-W01.md");
-        assert_eq!(note_path(Period::Weekly, d(2027, 1, 1)), "weekly/2026-W53.md");
+        assert_eq!(
+            note_path(Period::Weekly, d(2026, 1, 1)),
+            "weekly/2026-W01.md"
+        );
+        assert_eq!(
+            note_path(Period::Weekly, d(2027, 1, 1)),
+            "weekly/2026-W53.md"
+        );
         // Quarter boundaries.
-        assert_eq!(note_path(Period::Quarterly, d(2026, 1, 1)), "quarterly/2026-Q1.md");
-        assert_eq!(note_path(Period::Quarterly, d(2026, 12, 31)), "quarterly/2026-Q4.md");
+        assert_eq!(
+            note_path(Period::Quarterly, d(2026, 1, 1)),
+            "quarterly/2026-Q1.md"
+        );
+        assert_eq!(
+            note_path(Period::Quarterly, d(2026, 12, 31)),
+            "quarterly/2026-Q4.md"
+        );
     }
 }

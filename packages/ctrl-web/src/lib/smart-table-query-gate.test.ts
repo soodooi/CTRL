@@ -19,6 +19,9 @@ describe('describeSmartTable', () => {
     invoke.mockResolvedValue({ source_kind: 'record', fields: [], operators: [] });
     const out = await describeSmartTable('tables/leads.md');
     expect(invoke).toHaveBeenCalledWith('gate_invoke', {
+      // A call that addresses no connector declares no narrowing.
+      // (ADR-002 substrate §17.5 v85)
+      intent: null,
       tool: 'smart_table_describe',
       args: { path: 'tables/leads.md' },
     });
@@ -31,6 +34,9 @@ describe('querySmartTable', () => {
     invoke.mockResolvedValue({ rows: [], match_count: 0 });
     await querySmartTable('tables/leads.md');
     expect(invoke).toHaveBeenCalledWith('gate_invoke', {
+      // A call that addresses no connector declares no narrowing.
+      // (ADR-002 substrate §17.5 v85)
+      intent: null,
       tool: 'smart_table_query',
       args: { path: 'tables/leads.md', filters: [], conjunction: 'and', sort: [], group_by: [], limit: null },
     });
@@ -46,6 +52,9 @@ describe('querySmartTable', () => {
       limit: 50,
     });
     expect(invoke).toHaveBeenCalledWith('gate_invoke', {
+      // A call that addresses no connector declares no narrowing.
+      // (ADR-002 substrate §17.5 v85)
+      intent: null,
       tool: 'smart_table_query',
       args: {
         path: 'tables/leads.md',

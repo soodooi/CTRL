@@ -8,7 +8,7 @@
 // selected text. Streaming via the existing irisyChatTransport so the
 // chain stays "Irisy is the brain everywhere" per ADR-005.
 
-import { irisyChatTransport, type LLMMessage } from './llm-transport';
+import { defaultTransport, type LLMMessage } from './llm-transport';
 
 export type BlockActionId =
   | 'tighten'
@@ -102,13 +102,13 @@ export async function runBlockAction(
   onChunk: (chunk: string) => void,
   signal?: AbortSignal,
 ): Promise<string> {
-  const transport = irisyChatTransport();
+  // Inline rewrites are stateless staged output. They must not prime or
+  // mutate the canonical Irisy transcript owner. (ADR-005 irisy §11 v40)
+  const transport = defaultTransport();
+  const task = `${actionInstructions(action, userInput)}\n\n---\n${selectedText}`;
   const messages: LLMMessage[] = [
     { role: 'system', content: BASE_SYSTEM },
-    {
-      role: 'user',
-      content: `${actionInstructions(action, userInput)}\n\n---\n${selectedText}`,
-    },
+    { role: 'user', content: task },
   ];
   let full = '';
   for await (const chunk of transport.stream(messages, { signal })) {

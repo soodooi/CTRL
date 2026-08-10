@@ -83,9 +83,7 @@ pub struct FailoverEvent {
 }
 
 #[tauri::command]
-pub fn brain_status(
-    kernel: State<'_, KernelHandle>,
-) -> Result<BrainStatusView, String> {
+pub fn brain_status(kernel: State<'_, KernelHandle>) -> Result<BrainStatusView, String> {
     brain_status_inner(&kernel)
 }
 
@@ -94,9 +92,7 @@ pub fn brain_status(
 /// v7 §1.1, 2026-06-04). Pi's brain_status tool gives Irisy self-
 /// awareness of its own active provider — closes the "doesn't know its
 /// stack" gap from the BYOK path too.
-pub(crate) fn brain_status_inner(
-    kernel: &KernelHandle,
-) -> Result<BrainStatusView, String> {
+pub(crate) fn brain_status_inner(kernel: &KernelHandle) -> Result<BrainStatusView, String> {
     // ADR-002 substrate §1 v19 (2026-06-09): the EngineStatus shape was
     // designed around Pi-as-sole-brain. In the 3-agent aggregator era this
     // field reports a synthetic "aggregator" engine — the PWA's chip UI
@@ -148,7 +144,9 @@ pub(crate) fn brain_status_inner(
         }
     }
 
-    let last_failover = registry.last_failover_event().map(FailoverEvent::from_recorded);
+    let last_failover = registry
+        .last_failover_event()
+        .map(FailoverEvent::from_recorded);
 
     Ok(BrainStatusView {
         engine,

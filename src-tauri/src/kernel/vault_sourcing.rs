@@ -167,11 +167,7 @@ fn classify(content: &str, frontmatter: &Value) -> String {
     "draft".to_string()
 }
 
-fn suggest_target_path(
-    sourcing_rel: &str,
-    content: &str,
-    all_notes: &HashSet<String>,
-) -> String {
+fn suggest_target_path(sourcing_rel: &str, content: &str, all_notes: &HashSet<String>) -> String {
     let stem_title = content
         .lines()
         .find(|l| !l.trim().is_empty())

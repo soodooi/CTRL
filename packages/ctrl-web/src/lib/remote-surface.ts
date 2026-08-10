@@ -3,8 +3,9 @@
 // lives in the pack). This maps a pack id to that tool and loads it through the
 // LOCAL gate — used both by the desktop RemoteHost (to answer a phone) and by
 // the desktop Mobile page (to show a live preview with real data, no phone).
-import { gateInvoke } from './kernel';
-import { engineTransport } from './llm-transport';
+import { gateInvoke, resetEngine } from './kernel';
+import { engineTransport, type LLMMessage } from './llm-transport';
+import { ensureActiveIrisySession, useIrisySessionsStore } from './irisy-sessions';
 import type { ChatHandlers } from './remote-connection';
 import type { Surface } from '@/components/remote/SurfaceRenderer';
 
@@ -67,15 +68,78 @@ export async function runLocalAction(op: string, args: Record<string, unknown>):
  *  but without the relay hop (this IS the desktop). */
 export function localChat(text: string, h: ChatHandlers): void {
   void (async () => {
+    const task = text.trim();
+    if (!task) {
+      h.onDone('Message is empty');
+      return;
+    }
+    const sessionId = ensureActiveIrisySession();
+    const store = useIrisySessionsStore.getState();
+    const session = store.sessions.find((candidate) => candidate.id === sessionId);
+    if (!session) {
+      h.onDone('Irisy session is unavailable');
+      return;
+    }
+    const history: LLMMessage[] = session.messages.flatMap((message) =>
+      message.role === 'user' || message.role === 'assistant'
+        ? [{ role: message.role, content: message.content }]
+        : [],
+    );
+    history.push({ role: 'user', content: task });
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const assistantId = `preview-a-${suffix}`;
+    store.setMessages(sessionId, (messages) => [
+      ...messages,
+      { id: `preview-u-${suffix}`, role: 'user', content: task, streaming: false },
+      { id: assistantId, role: 'assistant', content: '', streaming: true },
+    ]);
     try {
-      const stream = engineTransport().stream([{ role: 'user', content: text }], {});
+      // Preview chat uses the same canonical recovery boundary as desktop and
+      // remote-host turns. (ADR-005 irisy §11 v40)
+      await resetEngine();
+      const stream = engineTransport().stream(
+        history,
+        {
+          context: {
+            session_id: sessionId,
+            resources: session.resources,
+            capability_scope: ['describe', 'query', 'produce'],
+            policy: 'review-gated-writes',
+            task,
+          },
+        },
+      );
       for await (const chunk of stream) {
-        const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
-        if (delta) h.onChunk(delta);
+        if (chunk.error) throw new Error(chunk.error);
+        const delta = chunk.delta ?? '';
+        if (delta) {
+          useIrisySessionsStore.getState().setMessages(sessionId, (messages) =>
+            messages.map((message) =>
+              message.id === assistantId && message.role === 'assistant'
+                ? { ...message, content: message.content + delta }
+                : message,
+            ),
+          );
+          h.onChunk(delta);
+        }
       }
+      useIrisySessionsStore.getState().setMessages(sessionId, (messages) =>
+        messages.map((message) =>
+          message.id === assistantId && message.role === 'assistant'
+            ? { ...message, streaming: false }
+            : message,
+        ),
+      );
       h.onDone();
-    } catch (e) {
-      h.onDone(e instanceof Error ? e.message : String(e));
+    } catch (error) {
+      useIrisySessionsStore.getState().setMessages(sessionId, (messages) =>
+        messages.map((message) =>
+          message.id === assistantId && message.role === 'assistant'
+            ? { ...message, streaming: false }
+            : message,
+        ),
+      );
+      h.onDone(error instanceof Error ? error.message : String(error));
     }
   })();
 }

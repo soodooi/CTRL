@@ -54,7 +54,10 @@ pub fn record_source_from_openapi(spec: &Value, path: &str, method: &str) -> Opt
         "query": { "endpoint": path, "method": method.to_uppercase(), "array_at": array_at },
         "fields": fields,
     });
-    Some(Scaffold { record_source, notes })
+    Some(Scaffold {
+        record_source,
+        notes,
+    })
 }
 
 // --- internals ---------------------------------------------------------------
@@ -98,7 +101,10 @@ fn array_location(spec: &Value, schema: &Value, notes: &mut Vec<String>) -> (Str
     let schema = deref(spec, schema);
     match schema.get("type").and_then(Value::as_str) {
         Some("array") => {
-            let item = schema.get("items").map(|i| deref(spec, i).clone()).unwrap_or(Value::Null);
+            let item = schema
+                .get("items")
+                .map(|i| deref(spec, i).clone())
+                .unwrap_or(Value::Null);
             (String::new(), item)
         }
         Some("object") => {
@@ -107,8 +113,10 @@ fn array_location(spec: &Value, schema: &Value, notes: &mut Vec<String>) -> (Str
                 for (name, prop) in props {
                     let prop = deref(spec, prop);
                     if prop.get("type").and_then(Value::as_str) == Some("array") {
-                        let item =
-                            prop.get("items").map(|i| deref(spec, i).clone()).unwrap_or(Value::Null);
+                        let item = prop
+                            .get("items")
+                            .map(|i| deref(spec, i).clone())
+                            .unwrap_or(Value::Null);
                         return (name.clone(), item);
                     }
                 }
@@ -137,7 +145,9 @@ fn fields_from_schema(spec: &Value, item: &Value, notes: &mut Vec<String>) -> Va
         let prop = deref(spec, prop);
         let ty = cell_type(prop);
         if ty == "unknown" {
-            notes.push(format!("field '{name}': unrecognized type — defaulted to text"));
+            notes.push(format!(
+                "field '{name}': unrecognized type — defaulted to text"
+            ));
         }
         let cell = if ty == "unknown" { "text" } else { ty };
         fields.push(json!({
@@ -296,13 +306,19 @@ mod tests {
         let s = record_source_from_openapi(&spec, "/x", "GET").unwrap();
         assert_eq!(s.record_source["query"]["endpoint"], "/x");
         assert!(s.record_source["fields"].as_array().unwrap().is_empty());
-        assert!(s.notes.iter().any(|n| n.contains("response schema") || n.contains("fields")));
+        assert!(s
+            .notes
+            .iter()
+            .any(|n| n.contains("response schema") || n.contains("fields")));
     }
 
     #[test]
     fn title_case_handles_camel_snake_and_acronym_tail() {
         assert_eq!(title_case("valueInBaseCurrency"), "Value In Base Currency");
-        assert_eq!(title_case("allocation_in_percentage"), "Allocation In Percentage");
+        assert_eq!(
+            title_case("allocation_in_percentage"),
+            "Allocation In Percentage"
+        );
         assert_eq!(title_case("symbol"), "Symbol");
     }
 }

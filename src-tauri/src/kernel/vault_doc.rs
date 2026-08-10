@@ -114,7 +114,9 @@ impl DocBody {
 
     /// Replace the BODY under a heading, keeping the heading line itself.
     fn replace_section(&mut self, heading: &str, content: &str) -> Result<(), ProduceError> {
-        let (start, end) = self.find_section(heading).ok_or_else(|| section_not_found(heading))?;
+        let (start, end) = self
+            .find_section(heading)
+            .ok_or_else(|| section_not_found(heading))?;
         let mut insert: Vec<String> = vec![String::new()];
         insert.extend(content.lines().map(str::to_string));
         // House style: keep a blank line before an abutting next heading.
@@ -127,7 +129,9 @@ impl DocBody {
 
     /// Remove a heading AND its body.
     fn delete_section(&mut self, heading: &str) -> Result<(), ProduceError> {
-        let (start, end) = self.find_section(heading).ok_or_else(|| section_not_found(heading))?;
+        let (start, end) = self
+            .find_section(heading)
+            .ok_or_else(|| section_not_found(heading))?;
         self.lines.drain(start..end);
         // Collapse a doubled blank line left at the seam.
         if start > 0
@@ -181,8 +185,13 @@ impl DocBody {
             .filter_map(|(i, l)| {
                 let id = l.rsplit_once(" ^").map(|(_, id)| id)?;
                 let ok = !id.is_empty()
-                    && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-                ok.then(|| MapBlockRef { id: id.to_string(), line: i })
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+                ok.then(|| MapBlockRef {
+                    id: id.to_string(),
+                    line: i,
+                })
             })
             .collect()
     }
@@ -211,7 +220,9 @@ impl RecordSink for DocBody {
 }
 
 fn section_not_found(heading: &str) -> ProduceError {
-    ProduceError::Conflict { message: format!("heading '{heading}' not found") }
+    ProduceError::Conflict {
+        message: format!("heading '{heading}' not found"),
+    }
 }
 
 /// The text of an ATX heading line (`## Title` → `Title`), or None if the line
@@ -277,8 +288,11 @@ mod tests {
     #[test]
     fn append_at_end_of_document() {
         let mut d = DocBody::parse(DOC);
-        d.produce(ProduceOp::AppendSection { heading: None, content: "## New\n\nnew body".into() })
-            .unwrap();
+        d.produce(ProduceOp::AppendSection {
+            heading: None,
+            content: "## New\n\nnew body".into(),
+        })
+        .unwrap();
         let out = d.serialize();
         assert!(out.ends_with("## New\n\nnew body\n"));
         assert!(out.starts_with("# Spec\n")); // rest untouched
@@ -296,7 +310,10 @@ mod tests {
         let ov = out.find("appended line").unwrap();
         let det = out.find("## Details").unwrap();
         assert!(ov < det, "appended inside Overview, before Details");
-        assert!(out.contains("more old\n\nappended line"), "blank-line separated");
+        assert!(
+            out.contains("more old\n\nappended line"),
+            "blank-line separated"
+        );
     }
 
     #[test]
@@ -308,7 +325,10 @@ mod tests {
         })
         .unwrap();
         let out = d.serialize();
-        assert!(out.contains("## Overview\n\nfresh body\n\n## Details"), "blank line kept before the next heading");
+        assert!(
+            out.contains("## Overview\n\nfresh body\n\n## Details"),
+            "blank line kept before the next heading"
+        );
         assert!(!out.contains("old overview body"));
         assert!(out.contains("detail body")); // sibling untouched
     }
@@ -316,11 +336,17 @@ mod tests {
     #[test]
     fn delete_section_removes_heading_and_nested_body() {
         let mut d = DocBody::parse(DOC);
-        d.produce(ProduceOp::DeleteSection { heading: "Details".into() }).unwrap();
+        d.produce(ProduceOp::DeleteSection {
+            heading: "Details".into(),
+        })
+        .unwrap();
         let out = d.serialize();
         assert!(!out.contains("## Details"));
         assert!(!out.contains("detail body"));
-        assert!(!out.contains("### Sub"), "nested subsection goes with its parent");
+        assert!(
+            !out.contains("### Sub"),
+            "nested subsection goes with its parent"
+        );
         assert!(out.contains("## Overview")); // sibling untouched
         assert!(out.contains("old overview body"));
     }
@@ -329,15 +355,23 @@ mod tests {
     fn missing_heading_is_a_conflict() {
         let mut d = DocBody::parse(DOC);
         assert!(matches!(
-            d.produce(ProduceOp::ReplaceSection { heading: "Nope".into(), content: "x".into() }),
+            d.produce(ProduceOp::ReplaceSection {
+                heading: "Nope".into(),
+                content: "x".into()
+            }),
             Err(ProduceError::Conflict { .. })
         ));
         assert!(matches!(
-            d.produce(ProduceOp::DeleteSection { heading: "Nope".into() }),
+            d.produce(ProduceOp::DeleteSection {
+                heading: "Nope".into()
+            }),
             Err(ProduceError::Conflict { .. })
         ));
         assert!(matches!(
-            d.produce(ProduceOp::AppendSection { heading: Some("Nope".into()), content: "x".into() }),
+            d.produce(ProduceOp::AppendSection {
+                heading: Some("Nope".into()),
+                content: "x".into()
+            }),
             Err(ProduceError::Conflict { .. })
         ));
     }
@@ -346,7 +380,11 @@ mod tests {
     fn record_ops_are_unsupported_on_a_doc() {
         let mut d = DocBody::parse(DOC);
         let err = d
-            .produce(ProduceOp::SetCell { row: 0, field: "x".into(), value: "y".into() })
+            .produce(ProduceOp::SetCell {
+                row: 0,
+                field: "x".into(),
+                value: "y".into(),
+            })
             .unwrap_err();
         match err {
             ProduceError::Unsupported { op, supported } => {
@@ -360,7 +398,10 @@ mod tests {
     #[test]
     fn serialize_round_trips_verbatim() {
         assert_eq!(DocBody::parse(DOC).serialize(), DOC);
-        assert_eq!(DocBody::parse("no trailing newline").serialize(), "no trailing newline");
+        assert_eq!(
+            DocBody::parse("no trailing newline").serialize(),
+            "no trailing newline"
+        );
         assert_eq!(DocBody::parse("").serialize(), "");
     }
 
@@ -372,15 +413,27 @@ mod tests {
         let d = DocBody::parse(doc);
         let (start, end) = d.find_section("Setup").unwrap();
         assert!(d.lines[start].contains("## Setup"));
-        assert!(d.lines[end].contains("## Next"), "section spans the whole fence");
-        assert!(d.find_section("install deps").is_none(), "fence content not addressable");
+        assert!(
+            d.lines[end].contains("## Next"),
+            "section spans the whole fence"
+        );
+        assert!(
+            d.find_section("install deps").is_none(),
+            "fence content not addressable"
+        );
 
         // replace_section keeps everything outside the Setup body intact.
         let mut d = DocBody::parse(doc);
-        d.produce(ProduceOp::ReplaceSection { heading: "Setup".into(), content: "new setup".into() })
-            .unwrap();
+        d.produce(ProduceOp::ReplaceSection {
+            heading: "Setup".into(),
+            content: "new setup".into(),
+        })
+        .unwrap();
         let out = d.serialize();
-        assert!(!out.contains("npm install"), "old body incl. fence replaced");
+        assert!(
+            !out.contains("npm install"),
+            "old body incl. fence replaced"
+        );
         assert!(out.contains("## Next\n\nnext body"), "sibling untouched");
 
         // ~~~ fences behave the same.
@@ -393,11 +446,17 @@ mod tests {
     fn indented_code_lines_are_not_headings() {
         // CommonMark: 4+ spaces = indented code, never a heading.
         assert_eq!(heading_text("    # not a heading"), None);
-        assert_eq!(heading_text("   ### still a heading"), Some("still a heading"));
+        assert_eq!(
+            heading_text("   ### still a heading"),
+            Some("still a heading")
+        );
         assert_eq!(heading_text("\t# tab-indented code"), None);
         let d = DocBody::parse("## A\n\n    # indented code\n\n## B\n\nb\n");
         let (_, end) = d.find_section("A").unwrap();
-        assert!(d.lines[end].contains("## B"), "indented code is not a boundary");
+        assert!(
+            d.lines[end].contains("## B"),
+            "indented code is not a boundary"
+        );
     }
 
     #[test]
@@ -416,7 +475,10 @@ mod tests {
         let d = DocBody::parse(doc);
         let hs = d.map_headings();
         assert_eq!(hs.len(), 2, "fence heading excluded");
-        assert_eq!((hs[0].level, hs[0].text.as_str(), hs[0].line), (1, "Top", 0));
+        assert_eq!(
+            (hs[0].level, hs[0].text.as_str(), hs[0].line),
+            (1, "Top", 0)
+        );
         assert_eq!((hs[1].level, hs[1].text.as_str()), (2, "Sub"));
         let refs = d.map_block_refs();
         let ids: Vec<&str> = refs.iter().map(|r| r.id.as_str()).collect();
@@ -432,7 +494,11 @@ mod tests {
     #[test]
     fn append_to_empty_doc() {
         let mut d = DocBody::parse("");
-        d.produce(ProduceOp::AppendSection { heading: None, content: "# First".into() }).unwrap();
+        d.produce(ProduceOp::AppendSection {
+            heading: None,
+            content: "# First".into(),
+        })
+        .unwrap();
         assert_eq!(d.serialize(), "# First\n");
     }
 }

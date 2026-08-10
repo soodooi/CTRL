@@ -117,10 +117,18 @@ fn resolve_installed_at(mcps_dir: &std::path::Path, mcp_id: &str) -> Option<Capa
     // (mirrors resolve_seed) so a pack can persist its own state without
     // declaring it. Scoped to mcp_id → it can never touch another pack's.
     let mut tokens = vec![
-        CapToken::KvRead { namespace: mcp_id.to_string() },
-        CapToken::KvWrite { namespace: mcp_id.to_string() },
-        CapToken::CacheRead { scope: mcp_id.to_string() },
-        CapToken::CacheWrite { scope: mcp_id.to_string() },
+        CapToken::KvRead {
+            namespace: mcp_id.to_string(),
+        },
+        CapToken::KvWrite {
+            namespace: mcp_id.to_string(),
+        },
+        CapToken::CacheRead {
+            scope: mcp_id.to_string(),
+        },
+        CapToken::CacheWrite {
+            scope: mcp_id.to_string(),
+        },
     ];
 
     match caps {
@@ -170,7 +178,11 @@ fn capabilities_object_to_tokens(caps: &serde_json::Value) -> Vec<CapToken> {
     };
     let str_array = |v: Option<&serde_json::Value>| -> Vec<String> {
         v.and_then(|x| x.as_array())
-            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default()
     };
 
@@ -183,7 +195,10 @@ fn capabilities_object_to_tokens(caps: &serde_json::Value) -> Vec<CapToken> {
     }
     // text.chat → LLM access
     if flag(&["text", "chat"]) {
-        t.push(CapToken::LlmCall { model: "*".into(), max_tokens: None });
+        t.push(CapToken::LlmCall {
+            model: "*".into(),
+            max_tokens: None,
+        });
     }
     // network.http.{allowlist,methods} → one Http{Get,Post} token per host,
     // gated by the declared methods (default GET+POST per the schema).
@@ -191,12 +206,18 @@ fn capabilities_object_to_tokens(caps: &serde_json::Value) -> Vec<CapToken> {
         let hosts = str_array(http.get("allowlist"));
         let methods = {
             let m = str_array(http.get("methods"));
-            if m.is_empty() { vec!["GET".into(), "POST".into()] } else { m }
+            if m.is_empty() {
+                vec!["GET".into(), "POST".into()]
+            } else {
+                m
+            }
         };
         let has = |name: &str| methods.iter().any(|m| m.eq_ignore_ascii_case(name));
         for host in hosts {
             if has("GET") {
-                t.push(CapToken::HttpGet { url_glob: host.clone() });
+                t.push(CapToken::HttpGet {
+                    url_glob: host.clone(),
+                });
             }
             if has("POST") {
                 t.push(CapToken::HttpPost { url_glob: host });
@@ -212,7 +233,10 @@ fn capabilities_object_to_tokens(caps: &serde_json::Value) -> Vec<CapToken> {
     }
     // mcp.invoke → call other MCP servers through the gate
     if flag(&["mcp", "invoke"]) {
-        t.push(CapToken::McpInvoke { server: "*".into(), tool_glob: "*".into() });
+        t.push(CapToken::McpInvoke {
+            server: "*".into(),
+            tool_glob: "*".into(),
+        });
     }
     // platform.hotkey → register a global hotkey
     if flag(&["platform", "hotkey"]) {
@@ -237,7 +261,10 @@ pub fn network_authorizes(cap: &Capability, url: &str, method: &str) -> bool {
         Some(h) => h.to_ascii_lowercase(),
         None => return false,
     };
-    let host = host.trim_start_matches('[').trim_end_matches(']').to_string();
+    let host = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
     let is_write = !method.eq_ignore_ascii_case("GET");
     let host_matches = |glob: &str| -> bool {
         let g = glob.to_ascii_lowercase();
@@ -305,21 +332,42 @@ mod tests {
 
         // Declared → granted.
         assert!(tokens.contains(&CapToken::ClipboardRead));
-        assert!(tokens.contains(&CapToken::LlmCall { model: "*".into(), max_tokens: None }));
-        assert!(tokens.contains(&CapToken::HttpGet { url_glob: "api.example.com".into() }));
-        assert!(tokens.contains(&CapToken::FsRead { path_glob: "Stocks/".into() }));
-        assert!(tokens.contains(&CapToken::McpInvoke { server: "*".into(), tool_glob: "*".into() }));
+        assert!(tokens.contains(&CapToken::LlmCall {
+            model: "*".into(),
+            max_tokens: None
+        }));
+        assert!(tokens.contains(&CapToken::HttpGet {
+            url_glob: "api.example.com".into()
+        }));
+        assert!(tokens.contains(&CapToken::FsRead {
+            path_glob: "Stocks/".into()
+        }));
+        assert!(tokens.contains(&CapToken::McpInvoke {
+            server: "*".into(),
+            tool_glob: "*".into()
+        }));
 
         // NOT declared → NOT granted (least privilege).
-        assert!(!tokens.contains(&CapToken::ClipboardWrite), "write was false");
         assert!(
-            !tokens.contains(&CapToken::HttpPost { url_glob: "api.example.com".into() }),
+            !tokens.contains(&CapToken::ClipboardWrite),
+            "write was false"
+        );
+        assert!(
+            !tokens.contains(&CapToken::HttpPost {
+                url_glob: "api.example.com".into()
+            }),
             "only GET declared, POST must not be granted"
         );
-        assert!(!tokens.contains(&CapToken::HotkeyRegister { combo: "*".into() }), "hotkey false");
+        assert!(
+            !tokens.contains(&CapToken::HotkeyRegister { combo: "*".into() }),
+            "hotkey false"
+        );
         // keyring/screen/notify/mcp.spawn have no kernel CapToken → never appear.
         assert_eq!(
-            tokens.iter().filter(|t| matches!(t, CapToken::FsWrite { .. })).count(),
+            tokens
+                .iter()
+                .filter(|t| matches!(t, CapToken::FsWrite { .. }))
+                .count(),
             0,
             "empty write_allowlist grants no FsWrite"
         );
@@ -332,14 +380,30 @@ mod tests {
             url_glob: "push2.eastmoney.com".into(),
         }]);
         // Declared host (+ subdomain) GET → allowed.
-        assert!(network_authorizes(&cap, "https://push2.eastmoney.com/api/qt", "GET"));
-        assert!(network_authorizes(&cap, "https://sub.push2.eastmoney.com/x", "GET"));
+        assert!(network_authorizes(
+            &cap,
+            "https://push2.eastmoney.com/api/qt",
+            "GET"
+        ));
+        assert!(network_authorizes(
+            &cap,
+            "https://sub.push2.eastmoney.com/x",
+            "GET"
+        ));
         // Undeclared host → denied (no exfil to evil.com).
         assert!(!network_authorizes(&cap, "https://evil.com/steal", "GET"));
         // Declared for GET only → POST (write/exfil) denied.
-        assert!(!network_authorizes(&cap, "https://push2.eastmoney.com/up", "POST"));
+        assert!(!network_authorizes(
+            &cap,
+            "https://push2.eastmoney.com/up",
+            "POST"
+        ));
         // Empty capability → nothing authorized (fail-closed).
-        assert!(!network_authorizes(&Capability::new(vec![]), "https://push2.eastmoney.com/", "GET"));
+        assert!(!network_authorizes(
+            &Capability::new(vec![]),
+            "https://push2.eastmoney.com/",
+            "GET"
+        ));
     }
 
     #[test]
@@ -385,16 +449,36 @@ mod tests {
         // 3. ENFORCE — declared capabilities pass.
         assert!(
             broker
-                .check(&cap, &CapToken::HttpGet { url_glob: "push2.eastmoney.com".into() })
+                .check(
+                    &cap,
+                    &CapToken::HttpGet {
+                        url_glob: "push2.eastmoney.com".into()
+                    }
+                )
                 .is_ok(),
             "declared network GET must be authorized"
         );
         assert!(
-            broker.check(&cap, &CapToken::LlmCall { model: "*".into(), max_tokens: None }).is_ok(),
+            broker
+                .check(
+                    &cap,
+                    &CapToken::LlmCall {
+                        model: "*".into(),
+                        max_tokens: None
+                    }
+                )
+                .is_ok(),
             "declared text.chat must authorize LlmCall"
         );
         assert!(
-            broker.check(&cap, &CapToken::KvWrite { namespace: "stock".into() }).is_ok(),
+            broker
+                .check(
+                    &cap,
+                    &CapToken::KvWrite {
+                        namespace: "stock".into()
+                    }
+                )
+                .is_ok(),
             "baseline own-namespace KV must be authorized"
         );
 
@@ -402,21 +486,48 @@ mod tests {
         //    an injected model can't make this read-only pack write the vault
         //    or POST out, because the pack never declared it).
         assert!(
-            broker.check(&cap, &CapToken::VaultWrite { path_glob: "*".into() }).is_err(),
+            broker
+                .check(
+                    &cap,
+                    &CapToken::VaultWrite {
+                        path_glob: "*".into()
+                    }
+                )
+                .is_err(),
             "undeclared vault write must be denied"
         );
         assert!(
-            broker.check(&cap, &CapToken::HttpPost { url_glob: "push2.eastmoney.com".into() }).is_err(),
+            broker
+                .check(
+                    &cap,
+                    &CapToken::HttpPost {
+                        url_glob: "push2.eastmoney.com".into()
+                    }
+                )
+                .is_err(),
             "only GET declared — POST must be denied"
         );
         assert!(
-            broker.check(&cap, &CapToken::KvWrite { namespace: "other-pack".into() }).is_err(),
+            broker
+                .check(
+                    &cap,
+                    &CapToken::KvWrite {
+                        namespace: "other-pack".into()
+                    }
+                )
+                .is_err(),
             "must not reach another pack's namespace"
         );
 
         // 5. Write surface is flagged for the human review gate; reads aren't.
-        assert!(review_gate::requires_review("stock_write"), "writes need review");
-        assert!(!review_gate::requires_review("stock_quote"), "reads run freely");
+        assert!(
+            review_gate::requires_review("stock_write"),
+            "writes need review"
+        );
+        assert!(
+            !review_gate::requires_review("stock_quote"),
+            "reads run freely"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }

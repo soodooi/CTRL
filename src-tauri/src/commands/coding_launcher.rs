@@ -2,16 +2,12 @@
 //!
 //! CTRL projects the configured root and gate; the user's OpenCode process owns
 //! its lifecycle and agent loop. This command only performs the explicit
-//! app-shell Effect requested by the user. Installed feature-pack scopes
-//! (`~/Documents/CTRL/<pack_id>/`, materialized by `projector::project_pack`)
-//! are also valid OpenCode launch targets — a feature pack is a project-scope
-//! (ADR-002 §1B.8) and every pack scope now carries its own `opencode.json`
-//! (ADR-002 §1B.8 v74), so it must be launchable the same way the base
-//! workspace is. As of v31 the primary consumer is CodingScene's embedded
-//! PTY (via `cs_spawn`, not this module); this module now backs only the
-//! secondary "Open externally" action. (ADR-001 spine §4 v15;
-//! ADR-002 substrate §1B.8 v74; ADR-003 frontend §8.5 v31;
-//! ADR-005 irisy §8.7 v29)
+//! app-shell Effect requested by the user. Installed feature-pack project
+//! scopes are also valid OpenCode launch targets. This module remains only an
+//! explicit user-triggered shell Effect; the external CLI owns its loop and
+//! history and reaches CTRL as an attributed `:17873` client.
+//! (ADR-001 spine §4 v22; ADR-003 frontend §8.5 v40;
+//! ADR-005 irisy §11 v40)
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -86,6 +82,14 @@ pub fn coding_launcher_status() -> Result<CodingLauncherStatus, String> {
         opencode_available: opencode.is_some(),
         launch_command,
     })
+}
+
+#[tauri::command]
+pub fn register_project_resource(path: String) -> Result<String, String> {
+    let root = configured_root()?;
+    let workspace = validate_workspace(&root, Path::new(&path))?;
+    crate::kernel::project_resource::register_authorized_project(&workspace)
+        .map(|resource| resource.to_string())
 }
 
 #[tauri::command]
@@ -403,7 +407,10 @@ mod tests {
 
         let workspaces = discover_workspaces(&canonical);
         assert_eq!(workspaces.len(), 2);
-        let pack = workspaces.iter().find(|w| w.id == "ctrl-ghostfolio").unwrap();
+        let pack = workspaces
+            .iter()
+            .find(|w| w.id == "ctrl-ghostfolio")
+            .unwrap();
         assert!(pack.opencode_config_present);
         assert_eq!(pack.path, pack_dir.to_string_lossy());
     }

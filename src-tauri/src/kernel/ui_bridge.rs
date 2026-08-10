@@ -33,7 +33,10 @@ pub struct UiBridge {
 impl UiBridge {
     pub fn new() -> Self {
         let (open_tx, _rx) = broadcast::channel(16);
-        UiBridge { active_note: RwLock::new(None), open_tx }
+        UiBridge {
+            active_note: RwLock::new(None),
+            open_tx,
+        }
     }
 
     /// PWA-side report (Tauri command): which note is focused now.
@@ -83,7 +86,10 @@ mod tests {
     async fn open_request_reaches_subscriber() {
         let b = UiBridge::new();
         // No subscriber yet → send reports false (PWA not listening).
-        assert!(!b.request_open(OpenNoteRequest { path: "a.md".into(), heading: None }));
+        assert!(!b.request_open(OpenNoteRequest {
+            path: "a.md".into(),
+            heading: None
+        }));
         let mut rx = b.subscribe_open();
         assert!(b.request_open(OpenNoteRequest {
             path: "notes/x.md".into(),

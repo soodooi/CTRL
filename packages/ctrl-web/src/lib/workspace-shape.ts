@@ -7,7 +7,9 @@
 // manifest's optional `workspace?` field.
 //
 // This module is the lookup. `workspace-store.ts` is where instances
-// get spawned; `WorkspaceShell.tsx` renders them.
+// get spawned. The multi-instance shell that used to render them was retired
+// with the Ambient shell (ADR-003 frontend §8.5 v40); this shape is retained as
+// the tab/layout vocabulary its live consumers still use.
 
 import type { TabKind } from './tab-store';
 
@@ -41,7 +43,7 @@ export interface ShapeSpec {
  * Canonical derivation table. Keep this small — the cleaner the table,
  * the less time users spend trying to predict what their click will do.
  *
- * 'tabs' layout = a tab strip + active tab fills body (today's TabBar).
+ * 'tabs' layout = a tab strip + active tab fills the body.
  * 'single' = one body, no tab strip (smallest cognitive load).
  * 'split-h' / 'split-v' = future, currently fall back to 'tabs' in the
  * renderer until a Pane split component lands.

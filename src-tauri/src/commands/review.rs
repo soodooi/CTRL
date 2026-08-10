@@ -16,9 +16,7 @@ use tauri::State;
 /// approve/deny modal from these — each carries the gate-derived tool +
 /// arg summary (never caller prose).
 #[tauri::command]
-pub async fn review_pending(
-    kernel: State<'_, KernelHandle>,
-) -> Result<Vec<ReviewRequest>, String> {
+pub async fn review_pending(kernel: State<'_, KernelHandle>) -> Result<Vec<ReviewRequest>, String> {
     Ok(kernel.runtime.review_gate.list_pending())
 }
 

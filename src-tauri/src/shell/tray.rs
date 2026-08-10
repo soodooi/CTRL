@@ -66,8 +66,7 @@ impl TrayController {
     /// Build and install the system tray icon. Returns immediately; tray events
     /// fire on the Tauri runtime thread.
     pub fn install(app: &AppHandle) -> Result<()> {
-        let open_config =
-            MenuItem::with_id(app, "open-config", "Open Config", true, None::<&str>)?;
+        let open_config = MenuItem::with_id(app, "open-config", "Open Config", true, None::<&str>)?;
         let reload_pwa =
             MenuItem::with_id(app, "reload-pwa", "Reload PWA  ⌘R", true, None::<&str>)?;
         let separator = PredefinedMenuItem::separator(app)?;
@@ -75,8 +74,7 @@ impl TrayController {
 
         #[cfg(target_os = "macos")]
         let menu = {
-            let open_ctrl =
-                MenuItem::with_id(app, "open-ctrl", "Open CTRL", true, None::<&str>)?;
+            let open_ctrl = MenuItem::with_id(app, "open-ctrl", "Open CTRL", true, None::<&str>)?;
             Menu::with_items(
                 app,
                 &[

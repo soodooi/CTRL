@@ -109,9 +109,7 @@ pub struct SortKey {
 /// How a request's filters combine — table-independent, a genuine enum (never a
 /// caller string). `And` (default) keeps the original semantics; `Or` passes a
 /// row that satisfies any filter (an empty filter set always passes, both ways).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Conjunction {
     #[default]
@@ -164,7 +162,11 @@ impl std::fmt::Display for QueryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             QueryError::UnknownField { field, valid } => {
-                write!(f, "field_not_found: '{field}' (valid: {})", valid.join(", "))
+                write!(
+                    f,
+                    "field_not_found: '{field}' (valid: {})",
+                    valid.join(", ")
+                )
             }
         }
     }
@@ -190,7 +192,11 @@ pub trait QuerySource {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProduceOp {
     /// Set one cell by row index + field key.
-    SetCell { row: usize, field: String, value: String },
+    SetCell {
+        row: usize,
+        field: String,
+        value: String,
+    },
     /// Append one or more rows (batch-create; each keyed by field key). NOTE:
     /// currently append-only — no update-by-key merge yet, so repeated calls with
     /// the same logical row create duplicates (matches smart_table_batch_append).
@@ -272,7 +278,11 @@ pub enum RelationSpec {
     /// Pull a field from the referenced rows (computed, not stored).
     Lookup { via: String, target: String },
     /// Aggregate a field over the referenced rows (computed, not stored).
-    Rollup { via: String, target: String, func: String },
+    Rollup {
+        via: String,
+        target: String,
+        func: String,
+    },
 }
 
 /// Structured, machine-actionable produce failure (§14.11 Feedback shape).
@@ -292,7 +302,11 @@ impl std::fmt::Display for ProduceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ProduceError::Unsupported { op, supported } => {
-                write!(f, "unsupported op '{op}' (supported: {})", supported.join(", "))
+                write!(
+                    f,
+                    "unsupported op '{op}' (supported: {})",
+                    supported.join(", ")
+                )
             }
             ProduceError::OutOfRange { what } => write!(f, "out of range: {what}"),
             ProduceError::UnknownField { field } => write!(f, "field_not_found: '{field}'"),
@@ -404,7 +418,10 @@ pub fn run_query(
     if let Some(lim) = req.limit {
         out.truncate(lim);
     }
-    Ok(QueryResult { rows: out, match_count })
+    Ok(QueryResult {
+        rows: out,
+        match_count,
+    })
 }
 
 /// Evaluate one filter against one cell, typed by the field's `CellType`.
@@ -425,11 +442,15 @@ fn apply_filter(cell: &str, ct: CellType, op: Operator, value: &str, now: NaiveD
             }
         }
         CellType::Date => {
-            let Some(c) = parse_date(cell) else { return false };
+            let Some(c) = parse_date(cell) else {
+                return false;
+            };
             if op == Operator::Within {
                 return within(c, value, now);
             }
-            let Some(v) = parse_date(value) else { return false };
+            let Some(v) = parse_date(value) else {
+                return false;
+            };
             match op {
                 Operator::Eq => c == v,
                 Operator::Before | Operator::Lt => c < v,
@@ -528,23 +549,69 @@ mod tests {
 
     fn fields() -> Vec<FieldSpec> {
         vec![
-            FieldSpec { key: "name".into(), label: "Name".into(), cell_type: CellType::Text, options: None },
-            FieldSpec { key: "amount".into(), label: "Amount".into(), cell_type: CellType::Number, options: None },
-            FieldSpec { key: "due".into(), label: "Due".into(), cell_type: CellType::Date, options: None },
-            FieldSpec { key: "done".into(), label: "Done".into(), cell_type: CellType::Checkbox, options: None },
-            FieldSpec { key: "tags".into(), label: "Tags".into(), cell_type: CellType::Tags, options: None },
+            FieldSpec {
+                key: "name".into(),
+                label: "Name".into(),
+                cell_type: CellType::Text,
+                options: None,
+            },
+            FieldSpec {
+                key: "amount".into(),
+                label: "Amount".into(),
+                cell_type: CellType::Number,
+                options: None,
+            },
+            FieldSpec {
+                key: "due".into(),
+                label: "Due".into(),
+                cell_type: CellType::Date,
+                options: None,
+            },
+            FieldSpec {
+                key: "done".into(),
+                label: "Done".into(),
+                cell_type: CellType::Checkbox,
+                options: None,
+            },
+            FieldSpec {
+                key: "tags".into(),
+                label: "Tags".into(),
+                cell_type: CellType::Tags,
+                options: None,
+            },
         ]
     }
 
     fn row(pairs: &[(&str, &str)]) -> Row {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     fn sample() -> Vec<Row> {
         vec![
-            row(&[("name", "Acme"), ("amount", "100"), ("due", "2026-06-20"), ("done", "x"), ("tags", "crm, vip")]),
-            row(&[("name", "Beta"), ("amount", "50"), ("due", "2026-07-01"), ("done", ""), ("tags", "crm")]),
-            row(&[("name", "Cobalt"), ("amount", "250"), ("due", "2026-06-18"), ("done", ""), ("tags", "lead")]),
+            row(&[
+                ("name", "Acme"),
+                ("amount", "100"),
+                ("due", "2026-06-20"),
+                ("done", "x"),
+                ("tags", "crm, vip"),
+            ]),
+            row(&[
+                ("name", "Beta"),
+                ("amount", "50"),
+                ("due", "2026-07-01"),
+                ("done", ""),
+                ("tags", "crm"),
+            ]),
+            row(&[
+                ("name", "Cobalt"),
+                ("amount", "250"),
+                ("due", "2026-06-18"),
+                ("done", ""),
+                ("tags", "lead"),
+            ]),
         ]
     }
 
@@ -558,15 +625,32 @@ mod tests {
 
     #[test]
     fn filter_number_gt() {
-        let r = QueryRequest { filters: vec![Filter { field: "amount".into(), op: Operator::Gt, value: "80".into() }], ..req() };
+        let r = QueryRequest {
+            filters: vec![Filter {
+                field: "amount".into(),
+                op: Operator::Gt,
+                value: "80".into(),
+            }],
+            ..req()
+        };
         let out = run_query(&fields(), &sample(), &r, now()).unwrap();
         assert_eq!(out.match_count, 2);
-        assert!(out.rows.iter().all(|row| row["name"] == "Acme" || row["name"] == "Cobalt"));
+        assert!(out
+            .rows
+            .iter()
+            .all(|row| row["name"] == "Acme" || row["name"] == "Cobalt"));
     }
 
     #[test]
     fn filter_text_contains_case_insensitive() {
-        let r = QueryRequest { filters: vec![Filter { field: "name".into(), op: Operator::Contains, value: " co".into() }], ..req() };
+        let r = QueryRequest {
+            filters: vec![Filter {
+                field: "name".into(),
+                op: Operator::Contains,
+                value: " co".into(),
+            }],
+            ..req()
+        };
         let out = run_query(&fields(), &sample(), &r, now()).unwrap();
         assert_eq!(out.match_count, 1);
         assert_eq!(out.rows[0]["name"], "Cobalt");
@@ -574,7 +658,14 @@ mod tests {
 
     #[test]
     fn filter_checkbox_is() {
-        let r = QueryRequest { filters: vec![Filter { field: "done".into(), op: Operator::Is, value: "true".into() }], ..req() };
+        let r = QueryRequest {
+            filters: vec![Filter {
+                field: "done".into(),
+                op: Operator::Is,
+                value: "true".into(),
+            }],
+            ..req()
+        };
         let out = run_query(&fields(), &sample(), &r, now()).unwrap();
         assert_eq!(out.match_count, 1);
         assert_eq!(out.rows[0]["name"], "Acme");
@@ -582,7 +673,14 @@ mod tests {
 
     #[test]
     fn filter_tags_has_tag() {
-        let r = QueryRequest { filters: vec![Filter { field: "tags".into(), op: Operator::HasTag, value: "crm".into() }], ..req() };
+        let r = QueryRequest {
+            filters: vec![Filter {
+                field: "tags".into(),
+                op: Operator::HasTag,
+                value: "crm".into(),
+            }],
+            ..req()
+        };
         let out = run_query(&fields(), &sample(), &r, now()).unwrap();
         assert_eq!(out.match_count, 2);
     }
@@ -590,14 +688,28 @@ mod tests {
     #[test]
     fn filter_date_within_this_week() {
         // week of 2026-06-19 (Fri) = Mon 2026-06-15 .. Sun 2026-06-21.
-        let r = QueryRequest { filters: vec![Filter { field: "due".into(), op: Operator::Within, value: "this_week".into() }], ..req() };
+        let r = QueryRequest {
+            filters: vec![Filter {
+                field: "due".into(),
+                op: Operator::Within,
+                value: "this_week".into(),
+            }],
+            ..req()
+        };
         let out = run_query(&fields(), &sample(), &r, now()).unwrap();
         assert_eq!(out.match_count, 2); // 06-20 and 06-18, not 07-01
     }
 
     #[test]
     fn sort_number_desc_then_limit() {
-        let r = QueryRequest { sort: vec![SortKey { field: "amount".into(), desc: true }], limit: Some(2), ..req() };
+        let r = QueryRequest {
+            sort: vec![SortKey {
+                field: "amount".into(),
+                desc: true,
+            }],
+            limit: Some(2),
+            ..req()
+        };
         let out = run_query(&fields(), &sample(), &r, now()).unwrap();
         assert_eq!(out.match_count, 3); // count before limit
         assert_eq!(out.rows.len(), 2);
@@ -607,7 +719,14 @@ mod tests {
 
     #[test]
     fn unknown_field_rejected_with_valid_set() {
-        let r = QueryRequest { filters: vec![Filter { field: "nope".into(), op: Operator::Eq, value: "x".into() }], ..req() };
+        let r = QueryRequest {
+            filters: vec![Filter {
+                field: "nope".into(),
+                op: Operator::Eq,
+                value: "x".into(),
+            }],
+            ..req()
+        };
         let err = run_query(&fields(), &sample(), &r, now()).unwrap_err();
         match err {
             QueryError::UnknownField { field, valid } => {
@@ -622,8 +741,16 @@ mod tests {
         // amount < 80 (Beta) OR tags has 'lead' (Cobalt) → two distinct rows.
         let r = QueryRequest {
             filters: vec![
-                Filter { field: "amount".into(), op: Operator::Lt, value: "80".into() },
-                Filter { field: "tags".into(), op: Operator::HasTag, value: "lead".into() },
+                Filter {
+                    field: "amount".into(),
+                    op: Operator::Lt,
+                    value: "80".into(),
+                },
+                Filter {
+                    field: "tags".into(),
+                    op: Operator::HasTag,
+                    value: "lead".into(),
+                },
             ],
             conjunction: Conjunction::Or,
             ..req()
@@ -639,8 +766,16 @@ mod tests {
         // Same two filters AND'd match nothing (no row is both <80 and 'lead').
         let r = QueryRequest {
             filters: vec![
-                Filter { field: "amount".into(), op: Operator::Lt, value: "80".into() },
-                Filter { field: "tags".into(), op: Operator::HasTag, value: "lead".into() },
+                Filter {
+                    field: "amount".into(),
+                    op: Operator::Lt,
+                    value: "80".into(),
+                },
+                Filter {
+                    field: "tags".into(),
+                    op: Operator::HasTag,
+                    value: "lead".into(),
+                },
             ],
             ..req()
         };
@@ -651,7 +786,10 @@ mod tests {
 
     #[test]
     fn empty_filters_pass_under_or() {
-        let r = QueryRequest { conjunction: Conjunction::Or, ..req() };
+        let r = QueryRequest {
+            conjunction: Conjunction::Or,
+            ..req()
+        };
         let out = run_query(&fields(), &sample(), &r, now()).unwrap();
         assert_eq!(out.match_count, 3);
     }

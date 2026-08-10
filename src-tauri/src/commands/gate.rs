@@ -38,7 +38,16 @@ fn extract_jsonrpc(body: &str) -> Option<Value> {
 /// testable against a real served gate without Tauri. The gate wraps tool
 /// output as `CallToolResult { content: [{ text: "<json>" }] }`; this unwraps
 /// the inner text and parses it back so callers get the tool's native shape.
-pub async fn gate_call(port: &str, token: &str, tool: &str, args: Value) -> Result<Value, String> {
+pub async fn gate_call(
+    port: &str,
+    token: &str,
+    tool: &str,
+    args: Value,
+    // `intent`: optional declared scope. A caller that addresses one connector
+    // must name it as `source:<id>`; the `source` domain alone authorizes no
+    // connector. (ADR-002 substrate §17.5 v85)
+    intent: Option<&str>,
+) -> Result<Value, String> {
     let client = reqwest::Client::new();
     let url = format!("http://127.0.0.1:{port}/mcp");
     let auth = format!("Bearer {token}");
@@ -68,19 +77,24 @@ pub async fn gate_call(port: &str, token: &str, tool: &str, args: Value) -> Resu
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
         "params": { "name": tool, "arguments": args }
     });
-    let resp = client
+    let mut call = client
         .post(&url)
         .header("Content-Type", "application/json")
         .header("Accept", accept)
         .header("Authorization", &auth)
         .header("mcp-session-id", session)
-        .header(audit::CALLER_HEADER, CALLER)
+        .header(audit::CALLER_HEADER, CALLER);
+    if let Some(intent) = intent.map(str::trim).filter(|value| !value.is_empty()) {
+        call = call.header(crate::kernel::visibility::INTENT_HEADER, intent);
+    }
+    let resp = call
         .body(body.to_string())
         .send()
         .await
         .map_err(|e| format!("gate tools/call: {e}"))?;
     let text = resp.text().await.map_err(|e| e.to_string())?;
-    let rpc = extract_jsonrpc(&text).ok_or_else(|| format!("gate: unparseable response: {text}"))?;
+    let rpc =
+        extract_jsonrpc(&text).ok_or_else(|| format!("gate: unparseable response: {text}"))?;
     if let Some(err) = rpc.get("error") {
         return Err(err.to_string());
     }
@@ -93,7 +107,9 @@ pub async fn gate_call(port: &str, token: &str, tool: &str, args: Value) -> Resu
         .and_then(|c| c.get("text"))
         .and_then(|t| t.as_str())
     {
-        return Ok(serde_json::from_str::<Value>(text).unwrap_or_else(|_| Value::String(text.to_string())));
+        return Ok(
+            serde_json::from_str::<Value>(text).unwrap_or_else(|_| Value::String(text.to_string()))
+        );
     }
     Ok(result)
 }
@@ -103,12 +119,12 @@ pub async fn gate_call(port: &str, token: &str, tool: &str, args: Value) -> Resu
 /// (`CTRL_KERNEL_MCP_PORT` / `CTRL_KERNEL_MCP_TOKEN`). Replaces N bespoke
 /// per-capability Tauri commands with one governed path.
 #[tauri::command]
-pub async fn gate_invoke(tool: String, args: Value) -> Result<Value, String> {
+pub async fn gate_invoke(tool: String, args: Value, intent: Option<String>) -> Result<Value, String> {
     let port = std::env::var("CTRL_KERNEL_MCP_PORT")
         .map_err(|_| "gate not ready (no port published yet)".to_string())?;
     let token = std::env::var("CTRL_KERNEL_MCP_TOKEN")
         .map_err(|_| "gate not ready (no token published yet)".to_string())?;
-    gate_call(&port, &token, &tool, args).await
+    gate_call(&port, &token, &tool, args, intent.as_deref()).await
 }
 
 #[cfg(test)]
@@ -129,17 +145,24 @@ mod tests {
         let handle = mcp_server::serve(runtime.clone(), None, None, "127.0.0.1:0")
             .await
             .expect("serve gate");
-        let port = handle.listen_addr.rsplit_once(':').expect("addr has port").1;
+        let port = handle
+            .listen_addr
+            .rsplit_once(':')
+            .expect("addr has port")
+            .1;
         let token = handle.auth_token.as_ref();
 
         let before = runtime.event_store.audit_count().unwrap_or(0);
-        let result = gate_call(port, token, "kernel_status", serde_json::json!({}))
+        let result = gate_call(port, token, "kernel_status", serde_json::json!({}), None)
             .await
             .expect("gate_call");
         // kernel_status returns a JSON object (uptime / adapters / mcp count).
         assert!(result.is_object() || result.is_string(), "got {result:?}");
         // The call was audited (best-effort ledger; >= one new external row).
         let after = runtime.event_store.audit_count().unwrap_or(0);
-        assert!(after > before, "gate call must be audited ({before} -> {after})");
+        assert!(
+            after > before,
+            "gate call must be audited ({before} -> {after})"
+        );
     }
 }

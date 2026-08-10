@@ -86,8 +86,8 @@ mod win_impl {
         GetAsyncKeyState, VK_LCONTROL, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RWIN, VK_SHIFT,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK,
-        KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT,
+        WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
     };
 
     static STATE: OnceLock<Mutex<HookState>> = OnceLock::new();
@@ -128,9 +128,9 @@ mod win_impl {
                 ctrl_down_at: None,
                 last_fire_at: None,
             };
-            STATE
-                .set(Mutex::new(new_state))
-                .map_err(|_| anyhow!("HotkeyController is a process-singleton; install() called twice"))?;
+            STATE.set(Mutex::new(new_state)).map_err(|_| {
+                anyhow!("HotkeyController is a process-singleton; install() called twice")
+            })?;
 
             // SAFETY: hook_proc has the required `unsafe extern "system" fn`
             // ABI; module is valid; dwThreadId = 0 installs a system-wide hook.
@@ -162,7 +162,8 @@ mod win_impl {
     }
 
     unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
-        let pass_through = || unsafe { CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param) };
+        let pass_through =
+            || unsafe { CallNextHookEx(std::ptr::null_mut(), n_code, w_param, l_param) };
 
         if n_code != HC_ACTION as i32 {
             return pass_through();
@@ -268,10 +269,9 @@ mod mac_impl {
     // guard, "another modifier already down cancels arming" guard).
     //
     // Differences from the Win path are environmental, not behavioral:
-    //   • CGEventTap requires the Accessibility privilege. `run_loop`
-    //     requests it (adds CTRL to the Accessibility list + shows the grant
-    //     dialog + opens the pane) and polls until granted, so the tap
-    //     installs in the same launch — no app restart needed.
+    //   • CGEventTap event delivery requires Input Monitoring. We request it
+    //     without blocking startup, but macOS may require the user to grant it
+    //     and restart the same stably signed application identity.
     //   • The tap callback runs on whatever thread runs the CFRunLoop. We
     //     spawn a dedicated thread for that loop so the Tauri main thread
     //     stays free for IPC + UI; the user-supplied callback fires on the
@@ -341,9 +341,9 @@ mod mac_impl {
                     other_seen: false,
                     ctrl_down_at: None,
                 }))
-                .map_err(|_| anyhow!(
-                    "HotkeyController is a process-singleton; install() called twice"
-                ))?;
+                .map_err(|_| {
+                    anyhow!("HotkeyController is a process-singleton; install() called twice")
+                })?;
 
             // CGEventTap only delivers events on a thread that runs a
             // CFRunLoop. We dedicate one — the Tauri main thread already
@@ -352,8 +352,9 @@ mod mac_impl {
                 .name("ctrl-hotkey-runloop".into())
                 .spawn(|| {
                     if let Err(err) = run_loop() {
-                        // Failure is almost always Accessibility permission
-                        // missing; lifecycle.rs surfaces a prompt + retry.
+                        // Permission denial and event-delivery failure are
+                        // reported here; recovery is a user grant plus restart
+                        // of the same stably signed application identity.
                         tracing::error!(?err, "CGEventTap run loop exited");
                     }
                 })
@@ -389,8 +390,8 @@ mod mac_impl {
         //      CGPreflightListenEventAccess keeps returning the pre-grant value
         //      for this process's lifetime. After the user flips the toggle the
         //      app must RESTART for the tap to see events; the stable DR then
-        //      keeps it granted forever. The poll below is defensive (covers a
-        //      preflight that does update); the normal path is boot-after-grant.
+        //      keeps it granted forever. Event delivery after that restart is
+        //      authoritative; preflight and tap creation alone are not.
         let input_monitoring_granted = preflight_input_monitoring();
         if !input_monitoring_granted {
             tracing::warn!(
@@ -427,7 +428,10 @@ mod mac_impl {
             },
         )
         .map_err(|_| anyhow!("CGEventTap creation failed"))?;
-        tracing::info!("hotkey: CGEventTap created (Input Monitoring granted)");
+        tracing::info!(
+            input_monitoring_granted,
+            "hotkey: CGEventTap created; event delivery still depends on Input Monitoring"
+        );
 
         let runloop_source = tap
             .mach_port

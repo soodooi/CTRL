@@ -62,9 +62,7 @@ pub struct UiFolderNode {
 fn first_string(v: Option<&serde_json::Value>) -> Option<String> {
     match v? {
         serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Array(a) => {
-            a.iter().find_map(|x| x.as_str().map(str::to_string))
-        }
+        serde_json::Value::Array(a) => a.iter().find_map(|x| x.as_str().map(str::to_string)),
         serde_json::Value::Number(n) => Some(n.to_string()),
         _ => None,
     }
@@ -73,9 +71,10 @@ fn first_string(v: Option<&serde_json::Value>) -> Option<String> {
 fn all_strings(v: Option<&serde_json::Value>) -> Vec<String> {
     match v {
         Some(serde_json::Value::String(s)) => vec![s.clone()],
-        Some(serde_json::Value::Array(a)) => {
-            a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
-        }
+        Some(serde_json::Value::Array(a)) => a
+            .iter()
+            .filter_map(|x| x.as_str().map(str::to_string))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -93,10 +92,7 @@ fn bool_ish(v: Option<&serde_json::Value>) -> Option<bool> {
 }
 
 /// Fetch a frontmatter key by its upstream name + aliases.
-fn fm_get<'a>(
-    fm: &'a serde_json::Value,
-    names: &[&str],
-) -> Option<&'a serde_json::Value> {
+fn fm_get<'a>(fm: &'a serde_json::Value, names: &[&str]) -> Option<&'a serde_json::Value> {
     names.iter().find_map(|n| fm.get(n))
 }
 
@@ -128,10 +124,35 @@ fn value_wikilinks(v: &serde_json::Value) -> Vec<String> {
 /// Keys the structural fields consume — everything else becomes either a
 /// relationship (has wikilinks) or a plain property (scalar/scalar-array).
 const STRUCTURAL: &[&str] = &[
-    "title", "type", "Is A", "is_a", "aliases", "_archived", "Archived", "archived",
-    "Status", "status", "_icon", "icon", "color", "_order", "order", "_sidebar_label",
-    "sidebar label", "sidebar_label", "template", "_sort", "sort", "view", "_width",
-    "width", "_display", "visible", "_organized", "_favorite", "_favorite_index",
+    "title",
+    "type",
+    "Is A",
+    "is_a",
+    "aliases",
+    "_archived",
+    "Archived",
+    "archived",
+    "Status",
+    "status",
+    "_icon",
+    "icon",
+    "color",
+    "_order",
+    "order",
+    "_sidebar_label",
+    "sidebar label",
+    "sidebar_label",
+    "template",
+    "_sort",
+    "sort",
+    "view",
+    "_width",
+    "width",
+    "_display",
+    "visible",
+    "_organized",
+    "_favorite",
+    "_favorite_index",
     "_list_properties_display",
 ];
 
@@ -169,7 +190,10 @@ pub fn entry_for(root: &Path, rel: &str, fm: &serde_json::Value, body: &str) -> 
         .unwrap_or(stem);
     let body_no_title: String = body
         .lines()
-        .filter(|l| Some(l.trim_start().trim_start_matches("# ").trim().to_string()) != h1.clone() || !l.trim_start().starts_with("# "))
+        .filter(|l| {
+            Some(l.trim_start().trim_start_matches("# ").trim().to_string()) != h1.clone()
+                || !l.trim_start().starts_with("# ")
+        })
         .collect::<Vec<_>>()
         .join("\n");
     let snippet: String = body_no_title
@@ -226,7 +250,10 @@ pub fn entry_for(root: &Path, rel: &str, fm: &serde_json::Value, body: &str) -> 
         icon: first_string(fm_get(fm, &["_icon", "icon"])),
         color: first_string(fm_get(fm, &["color"])),
         order: fm_get(fm, &["_order", "order"]).and_then(|v| v.as_i64()),
-        sidebar_label: first_string(fm_get(fm, &["_sidebar_label", "sidebar label", "sidebar_label"])),
+        sidebar_label: first_string(fm_get(
+            fm,
+            &["_sidebar_label", "sidebar label", "sidebar_label"],
+        )),
         template: first_string(fm_get(fm, &["template"])),
         sort: first_string(fm_get(fm, &["_sort", "sort"])),
         view: first_string(fm_get(fm, &["view"])),
@@ -248,7 +275,9 @@ pub fn entry_for(root: &Path, rel: &str, fm: &serde_json::Value, body: &str) -> 
 #[tauri::command]
 pub async fn list_vault(path: std::path::PathBuf) -> Result<Vec<UiVaultEntry>, String> {
     let _ = path;
-    tokio::task::spawn_blocking(scan_all).await.map_err(|e| format!("scan panicked: {e}"))?
+    tokio::task::spawn_blocking(scan_all)
+        .await
+        .map_err(|e| format!("scan panicked: {e}"))?
 }
 
 /// Upstream's force-reload variant — same scan (CTRL has no scan cache yet).
@@ -262,7 +291,9 @@ fn scan_all() -> Result<Vec<UiVaultEntry>, String> {
     let rels = vault::list(&root, None).map_err(|e| format!("{e:?}"))?;
     let mut out = Vec::with_capacity(rels.len());
     for rel in rels {
-        let Ok(entry) = vault::read(&root, &rel) else { continue };
+        let Ok(entry) = vault::read(&root, &rel) else {
+            continue;
+        };
         out.push(entry_for(&root, &rel, &entry.frontmatter, &entry.content));
     }
     Ok(out)
@@ -276,8 +307,14 @@ pub async fn list_vault_folders(path: std::path::PathBuf) -> Result<Vec<UiFolder
 }
 
 fn folder_tree(root: &Path, rel: &str) -> Vec<UiFolderNode> {
-    let dir = if rel.is_empty() { root.to_path_buf() } else { root.join(rel) };
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let dir = if rel.is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(rel)
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
     let mut out: Vec<UiFolderNode> = entries
         .flatten()
         .filter(|e| e.path().is_dir())
@@ -286,7 +323,11 @@ fn folder_tree(root: &Path, rel: &str) -> Vec<UiFolderNode> {
             if name.starts_with('.') {
                 return None;
             }
-            let child_rel = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+            let child_rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
             Some(UiFolderNode {
                 name,
                 path: child_rel.clone(),
@@ -301,7 +342,9 @@ fn folder_tree(root: &Path, rel: &str) -> Vec<UiFolderNode> {
 #[tauri::command]
 pub fn check_vault_exists(path: std::path::PathBuf) -> Result<bool, String> {
     let _ = path;
-    Ok(vault::default_vault_root().map(|r| r.is_dir()).unwrap_or(false))
+    Ok(vault::default_vault_root()
+        .map(|r| r.is_dir())
+        .unwrap_or(false))
 }
 
 #[cfg(test)]
@@ -335,7 +378,10 @@ mod tests {
         assert_eq!(e.relationships["Topics"], vec!["rust", "notes"]);
         assert!(e.favorite);
         assert_eq!(e.properties["priority"], 3);
-        assert!(!e.properties.contains_key("Belongs To"), "relationship, not property");
+        assert!(
+            !e.properties.contains_key("Belongs To"),
+            "relationship, not property"
+        );
         assert_eq!(e.outgoing_links, vec!["link-target"]);
         assert!(e.word_count > 0);
         assert!(e.snippet.contains("Body text"));

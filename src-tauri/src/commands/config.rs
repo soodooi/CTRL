@@ -26,9 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use crate::kernel::provider::legacy_config::{
-    default_config_path, load_from, ProviderEntry,
-};
+use crate::kernel::provider::legacy_config::{default_config_path, load_from, ProviderEntry};
 
 const KEYRING_SERVICE: &str = "app.ctrl.spike";
 
@@ -141,8 +139,16 @@ pub async fn config_list_providers() -> Result<Vec<ProviderInfo>, String> {
         };
         let (base_url, default_model, has_key_in_config) = match &entry {
             Some(e) => (
-                if e.base_url.is_empty() { known.default_base_url.to_string() } else { e.base_url.clone() },
-                if e.default_model.is_empty() { known.default_model.to_string() } else { e.default_model.clone() },
+                if e.base_url.is_empty() {
+                    known.default_base_url.to_string()
+                } else {
+                    e.base_url.clone()
+                },
+                if e.default_model.is_empty() {
+                    known.default_model.to_string()
+                } else {
+                    e.default_model.clone()
+                },
                 !e.api_key.trim().is_empty(),
             ),
             None => (
@@ -318,13 +324,12 @@ pub async fn config_set_provider_key(
             &format!("candidate/{slug}.toml"),
         )
         .map_err(|e| format!("candidate manifest: {e}"))?;
-        let (_reply, fingerprint) =
-            crate::kernel::provider::registry::trial_manifest_with_secret(
-                candidate,
-                effective_key.clone(),
-            )
-            .await
-            .map_err(|e| format!("provider verification failed: {e}"))?;
+        let (_reply, fingerprint) = crate::kernel::provider::registry::trial_manifest_with_secret(
+            candidate,
+            effective_key.clone(),
+        )
+        .await
+        .map_err(|e| format!("provider verification failed: {e}"))?;
         Some(fingerprint)
     } else {
         None
@@ -510,14 +515,11 @@ pub async fn config_delete_provider(
     crate::shell::credential_vault::delete(&slug)?;
 
     // 2) User manifest file at ~/.ctrl/providers/<slug>.toml.
-    if let Some(providers_dir) =
-        crate::kernel::provider::manifest::default_user_providers_dir()
-    {
+    if let Some(providers_dir) = crate::kernel::provider::manifest::default_user_providers_dir() {
         let manifest_path = providers_dir.join(format!("{slug}.toml"));
         if manifest_path.exists() {
-            std::fs::remove_file(&manifest_path).map_err(|e| {
-                format!("rm {}: {e}", manifest_path.display())
-            })?;
+            std::fs::remove_file(&manifest_path)
+                .map_err(|e| format!("rm {}: {e}", manifest_path.display()))?;
         }
     }
 
@@ -635,7 +637,10 @@ fn sanitize_slug(raw: &str) -> Result<String, String> {
     if out.is_empty() {
         Err(format!("provider id {:?} sanitizes to empty", raw))
     } else if out.len() > 64 {
-        Err(format!("provider id too long ({} chars, max 64)", out.len()))
+        Err(format!(
+            "provider id too long ({} chars, max 64)",
+            out.len()
+        ))
     } else {
         Ok(out)
     }
@@ -648,10 +653,7 @@ fn lookup_known_provider(name: &str) -> Result<&'static KnownProvider, String> {
         .find(|k| k.name == name)
         .ok_or_else(|| {
             let known: Vec<&str> = KNOWN_PROVIDERS.iter().map(|k| k.name).collect();
-            format!(
-                "unknown provider {name:?}; supported: {}",
-                known.join(", ")
-            )
+            format!("unknown provider {name:?}; supported: {}", known.join(", "))
         })
 }
 
@@ -668,10 +670,7 @@ fn keyring_has_password(account: &str) -> bool {
 /// precedence in llm_adapters/mod.rs so "test passes" ⇒ "next boot loads
 /// the adapter".
 #[allow(dead_code)]
-fn resolve_credentials(
-    provider: &str,
-    known: &KnownProvider,
-) -> Result<(String, String), String> {
+fn resolve_credentials(provider: &str, known: &KnownProvider) -> Result<(String, String), String> {
     let cfg = default_config_path()
         .and_then(|p| load_from(&p))
         .unwrap_or_default();

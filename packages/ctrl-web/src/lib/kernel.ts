@@ -18,10 +18,66 @@ import type { Icon } from './icon';
 // `args` is the tool's MCP arguments object directly (NOT wrapped in `{ args }`
 // the way Tauri commands take it) — the bridge forwards it as the tools/call
 // `arguments`.
+// `intent` declares the scope this call needs. It is required when addressing one
+// connector: the `source` domain alone authorizes no connector, so a call must
+// name it as `source:<id>`. (ADR-002 substrate §17.5 v85)
 export const gateInvoke = <T = unknown>(
   tool: string,
   args: Record<string, unknown> = {},
-): Promise<T> => invoke('gate_invoke', { tool, args }) as Promise<T>;
+  intent?: string,
+): Promise<T> =>
+  invoke('gate_invoke', { tool, args, intent: intent ?? null }) as Promise<T>;
+
+/** Mirrors `ResourceFreshness` in `src-tauri/src/kernel/resource.rs`. */
+export interface ResourceFreshness {
+  observed_at?: string | null;
+  revision?: string | null;
+  stale: boolean;
+}
+
+/** Mirrors `ResourceDegradation` in `src-tauri/src/kernel/resource.rs`.
+ *  `retryable` is kernel-reported and never inferred from a message. */
+export interface ResourceDegradation {
+  code: string;
+  summary: string;
+  retryable: boolean;
+}
+
+export interface CanonicalResourceDescriptor {
+  protocol_version: string;
+  resource: string;
+  content_type: string;
+  /** Upstream Resources this one was derived from, as canonical refs. */
+  provenance?: string[];
+  freshness?: ResourceFreshness;
+  degradation?: ResourceDegradation | null;
+  presentation: {
+    viewer?: string | null;
+    title?: string | null;
+    preferred_columns: string[];
+  };
+  /** Operations the owner advertises. A surface offers a write only when the
+   *  descriptor declares it; it never assumes one from the content type.
+   *  (ADR-002 substrate §15.2 v87) */
+  produce?: { kind: string; review_required?: boolean }[];
+}
+
+/** Canonical Resource three-verb read surface through the governed gate.
+ * (ADR-002 substrate §15 v83; ADR-003 frontend §8.5 v40) */
+export const describeResource = (resourceRef: string): Promise<CanonicalResourceDescriptor> =>
+  gateInvoke('describe', { ref: resourceRef });
+
+/** Canonical write verb. The operation is the owner's typed operation object;
+ *  the reply is that owner's Outcome. (ADR-002 substrate §15.5 v86) */
+export const produceResource = <T>(
+  resourceRef: string,
+  operation: Record<string, unknown>,
+): Promise<T> => gateInvoke('produce', { ref: resourceRef, operation });
+
+export const queryResource = <T>(
+  resourceRef: string,
+  request: Record<string, unknown> = {},
+): Promise<T> => gateInvoke('query', { ref: resourceRef, request });
 
 // Report which note is focused (ADR-002 §1.9 v46 E2). Deliberately a Tauri
 // command, NOT a gate tool: only the UI may set focus (C3 boundary — the
@@ -358,25 +414,8 @@ export const testProvider = (provider: string): Promise<TestProviderResult> =>
 export const deleteProvider = (provider: string): Promise<void> =>
   invoke('config_delete_provider', { args: { provider } });
 
-// Irisy conversation history (reads hermes's session store via the kernel).
-// ADR-002 § provider v27 + vault/ctrl/strategy/0012 §8 (2026-06-16).
-export interface IrisySessionSummary {
-  id: string;
-  title: string;
-  preview: string;
-  started_at: string | null;
-  ended_at: string | null;
-  message_count: number;
-}
-export interface IrisySessionTurn {
-  role: string;
-  content: string;
-}
-export const listIrisySessions = (): Promise<IrisySessionSummary[]> =>
-  invoke('irisy_session_list');
-export const getIrisySession = (id: string): Promise<IrisySessionTurn[]> =>
-  invoke('irisy_session_get', { id });
-
+// Managed engine selection/install wrappers are absent from the fixed Irisy API.
+// (ADR-005 irisy §11 v40)
 export interface RunMcpResult {
   output: unknown;
   duration_ms: number;
@@ -663,58 +702,10 @@ export const getKey = (account: string): Promise<string | null> =>
 export const deleteKey = (account: string): Promise<void> =>
   invoke('delete_key', { account });
 
-// === Code Space (remote coding envs) ===
-//
-// All cs_* commands live behind these typed wrappers so the rest of the
-// app never strings-types the Rust command names. Mirrors the Rust
-// signatures in src-tauri/src/commands/code_space.rs.
-
-/** Default PTY geometry. cs_spawn applies the same fallbacks server-side
-    if omitted, but supplying them here keeps the frontend honest about
-    what it asked for and gives the NewEnvModal a single place to override. */
-export const DEFAULT_PTY_COLS = 80;
-export const DEFAULT_PTY_ROWS = 24;
-
-export interface CsSpawnArgs {
-  command: string;
-  args?: ReadonlyArray<string>;
-  cwd?: string;
-  env?: Readonly<Record<string, string>>;
-  cols?: number;
-  rows?: number;
-}
-
-export interface CsSpawnReply {
-  stream_id: string;
-}
-
-export const csSpawn = (spec: CsSpawnArgs): Promise<CsSpawnReply> =>
-  invoke('cs_spawn', {
-    args: {
-      cols: DEFAULT_PTY_COLS,
-      rows: DEFAULT_PTY_ROWS,
-      ...spec,
-    },
-  });
-
-/** Today returns `string[]` of active stream_ids. Defensive `unknown`
-    return type lets callers map into a richer envelope when the kernel
-    extends cs_list without breaking this typed surface. */
-export const csList = (): Promise<unknown> => invoke('cs_list');
-
-export const csStdin = (stream_id: string, data_b64: string): Promise<void> =>
-  invoke('cs_stdin', { args: { stream_id, data_b64 } });
-
-export const csResize = (stream_id: string, cols: number, rows: number): Promise<void> =>
-  invoke('cs_resize', { args: { stream_id, cols, rows } });
-
-export const csSignal = (stream_id: string, signal: string): Promise<void> =>
-  invoke('cs_signal', { args: { stream_id, signal } });
-
-export const csKill = (stream_id: string): Promise<void> =>
-  invoke('cs_kill', { args: { stream_id } });
-
 // === Vault (markdown + assets at ~/Documents/CTRL/) =================
+// Canonical product resources cross the governed gate; retained wrappers here
+// are typed compatibility boundaries, not a second content owner.
+// (ADR-003 frontend §8.5 v40)
 //
 // Mirrors src-tauri/src/commands/vault.rs. All paths relative to vault
 // root (machine-portable). Frontmatter is JSON over the wire; kernel
@@ -1014,41 +1005,9 @@ export const vaultSuggestLinks = (
 ): Promise<EmbeddingHit[]> =>
   gateInvoke('vault_suggest_links', { for_path, limit });
 
-// Irisy synthesize — Layer 4 surface
-// (brainstorm §5.3 / §5.5 / §5.10)
-export interface QuestionVaultReply {
-  answer: string;
-  citations: string[];
-}
-export const irisyQuestionVault = (
-  question: string,
-  top_k = 6,
-): Promise<QuestionVaultReply> =>
-  invoke('irisy_question_vault', { args: { question, top_k } });
-
-export interface SynthesizeReply {
-  result: string;
-  written_to: string | null;
-}
-export const irisySynthesizeNotes = (
-  paths: string[],
-  instruction: string,
-  output_path?: string,
-): Promise<SynthesizeReply> =>
-  invoke('irisy_synthesize_notes', {
-    args: { paths, instruction, output_path: output_path ?? null },
-  });
-
-export interface DailySummarizeReply {
-  daily_path: string;
-  summary: string;
-  items_in_inbox: number;
-}
-export const irisyDailySummarize = (
-  date?: string,
-): Promise<DailySummarizeReply> =>
-  invoke('irisy_daily_summarize', { args: { date: date ?? null } });
-
+// Bespoke Irisy synthesis commands are retired; one Irisy capability path
+// remains governed by its explicit context and gate scope.
+// (ADR-005 irisy §11 v40)
 // ADR-002 § vault v1 §8.6 v5 (2026-06-03) — vault-side git via the
 // kernel-spawned git CLI. Mirrors src-tauri/src/commands/git.rs.
 

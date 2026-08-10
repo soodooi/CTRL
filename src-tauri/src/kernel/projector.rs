@@ -54,7 +54,8 @@ const BYO_CLI_CALLER: &str = "byo-cli";
 /// regardless of intent. Override with `CTRL_BYO_INTENT` — a comma-separated
 /// domain list, or `unscoped` for the full toolset (ADR-010 trust-domains,
 /// SC3 intent-scoped projection; ADR-001 section 4 projector subset rule).
-const BYO_CLI_DEFAULT_INTENT: &str = "vault,smart_table,tasks,notes,providers,registry,kv,llm,memory";
+const BYO_CLI_DEFAULT_INTENT: &str =
+    "vault,smart_table,tasks,notes,providers,registry,kv,llm,memory";
 
 /// Resolve the intent header value for the base projection. `None` => omit the
 /// header entirely (unscoped / full toolset). Honors the `CTRL_BYO_INTENT`
@@ -89,7 +90,10 @@ fn workspace_root() -> Option<PathBuf> {
 /// SC3).
 fn kernel_entry(port: &str, token: &str, caller: &str, intent: Option<&str>) -> Value {
     let mut headers = Map::new();
-    headers.insert("Authorization".to_string(), json!(format!("Bearer {token}")));
+    headers.insert(
+        "Authorization".to_string(),
+        json!(format!("Bearer {token}")),
+    );
     headers.insert(audit::CALLER_HEADER.to_string(), json!(caller));
     if let Some(intent) = intent {
         headers.insert(visibility::INTENT_HEADER.to_string(), json!(intent));
@@ -204,7 +208,10 @@ pub(crate) const OPENCODE_CODING_INTENT: &str =
 /// `enabled` + object `headers`), vs Claude Code's `.mcp.json` (`type: "http"`).
 fn opencode_entry(port: &str, token: &str, caller: &str, intent: Option<&str>) -> Value {
     let mut headers = Map::new();
-    headers.insert("Authorization".to_string(), json!(format!("Bearer {token}")));
+    headers.insert(
+        "Authorization".to_string(),
+        json!(format!("Bearer {token}")),
+    );
     headers.insert(audit::CALLER_HEADER.to_string(), json!(caller));
     if let Some(intent) = intent {
         headers.insert(visibility::INTENT_HEADER.to_string(), json!(intent));
@@ -255,7 +262,9 @@ fn project_opencode_into_dir(
     obj.entry("$schema")
         .or_insert_with(|| json!("https://opencode.ai/config.json"));
 
-    let mcp = obj.entry("mcp").or_insert_with(|| Value::Object(Map::new()));
+    let mcp = obj
+        .entry("mcp")
+        .or_insert_with(|| Value::Object(Map::new()));
     let Some(mcp) = mcp.as_object_mut() else {
         tracing::warn!(
             path = %path.display(),
@@ -398,7 +407,9 @@ pub fn project_codex_gate(port: &str, token: &str) {
         return;
     };
     // Non-invasive: wire CTRL's gate into Codex only if the user actually has it.
-    let Some(codex_dir) = path.parent() else { return };
+    let Some(codex_dir) = path.parent() else {
+        return;
+    };
     if !codex_dir.exists() {
         return;
     }
@@ -509,7 +520,9 @@ fn project_agents_block(dir: &Path, block: &str) -> std::io::Result<bool> {
 fn pack_agents_block(name: &str, kb: Option<&str>, intent: &str) -> String {
     let kb_line = match kb {
         Some(k) if !k.is_empty() => {
-            format!("- **Knowledge base:** this pack's data + notes live under `{k}/` in the vault.\n")
+            format!(
+                "- **Knowledge base:** this pack's data + notes live under `{k}/` in the vault.\n"
+            )
         }
         _ => String::new(),
     };
@@ -568,8 +581,7 @@ pub fn project_pack(
 // only CTRL-owned artifacts. (ADR-002 substrate §1B.8 v79)
 fn write_json_atomic(path: &Path, value: &Value) -> std::io::Result<()> {
     let tmp = path.with_extension("json.tmp");
-    let serialized = serde_json::to_vec_pretty(value)
-        .map_err(std::io::Error::other)?;
+    let serialized = serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?;
     {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(&serialized)?;
@@ -589,7 +601,9 @@ fn managed_kernel_entry(entry: &Value, expected_type: &str) -> bool {
         &["type", "url", "headers"]
     };
     if object.len() != expected_object_keys.len()
-        || !object.keys().all(|key| expected_object_keys.contains(&key.as_str()))
+        || !object
+            .keys()
+            .all(|key| expected_object_keys.contains(&key.as_str()))
     {
         return false;
     }
@@ -611,18 +625,28 @@ fn managed_kernel_entry(entry: &Value, expected_type: &str) -> bool {
         visibility::INTENT_HEADER,
     ];
     if headers.len() != expected_header_keys.len()
-        || !headers.keys().all(|key| expected_header_keys.contains(&key.as_str()))
+        || !headers
+            .keys()
+            .all(|key| expected_header_keys.contains(&key.as_str()))
     {
         return false;
     }
     let managed_headers = headers
         .get("Authorization")
         .and_then(Value::as_str)
-        .is_some_and(|value| value.strip_prefix("Bearer ").is_some_and(|token| !token.is_empty()))
+        .is_some_and(|value| {
+            value
+                .strip_prefix("Bearer ")
+                .is_some_and(|token| !token.is_empty())
+        })
         && headers.get(audit::CALLER_HEADER).and_then(Value::as_str) == Some(BYO_CLI_CALLER)
-        && headers.get(visibility::INTENT_HEADER).and_then(Value::as_str) == Some("source");
+        && headers
+            .get(visibility::INTENT_HEADER)
+            .and_then(Value::as_str)
+            == Some("source");
     let managed_shape = object.get("type").and_then(Value::as_str) == Some(expected_type)
-        && (expected_type != "remote" || object.get("enabled").and_then(Value::as_bool) == Some(true));
+        && (expected_type != "remote"
+            || object.get("enabled").and_then(Value::as_bool) == Some(true));
     managed_url && managed_headers && managed_shape
 }
 
@@ -659,7 +683,10 @@ fn remove_managed_json_entry(
     if entries.is_empty() {
         object.remove(map_key);
     }
-    if object.keys().all(|key| removable_when_empty.contains(&key.as_str())) {
+    if object
+        .keys()
+        .all(|key| removable_when_empty.contains(&key.as_str()))
+    {
         fs::remove_file(path)?;
     } else {
         write_json_atomic(path, &root)?;
@@ -683,7 +710,8 @@ fn remove_managed_agents_block(path: &Path) -> std::io::Result<bool> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
-    let (Some(start), Some(end_start)) = (content.find(AGENTS_BEGIN), content.find(AGENTS_END)) else {
+    let (Some(start), Some(end_start)) = (content.find(AGENTS_BEGIN), content.find(AGENTS_END))
+    else {
         return Ok(false);
     };
     if end_start < start {
@@ -703,18 +731,9 @@ fn remove_managed_agents_block(path: &Path) -> std::io::Result<bool> {
 /// eligible. User servers, OpenCode settings, and prose outside the managed
 /// AGENTS block survive. (ADR-002 substrate §1B.8 v79)
 fn retire_pack_projection_in_dir(dir: &Path) -> std::io::Result<bool> {
-    let mut changed = remove_managed_json_entry(
-        &dir.join(".mcp.json"),
-        "mcpServers",
-        "http",
-        &[],
-    )?;
-    changed |= remove_managed_json_entry(
-        &dir.join("opencode.json"),
-        "mcp",
-        "remote",
-        &["$schema"],
-    )?;
+    let mut changed = remove_managed_json_entry(&dir.join(".mcp.json"), "mcpServers", "http", &[])?;
+    changed |=
+        remove_managed_json_entry(&dir.join("opencode.json"), "mcp", "remote", &["$schema"])?;
     changed |= remove_managed_agents_block(&dir.join("AGENTS.md"))?;
     if fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_none()) {
         fs::remove_dir(dir)?;
@@ -775,7 +794,10 @@ fn project_installed_packs(port: &str, token: &str) {
             }
             continue;
         }
-        let name = manifest.get("name").and_then(Value::as_str).unwrap_or(&pack_id);
+        let name = manifest
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or(&pack_id);
         let kb = manifest.get("knowledge_base").and_then(Value::as_str);
         // Eligible pack workspaces receive the existing scoped `source` gate;
         // eligibility itself is the explicit manifest decision above.
@@ -846,7 +868,6 @@ pub fn project_kernel_gate(port: &str, token: &str) {
     // Coding workspaces receive a projected scope.
     project_installed_packs(port, token);
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -937,23 +958,14 @@ mod tests {
         // Retirement starts from a fully managed projected scope.
         // (ADR-002 substrate §1B.8 v79)
         let dir = TempDir::new().unwrap();
-        project_gate_into_dir(
-            dir.path(),
-            "17873",
-            FIXTURE_GATE_VALUE,
-            Some("source"),
-        )
-        .unwrap();
-        project_opencode_into_dir(
-            dir.path(),
-            "17873",
-            FIXTURE_GATE_VALUE,
-            Some("source"),
-        )
-        .unwrap();
+        project_gate_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE, Some("source")).unwrap();
+        project_opencode_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE, Some("source")).unwrap();
         fs::write(
             dir.path().join("AGENTS.md"),
-            format!("User rule\n\n{}\n", pack_agents_block("Pack", None, "source")),
+            format!(
+                "User rule\n\n{}\n",
+                pack_agents_block("Pack", None, "source")
+            ),
         )
         .unwrap();
 
@@ -966,7 +978,10 @@ mod tests {
         assert!(mcp["mcpServers"].get(KERNEL_SERVER_KEY).is_none());
         assert_eq!(mcp["mcpServers"]["user-server"]["command"], "user");
         assert!(!dir.path().join("opencode.json").exists());
-        assert_eq!(fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(), "User rule\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("AGENTS.md")).unwrap(),
+            "User rule\n"
+        );
     }
 
     // A user may deliberately reuse the conventional key. Retirement must
@@ -975,28 +990,14 @@ mod tests {
     #[test]
     fn retiring_ineligible_pack_preserves_user_replacement_under_managed_key() {
         let dir = TempDir::new().unwrap();
-        project_gate_into_dir(
-            dir.path(),
-            "17873",
-            FIXTURE_GATE_VALUE,
-            Some("source"),
-        )
-        .unwrap();
-        project_opencode_into_dir(
-            dir.path(),
-            "17873",
-            FIXTURE_GATE_VALUE,
-            Some("source"),
-        )
-        .unwrap();
+        project_gate_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE, Some("source")).unwrap();
+        project_opencode_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE, Some("source")).unwrap();
 
         let mut mcp = read_json(dir.path());
         mcp["mcpServers"][KERNEL_SERVER_KEY] = json!({ "command": "user-server" });
         write_json_atomic(&dir.path().join(".mcp.json"), &mcp).unwrap();
-        let mut opencode: Value = serde_json::from_slice(
-            &fs::read(dir.path().join("opencode.json")).unwrap(),
-        )
-        .unwrap();
+        let mut opencode: Value =
+            serde_json::from_slice(&fs::read(dir.path().join("opencode.json")).unwrap()).unwrap();
         opencode["mcp"][KERNEL_SERVER_KEY] = json!({
             "type": "local",
             "command": ["user-server"]
@@ -1008,23 +1009,15 @@ mod tests {
             read_json(dir.path())["mcpServers"][KERNEL_SERVER_KEY]["command"],
             "user-server"
         );
-        let preserved: Value = serde_json::from_slice(
-            &fs::read(dir.path().join("opencode.json")).unwrap(),
-        )
-        .unwrap();
+        let preserved: Value =
+            serde_json::from_slice(&fs::read(dir.path().join("opencode.json")).unwrap()).unwrap();
         assert_eq!(preserved["mcp"][KERNEL_SERVER_KEY]["type"], "local");
     }
 
     #[test]
     fn retiring_ineligible_pack_preserves_near_managed_user_entry() {
         let dir = TempDir::new().unwrap();
-        project_gate_into_dir(
-            dir.path(),
-            "17873",
-            FIXTURE_GATE_VALUE,
-            Some("source"),
-        )
-        .unwrap();
+        project_gate_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE, Some("source")).unwrap();
         let mut mcp = read_json(dir.path());
         // An extra user-owned field makes this a replacement, not the exact
         // generated authority. (ADR-002 substrate §1B.8 v79)
@@ -1068,10 +1061,8 @@ mod tests {
             project_opencode_into_dir(dir.path(), "17873", FIXTURE_GATE_VALUE, Some("source"))
                 .unwrap();
         assert!(wrote);
-        let v: Value = serde_json::from_slice(
-            &fs::read(dir.path().join("opencode.json")).unwrap(),
-        )
-        .unwrap();
+        let v: Value =
+            serde_json::from_slice(&fs::read(dir.path().join("opencode.json")).unwrap()).unwrap();
         let h = &v["mcp"][KERNEL_SERVER_KEY]["headers"];
         assert_eq!(h[visibility::INTENT_HEADER], "source");
         assert_eq!(v["mcp"][KERNEL_SERVER_KEY]["type"], "remote");
@@ -1112,7 +1103,10 @@ mod tests {
         // never `net` (http exfiltration) or `mcp` (raw downstream passthrough).
         let domains: Vec<&str> = BYO_CLI_DEFAULT_INTENT.split(',').collect();
         for must in ["vault", "smart_table", "notes", "memory", "kv"] {
-            assert!(domains.contains(&must), "default intent must grant '{must}'");
+            assert!(
+                domains.contains(&must),
+                "default intent must grant '{must}'"
+            );
         }
         for forbidden in ["net", "mcp", "http"] {
             assert!(
@@ -1231,12 +1225,13 @@ mod tests {
         )
         .unwrap());
 
-        let projected: Value = serde_json::from_slice(
-            &fs::read(dir.path().join("opencode.json")).unwrap(),
-        )
-        .unwrap();
+        let projected: Value =
+            serde_json::from_slice(&fs::read(dir.path().join("opencode.json")).unwrap()).unwrap();
         assert_eq!(projected["provider"], existing["provider"]);
-        assert_eq!(projected["mcp"]["user-server"], existing["mcp"]["user-server"]);
+        assert_eq!(
+            projected["mcp"]["user-server"],
+            existing["mcp"]["user-server"]
+        );
         assert_eq!(projected["mcp"][KERNEL_SERVER_KEY]["type"], "remote");
     }
 
@@ -1267,7 +1262,11 @@ mod tests {
     fn agents_md_preserves_user_prose_outside_markers() {
         let dir = TempDir::new().unwrap();
         // user writes their own AGENTS.md first
-        fs::write(dir.path().join("AGENTS.md"), "# My project rules\nUse 4 spaces.\n").unwrap();
+        fs::write(
+            dir.path().join("AGENTS.md"),
+            "# My project rules\nUse 4 spaces.\n",
+        )
+        .unwrap();
         assert!(project_agents_md(dir.path()).unwrap());
         let s = read_agents(dir.path());
         assert!(s.contains("# My project rules"));
@@ -1305,9 +1304,14 @@ mod tests {
     fn codex_config_gets_http_gate_entry() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("config.toml");
-        let wrote =
-            project_codex_config(&path, "17873", FIXTURE_GATE_VALUE, "byo-cli", Some("vault,notes"))
-                .unwrap();
+        let wrote = project_codex_config(
+            &path,
+            "17873",
+            FIXTURE_GATE_VALUE,
+            "byo-cli",
+            Some("vault,notes"),
+        )
+        .unwrap();
         assert!(wrote);
         let doc: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         let entry = &doc["mcp_servers"]["ctrl-kernel"];
@@ -1318,7 +1322,10 @@ mod tests {
             format!("Bearer {FIXTURE_GATE_VALUE}")
         );
         assert_eq!(headers[audit::CALLER_HEADER].as_str().unwrap(), "byo-cli");
-        assert_eq!(headers[visibility::INTENT_HEADER].as_str().unwrap(), "vault,notes");
+        assert_eq!(
+            headers[visibility::INTENT_HEADER].as_str().unwrap(),
+            "vault,notes"
+        );
     }
 
     #[test]
@@ -1343,16 +1350,14 @@ mod tests {
         assert!(after.contains("ctrl-kernel"));
 
         // Re-projecting the same token is a no-op (no needless rewrite).
-        assert!(!project_codex_config(&path, "17873", FIXTURE_GATE_VALUE, "byo-cli", None).unwrap());
+        assert!(
+            !project_codex_config(&path, "17873", FIXTURE_GATE_VALUE, "byo-cli", None).unwrap()
+        );
         // A rotated token rewrites.
-        assert!(project_codex_config(
-            &path,
-            "17873",
-            FIXTURE_GATE_VALUE_ROTATED,
-            "byo-cli",
-            None
-        )
-        .unwrap());
+        assert!(
+            project_codex_config(&path, "17873", FIXTURE_GATE_VALUE_ROTATED, "byo-cli", None)
+                .unwrap()
+        );
         assert!(fs::read_to_string(&path)
             .unwrap()
             .contains(&format!("Bearer {FIXTURE_GATE_VALUE_ROTATED}")));

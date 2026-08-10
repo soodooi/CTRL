@@ -264,6 +264,9 @@ mod tests {
         let s = current_status();
         assert_eq!(s.log_tail.len(), LOG_TAIL_MAX);
         // Oldest lines were dropped; the newest is retained.
-        assert_eq!(s.log_tail.last().unwrap(), &format!("line {}", LOG_TAIL_MAX + 19));
+        assert_eq!(
+            s.log_tail.last().unwrap(),
+            &format!("line {}", LOG_TAIL_MAX + 19)
+        );
     }
 }

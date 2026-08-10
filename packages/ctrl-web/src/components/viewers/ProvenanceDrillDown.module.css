@@ -1,0 +1,173 @@
+/* Provenance drill-down — a hairline strip, not a panel. It sits under the
+   viewer chrome and must never compete with content.
+   (ADR-003 frontend §8.5 v44; ADR-005 irisy §12 v42 U11) */
+
+.root {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-text-muted);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-3);
+  cursor: pointer;
+  min-height: 26px;
+  list-style: none;
+}
+.summary::-webkit-details-marker {
+  display: none;
+}
+.summary::before {
+  content: '▸';
+  font-size: 9px;
+  opacity: 0.6;
+}
+.root[open] .summary::before {
+  content: '▾';
+}
+
+.summaryLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-soft);
+}
+
+.summaryRef {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46%;
+}
+
+.summaryRevision {
+  padding: 1px 6px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-l2);
+}
+
+.summaryStale {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-warning);
+  background: color-mix(in oklab, var(--color-warning), transparent 88%);
+}
+
+.back {
+  margin-left: auto;
+  font: inherit;
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  padding: 1px 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.back:hover {
+  color: var(--color-text);
+  background: var(--color-bg-l2);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 1px solid var(--color-border-soft);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.degradation {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--color-warning);
+  line-height: 1.5;
+}
+.degradationCode {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid color-mix(in oklab, var(--color-warning), transparent 55%);
+  border-radius: var(--radius-sm);
+  padding: 0 5px;
+  flex-shrink: 0;
+}
+
+.facts {
+  margin: 0;
+  display: grid;
+  gap: 2px;
+}
+.factRow {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+.factLabel {
+  margin: 0;
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.factValue {
+  margin: 0;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.sources {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--color-border-soft);
+}
+.sourcesLabel {
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sourcesEmpty {
+  color: var(--color-text-muted);
+}
+.sourcesList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sourceLink {
+  font: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.sourceLink:hover {
+  text-decoration: underline;
+}
+
+.sourceRef {
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}

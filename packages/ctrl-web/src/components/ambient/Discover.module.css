@@ -111,3 +111,34 @@
 
 .empty { grid-column: 1 / -1; padding: 40px; text-align: center; color: var(--text-subtle); font-size: 13px; }
 .msg { margin-top: 18px; font-size: 13px; color: var(--text-muted); }
+
+/* Local apps section (U19/U22). Selection facts read as a record, not as prose:
+   the user is checking WHICH selection CTRL is about to work on.
+   (ADR-005 irisy §12 v42 U19/U22) */
+.sec { display: block; }
+
+.selectionFacts {
+  margin: 0;
+  display: grid;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+}
+.selectionRow {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.selectionLabel {
+  margin: 0;
+  color: var(--color-text-soft, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.selectionValue {
+  margin: 0;
+  color: var(--color-text, #1a1a1a);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

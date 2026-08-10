@@ -609,7 +609,11 @@ mod tests {
     fn backlinks_picks_up_wikilink() {
         let dir = tempdir().unwrap();
         let root = dir.path();
-        write_md(root, "notes/alpha.md", "---\ntitle: Alpha\n---\n\nlink to [[beta]] here\n");
+        write_md(
+            root,
+            "notes/alpha.md",
+            "---\ntitle: Alpha\n---\n\nlink to [[beta]] here\n",
+        );
         write_md(root, "notes/beta.md", "---\ntitle: Beta\n---\n\nplain\n");
         let g = scan(root).unwrap();
         let hits = g.backlinks_of("notes/beta.md");
@@ -646,7 +650,11 @@ mod tests {
     fn tags_from_frontmatter_and_inline() {
         let dir = tempdir().unwrap();
         let root = dir.path();
-        write_md(root, "notes/a.md", "---\ntags: [project, work]\n---\n\nsome #idea here\n");
+        write_md(
+            root,
+            "notes/a.md",
+            "---\ntags: [project, work]\n---\n\nsome #idea here\n",
+        );
         let g = scan(root).unwrap();
         let by_tag = g.notes_by_tag("idea");
         assert_eq!(by_tag, vec!["notes/a.md"]);
@@ -659,8 +667,16 @@ mod tests {
     fn alias_resolves_wikilink() {
         let dir = tempdir().unwrap();
         let root = dir.path();
-        write_md(root, "notes/canonical.md", "---\naliases: [\"Old Name\"]\n---\n\nbody\n");
-        write_md(root, "notes/other.md", "---\n---\n\nsee [[Old Name]] for context\n");
+        write_md(
+            root,
+            "notes/canonical.md",
+            "---\naliases: [\"Old Name\"]\n---\n\nbody\n",
+        );
+        write_md(
+            root,
+            "notes/other.md",
+            "---\n---\n\nsee [[Old Name]] for context\n",
+        );
         let g = scan(root).unwrap();
         let hits = g.backlinks_of("notes/canonical.md");
         assert_eq!(hits.len(), 1);
@@ -671,7 +687,11 @@ mod tests {
     fn skips_dot_ctrl_directory() {
         let dir = tempdir().unwrap();
         let root = dir.path();
-        write_md(root, ".ctrl/sourcing-prompt.md", "---\n---\n\nshould not be indexed\n");
+        write_md(
+            root,
+            ".ctrl/sourcing-prompt.md",
+            "---\n---\n\nshould not be indexed\n",
+        );
         write_md(root, "notes/a.md", "---\n---\n\nbody\n");
         let g = scan(root).unwrap();
         assert!(!g.nodes.contains_key(".ctrl/sourcing-prompt.md"));
@@ -682,7 +702,11 @@ mod tests {
     fn mentions_finds_unlinked_substring() {
         let dir = tempdir().unwrap();
         let root = dir.path();
-        write_md(root, "notes/a.md", "---\n---\n\nThe Foo concept is important.\n");
+        write_md(
+            root,
+            "notes/a.md",
+            "---\n---\n\nThe Foo concept is important.\n",
+        );
         write_md(root, "notes/b.md", "---\n---\n\nA [[Foo]] linked one.\n");
         let g = scan(root).unwrap();
         let hits = g.mentions_of("Foo");
@@ -702,8 +726,11 @@ mod tests {
         let data = g.graph_data();
         assert_eq!(data.nodes.len(), 3);
         assert_eq!(data.edges.len(), 2);
-        let edge_strs: Vec<String> =
-            data.edges.iter().map(|e| format!("{}→{}", e.from, e.to)).collect();
+        let edge_strs: Vec<String> = data
+            .edges
+            .iter()
+            .map(|e| format!("{}→{}", e.from, e.to))
+            .collect();
         assert!(edge_strs.contains(&"a.md→b.md".to_string()));
         assert!(edge_strs.contains(&"b.md→c.md".to_string()));
     }

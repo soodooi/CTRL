@@ -65,8 +65,8 @@ impl KernelRuntime {
             })?;
         }
 
-        let event_store =
-            EventStore::open(&db_path).map_err(|e| KernelBootError::EventStoreOpenFailed(e.to_string()))?;
+        let event_store = EventStore::open(&db_path)
+            .map_err(|e| KernelBootError::EventStoreOpenFailed(e.to_string()))?;
 
         // ADR-002 substrate § provider v2 provider sub-system (builtin
         // list slimmed to `ollama` 2026-06-05; claude-oauth removed per
@@ -99,23 +99,39 @@ impl KernelRuntime {
             if tokio::runtime::Handle::try_current().is_ok() {
                 tokio::spawn(async move {
                     match host_clone.load_registry(&reg_path).await {
-                        Ok(n) if n > 0 => tracing::info!(count = n, ?reg_path, "mcp_host: registry loaded"),
-                        Ok(_) => tracing::debug!(?reg_path, "mcp_host: empty registry, fresh start"),
-                        Err(e) => tracing::warn!(error = %e, ?reg_path, "mcp_host: registry load failed"),
+                        Ok(n) if n > 0 => {
+                            tracing::info!(count = n, ?reg_path, "mcp_host: registry loaded")
+                        }
+                        Ok(_) => {
+                            tracing::debug!(?reg_path, "mcp_host: empty registry, fresh start")
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, ?reg_path, "mcp_host: registry load failed")
+                        }
                     }
                 });
             } else {
-                tracing::debug!("mcp_host: no tokio runtime in boot context, hydrating registry inline");
+                tracing::debug!(
+                    "mcp_host: no tokio runtime in boot context, hydrating registry inline"
+                );
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build();
                 match rt {
                     Ok(rt) => match rt.block_on(host_clone.load_registry(&reg_path)) {
-                        Ok(n) if n > 0 => tracing::info!(count = n, ?reg_path, "mcp_host: registry loaded inline"),
-                        Ok(_) => tracing::debug!(?reg_path, "mcp_host: empty registry, fresh start"),
-                        Err(e) => tracing::warn!(error = %e, ?reg_path, "mcp_host: registry load failed"),
+                        Ok(n) if n > 0 => {
+                            tracing::info!(count = n, ?reg_path, "mcp_host: registry loaded inline")
+                        }
+                        Ok(_) => {
+                            tracing::debug!(?reg_path, "mcp_host: empty registry, fresh start")
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, ?reg_path, "mcp_host: registry load failed")
+                        }
                     },
-                    Err(e) => tracing::warn!(error = %e, "mcp_host: failed to build fallback runtime, skipping registry hydration"),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "mcp_host: failed to build fallback runtime, skipping registry hydration")
+                    }
                 }
             }
         }
@@ -141,14 +157,13 @@ impl KernelRuntime {
         // module uses so kv.* MCP tools and storage_* invoke handlers share
         // one file. Best-effort — when HOME is absent (CI) the field stays
         // None and the kv.* MCP tools surface a clean error.
-        let local_storage = ls_default_db_path()
-            .and_then(|p| match LocalStorage::open(&p) {
-                Ok(ls) => Some(Arc::new(ls)),
-                Err(e) => {
-                    tracing::warn!(error = %e, path = ?p, "local_storage open failed");
-                    None
-                }
-            });
+        let local_storage = ls_default_db_path().and_then(|p| match LocalStorage::open(&p) {
+            Ok(ls) => Some(Arc::new(ls)),
+            Err(e) => {
+                tracing::warn!(error = %e, path = ?p, "local_storage open failed");
+                None
+            }
+        });
 
         Ok(Self {
             scheduler: Arc::new(Scheduler::new()),

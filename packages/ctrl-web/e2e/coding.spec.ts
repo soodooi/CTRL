@@ -1,129 +1,158 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-// Browser-only harness: the production app intentionally reserves a bare
-// browser for the remote-entry surface. This dev mock lets Playwright exercise
-// the desktop React shell without pretending that a browser is Tauri.
-function installKernelMock(
-  page: import('@playwright/test').Page,
-  singleProject = false,
-): Promise<void> {
-  return page.addInitScript((useSingleProject) => {
-    const harness = window as unknown as {
-      __ctrlInvokeMock: (command: string) => unknown;
-      __ctrlCommands: string[];
+function installFctHarness(page: Page): Promise<void> {
+  return page.addInitScript(() => {
+    window.localStorage.clear();
+    const office = {
+      ref: 'skill:office',
+      name: 'Office',
+      summary: 'Use office documents',
+      source_kind: 'skill',
+      install_state: 'available',
+      selection_kind: 'selectable',
     };
-    harness.__ctrlCommands = [];
-    harness.__ctrlInvokeMock = (command) => {
-      harness.__ctrlCommands.push(command);
-      if (command === 'coding_launcher_status') {
-          return {
-            workspaces: useSingleProject
-              ? [{ id: 'root', label: 'CTRL', path: '/tmp/ctrl', opencodeConfigPresent: true }]
-              : [
-                  { id: 'root', label: 'CTRL', path: '/tmp/ctrl', opencodeConfigPresent: true },
-                  { id: 'research', label: 'Research', path: '/tmp/ctrl/Research', opencodeConfigPresent: true },
-                ],
-            terminals: [],
-            editors: [],
-            opencodeAvailable: false,
-            launchCommand: null,
+    const tables = {
+      ref: 'skill:tables',
+      name: 'Tables',
+      summary: 'Work with tables',
+      source_kind: 'skill',
+      install_state: 'available',
+      selection_kind: 'selectable',
+    };
+    let created: typeof office | null = null;
+    const calls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+    const harness = window as unknown as {
+      __ctrlInvokeMock: (command: string, args?: Record<string, unknown>) => unknown;
+      __ctrlCalls: typeof calls;
+    };
+    harness.__ctrlCalls = calls;
+    harness.__ctrlInvokeMock = (command, args) => {
+      calls.push({ command, args });
+      if (command === 'gate_invoke') {
+        const call = args as {
+          tool?: string;
+          args?: {
+            ref?: string;
+            request?: { operation?: string; ref?: string };
+            manifest?: Record<string, unknown>;
           };
+        };
+        if (call.tool === 'query' && call.args?.ref === 'ctrl://local/system/catalog') {
+          if (call.args.request?.operation === 'list') return created ? [office, tables, created] : [office, tables];
+          if (call.args.request?.operation === 'selection-projection') {
+            const ref = call.args.request.ref ?? '';
+            return {
+              ref,
+              resources: [],
+              skill_id: ref.startsWith('skill:') ? ref.slice('skill:'.length) : undefined,
+              capability_scope: ['tool:describe', 'tool:produce', 'tool:query'],
+              policy: 'review-gated-writes',
+              install_state: 'available',
+              install_ref: ref,
+            };
+          }
         }
-        if (command === 'list_local_skills') {
-          return [
-            {
-              name: 'create-feature-pack',
-              description: 'Create a governed CTRL feature pack.',
-              path: '/tmp/create-feature-pack/SKILL.md',
-            },
-            {
-              name: 'office',
-              description: 'Use an explicit LibreOffice selection.',
-              path: '/tmp/office/SKILL.md',
-            },
-          ];
+        if (call.tool === 'mcp_pack_scaffold') {
+          return { record_source: { kind: 'http-json', fields: [] }, notes: [] };
         }
-        if (command === 'irisy_init') {
-          return {
-            app_version: 'e2e',
-            kernel_llm: { adapter: 'e2e', ready: true },
-            mcp_bridge: { handshake_written: true, handshake_path: '/tmp/ctrl' },
-            active_brain: 'e2e',
+        if (call.tool === 'mcp_pack_validate') return { ok: true, issues: [], record_source_fields: 0 };
+        if (call.tool === 'mcp_pack_install') {
+          const manifest = call.args?.manifest ?? {};
+          const id = String(manifest.id ?? 'created');
+          created = {
+            ref: `pack:${id}`,
+            name: String(manifest.name ?? id),
+            summary: 'Created in Library',
+            source_kind: 'package',
+            install_state: 'installed',
+            selection_kind: 'selectable',
           };
-        }
-        if (command === 'kernel_status') {
-          return {
-            uptime_ms: 1,
-            first_run_state: 'ready',
-            llm_adapters: [],
-            primary_adapter: null,
-            mcp_servers_installed: 0,
-            vault_files: 0,
-            event_ws_addr: '127.0.0.1:17872',
-            overall: 'ok',
-            warnings: [],
-            active_brain: 'e2e',
-          };
+          return null;
         }
         return null;
-      };
-  }, singleProject);
+      }
+      if (command === 'list_mcps') return [];
+      if (command === 'fetch_pack_registry') return JSON.stringify({ servers: [] });
+      if (command === 'get_version') return 'e2e';
+      return null;
+    };
+  });
 }
 
-test('Coding uses one persistent composer with real identity, resource, and skill controls', async ({ page }) => {
-  await installKernelMock(page);
-  await page.goto('/coding');
-
-  const dialog = page.getByLabel('Persistent agent dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('textbox')).toHaveCount(1);
-
-  const identity = dialog.getByRole('combobox', { name: 'Irisy identity' });
-  await expect(identity).toHaveValue('coding');
-  await expect(identity.locator('option:checked')).toHaveText('Coding');
-
-  const resource = dialog.getByRole('combobox', { name: 'Resource' });
-  await expect(resource).toHaveValue('root');
-  await expect(resource.locator('option')).toHaveText(['CTRL', 'Research']);
-  await resource.selectOption('research');
-  await expect(resource).toHaveValue('research');
-
-  const skill = dialog.getByRole('combobox', { name: 'Skill' });
-  await expect(skill.locator('option')).toHaveText([
-    'Skill: Auto',
-    'create-feature-pack',
-    'office',
-  ]);
-  await skill.selectOption('office');
-  await expect(skill).toHaveValue('office');
-
-  await expect(dialog.getByRole('button', { name: 'Add files or folders' })).toBeVisible();
-  await expect(dialog.getByRole('tab', { name: 'CTRL' })).toHaveCount(0);
-  await expect(dialog.getByRole('tab', { name: 'Research' })).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Coding', exact: true })).toHaveCount(0);
-
-  await identity.selectOption('irisy');
-  await expect(dialog.getByRole('textbox')).toHaveCount(1);
-  await expect(dialog.getByRole('combobox', { name: 'Irisy identity' })).toHaveValue('irisy');
-  await expect(dialog.getByRole('combobox', { name: 'Irisy identity' }).locator('option:checked')).toHaveText('Assistant');
-
-  const assistantInput = dialog.getByRole('textbox');
-  await assistantInput.fill(':tables');
-  await assistantInput.press('Enter');
-  await expect(dialog.getByText('Resource: Smart Tables', { exact: true })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => (
-    (window as unknown as { __ctrlCommands: string[] }).__ctrlCommands
-      .filter((command) => command === 'irisy_reset_engine').length
-  ))).toBeGreaterThan(0);
+test.beforeEach(async ({ page }) => {
+  await installFctHarness(page);
 });
 
-test('Coding auto-binds one project without showing a redundant Resource control', async ({ page }) => {
-  await installKernelMock(page, true);
+test('/coding redirects to the canonical shell and FCT selection belongs to each session', async ({ page }) => {
   await page.goto('/coding');
+  await expect(page).toHaveURL(/\/$/);
 
   const dialog = page.getByLabel('Persistent agent dialog');
-  await expect(dialog.getByRole('combobox', { name: 'Irisy identity' })).toHaveValue('coding');
+  const selector = dialog.getByRole('button', { name: 'FCT' });
+  await selector.click();
+  await dialog.locator('[data-decision-kind="choice"]').getByRole('button', { name: 'Office' }).click();
+  await expect(selector).toHaveText('FCT · Office');
+
+  // Expanded turn facts resolve live, while only the stable ref is session state.
+  // (ADR-002 substrate §15.4 v84; ADR-003 frontend §8.5 v41)
+  await expect.poll(() => page.evaluate(() => {
+    const calls = (window as unknown as { __ctrlCalls: Array<{ command: string; args?: Record<string, unknown> }> }).__ctrlCalls;
+    return calls.some(({ command, args }) => {
+      const gate = args as { tool?: string; args?: { request?: { operation?: string; ref?: string } } } | undefined;
+      return command === 'gate_invoke'
+        && gate?.tool === 'query'
+        && gate.args?.request?.operation === 'selection-projection'
+        && gate.args.request.ref === 'skill:office';
+    });
+  })).toBe(true);
+
+  await dialog.getByRole('button', { name: 'New session', exact: true }).click();
+  await expect(selector).toHaveText('FCT · Auto');
+  await selector.click();
+  await dialog.locator('[data-decision-kind="choice"]').getByRole('button', { name: 'Tables' }).click();
+  await expect(selector).toHaveText('FCT · Tables');
+
+  const sessions = dialog.getByRole('tablist', { name: 'Irisy sessions' });
+  await expect(sessions.getByRole('tab')).toHaveCount(2);
+  await sessions.getByRole('tab').nth(0).click();
+  await expect(selector).toHaveText('FCT · Office');
+  await sessions.getByRole('tab').nth(1).click();
+  await expect(selector).toHaveText('FCT · Tables');
+
+  await expect(dialog.getByRole('combobox', { name: 'Irisy identity' })).toHaveCount(0);
   await expect(dialog.getByRole('combobox', { name: 'Resource' })).toHaveCount(0);
-  await expect(dialog.getByRole('textbox')).toHaveAttribute('placeholder', 'Set up Irisy Coding first…');
-  await expect(dialog.getByRole('combobox', { name: 'Skill' })).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Skill' })).toHaveCount(0);
+});
+
+test('creating an FCT changes Library availability without activating it', async ({ page }) => {
+  await page.goto('/');
+  const dialog = page.getByLabel('Persistent agent dialog');
+  const selector = dialog.getByRole('button', { name: 'FCT' });
+  await selector.click();
+  await dialog.locator('[data-decision-kind="choice"]').getByRole('button', { name: 'Office' }).click();
+  await expect(selector).toHaveText('FCT · Office');
+
+  await page.getByRole('button', { name: 'Library' }).click();
+  await page.getByRole('tab', { name: 'Create FCT' }).click();
+  await page.getByText('or scaffold a connector from an OpenAPI spec', { exact: true }).click();
+  await page.getByPlaceholder('read path, e.g. /api/v1/portfolio/holdings').fill('/api/v1/holdings');
+  await page.getByRole('textbox', { name: 'OpenAPI spec JSON' }).fill(JSON.stringify({ openapi: '3.0.0', paths: {} }));
+  await page.getByRole('button', { name: 'Scaffold from OpenAPI' }).click();
+  await expect(page.getByRole('textbox', { name: 'Pack manifest JSON' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add FCT', exact: true }).click();
+
+  await expect(page.getByText('FCT added to Installed FCTs. It was not activated.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Holdings', { exact: true })).toBeVisible();
+
+  // Creation and installation alter availability only; Use FCT is the explicit handoff.
+  // (ADR-003 frontend §8.5 v41)
+  await page.getByRole('button', { name: 'Work' }).click();
+  await expect(selector).toHaveText('FCT · Office');
+
+  await page.getByRole('button', { name: 'Library' }).click();
+  await page.getByRole('tab', { name: 'Installed FCTs' }).click();
+  const card = page.getByText('Holdings', { exact: true }).locator('..').locator('..');
+  await card.getByRole('button', { name: 'Use FCT' }).click();
+  await expect(page.getByRole('button', { name: 'Work' })).toHaveAttribute('aria-current', 'page');
+  await expect(selector).toHaveText('FCT · Holdings');
 });

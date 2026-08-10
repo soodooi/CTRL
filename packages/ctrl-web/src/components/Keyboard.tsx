@@ -421,7 +421,7 @@ export const Keyboard = (): ReactElement => {
       const summary = mcps.find((k) => k.id === id);
       if (!summary) return;
       createFromMcp({ id: summary.id, name: summary.name });
-      void navigate({ to: '/workspace' });
+      void navigate({ to: '/' });
     },
     [mcps, createFromMcp, navigate],
   );
@@ -437,7 +437,7 @@ export const Keyboard = (): ReactElement => {
       const target =
         existing ?? createFromMcp({ id: summary.id, name: summary.name });
       duplicateInstance(target.id);
-      void navigate({ to: '/workspace' });
+      void navigate({ to: '/' });
     },
     [mcps, instances, createFromMcp, duplicateInstance, navigate],
   );

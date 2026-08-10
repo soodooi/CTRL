@@ -54,21 +54,30 @@ fn load(root: &Path, path: &str) -> SmartTable {
 }
 
 fn names(rows: &[super::query::Row]) -> Vec<String> {
-    rows.iter().map(|r| r.get("name").cloned().unwrap_or_default()).collect()
+    rows.iter()
+        .map(|r| r.get("name").cloned().unwrap_or_default())
+        .collect()
 }
 
 #[test]
 fn pipeline_parse_from_disk() {
     let (dir, path) = seed();
     let table = load(dir.path(), &path);
-    println!("\n[parse] {path}: {} fields, {} rows", table.fields.len(), table.rows.len());
+    println!(
+        "\n[parse] {path}: {} fields, {} rows",
+        table.fields.len(),
+        table.rows.len()
+    );
     for f in &table.fields {
         println!("  field {:<7} type={:?}", f.key, f.cell_type);
     }
     println!("  rows: {:?}", names(&table.rows));
     assert_eq!(table.fields.len(), 6);
     assert_eq!(table.rows.len(), 5);
-    assert_eq!(names(&table.rows), ["Acme", "Beta", "Cobalt", "Delta", "Echo"]);
+    assert_eq!(
+        names(&table.rows),
+        ["Acme", "Beta", "Cobalt", "Delta", "Echo"]
+    );
 }
 
 #[test]
@@ -76,7 +85,10 @@ fn pipeline_describe() {
     let (dir, path) = seed();
     let d = load(dir.path(), &path).describe();
     println!("\n[describe] source_kind={:?}", d.source_kind);
-    println!("  fields: {:?}", d.fields.iter().map(|f| &f.key).collect::<Vec<_>>());
+    println!(
+        "  fields: {:?}",
+        d.fields.iter().map(|f| &f.key).collect::<Vec<_>>()
+    );
     println!("  operators: {:?}", d.operators);
     assert_eq!(d.fields.len(), 6);
     assert!(!d.operators.is_empty());
@@ -87,19 +99,54 @@ fn pipeline_query_filters() {
     let (dir, path) = seed();
     let table = load(dir.path(), &path);
     let run = |label: &str, f: Filter| {
-        let req = QueryRequest { filters: vec![f], ..Default::default() };
+        let req = QueryRequest {
+            filters: vec![f],
+            ..Default::default()
+        };
         let res = table.query(&req, now()).unwrap();
-        println!("[query/filter] {label} -> {:?} (match_count={})", names(&res.rows), res.match_count);
+        println!(
+            "[query/filter] {label} -> {:?} (match_count={})",
+            names(&res.rows),
+            res.match_count
+        );
         res
     };
-    let gt = run("amount > 10000", Filter { field: "amount".into(), op: Operator::Gt, value: "10000".into() });
+    let gt = run(
+        "amount > 10000",
+        Filter {
+            field: "amount".into(),
+            op: Operator::Gt,
+            value: "10000".into(),
+        },
+    );
     assert_eq!(names(&gt.rows), ["Acme", "Cobalt", "Echo"]);
-    let contains = run("name contains 'co'", Filter { field: "name".into(), op: Operator::Contains, value: "co".into() });
+    let contains = run(
+        "name contains 'co'",
+        Filter {
+            field: "name".into(),
+            op: Operator::Contains,
+            value: "co".into(),
+        },
+    );
     assert_eq!(names(&contains.rows), ["Cobalt"]);
-    let within = run("due within this_week", Filter { field: "due".into(), op: Operator::Within, value: "this_week".into() });
+    let within = run(
+        "due within this_week",
+        Filter {
+            field: "due".into(),
+            op: Operator::Within,
+            value: "this_week".into(),
+        },
+    );
     // now()=Fri 2026-06-19 → week Mon 06-15..Sun 06-21: Acme 06-20, Cobalt 06-18, Echo 06-21.
     assert_eq!(names(&within.rows), ["Acme", "Cobalt", "Echo"]);
-    let tag = run("tags has_tag 'vip'", Filter { field: "tags".into(), op: Operator::HasTag, value: "vip".into() });
+    let tag = run(
+        "tags has_tag 'vip'",
+        Filter {
+            field: "tags".into(),
+            op: Operator::HasTag,
+            value: "vip".into(),
+        },
+    );
     assert_eq!(names(&tag.rows), ["Acme", "Cobalt"]);
 }
 
@@ -109,14 +156,25 @@ fn pipeline_query_or_conjunction() {
     let table = load(dir.path(), &path);
     let req = QueryRequest {
         filters: vec![
-            Filter { field: "amount".into(), op: Operator::Lt, value: "1000".into() },
-            Filter { field: "tags".into(), op: Operator::HasTag, value: "lead".into() },
+            Filter {
+                field: "amount".into(),
+                op: Operator::Lt,
+                value: "1000".into(),
+            },
+            Filter {
+                field: "tags".into(),
+                op: Operator::HasTag,
+                value: "lead".into(),
+            },
         ],
         conjunction: Conjunction::Or,
         ..Default::default()
     };
     let res = table.query(&req, now()).unwrap();
-    println!("\n[query/OR] amount<1000 OR tags~lead -> {:?}", names(&res.rows));
+    println!(
+        "\n[query/OR] amount<1000 OR tags~lead -> {:?}",
+        names(&res.rows)
+    );
     // Delta (800) + Cobalt (lead) + Echo (lead).
     assert_eq!(res.match_count, 3);
     assert!(names(&res.rows).contains(&"Delta".to_string()));
@@ -128,17 +186,38 @@ fn pipeline_query_sort_and_multigroup() {
     let table = load(dir.path(), &path);
 
     let sorted = table
-        .query(&QueryRequest { sort: vec![SortKey { field: "amount".into(), desc: true }], ..Default::default() }, now())
+        .query(
+            &QueryRequest {
+                sort: vec![SortKey {
+                    field: "amount".into(),
+                    desc: true,
+                }],
+                ..Default::default()
+            },
+            now(),
+        )
         .unwrap();
     println!("\n[query/sort] amount desc -> {:?}", names(&sorted.rows));
-    assert_eq!(names(&sorted.rows), ["Cobalt", "Echo", "Acme", "Beta", "Delta"]);
+    assert_eq!(
+        names(&sorted.rows),
+        ["Cobalt", "Echo", "Acme", "Beta", "Delta"]
+    );
 
     let grouped = table
-        .query(&QueryRequest { group_by: vec!["stage".into(), "name".into()], ..Default::default() }, now())
+        .query(
+            &QueryRequest {
+                group_by: vec!["stage".into(), "name".into()],
+                ..Default::default()
+            },
+            now(),
+        )
         .unwrap();
     println!("[query/group] by stage,name -> {:?}", names(&grouped.rows));
     // Groups contiguous, alpha by stage then name: lost, new, qualified×2, won.
-    assert_eq!(names(&grouped.rows), ["Delta", "Beta", "Acme", "Echo", "Cobalt"]);
+    assert_eq!(
+        names(&grouped.rows),
+        ["Delta", "Beta", "Acme", "Echo", "Cobalt"]
+    );
 }
 
 #[test]
@@ -149,7 +228,13 @@ fn pipeline_produce_update_cell_to_disk() {
     let mut table = load(dir.path(), &path);
     let entry = vault::read(dir.path(), &path).unwrap();
     assert!(table.update_cell(3, "stage", "won")); // Delta: lost -> won
-    vault::write(dir.path(), &path, &table.serialize_body(), &entry.frontmatter).unwrap();
+    vault::write(
+        dir.path(),
+        &path,
+        &table.serialize_body(),
+        &entry.frontmatter,
+    )
+    .unwrap();
 
     // Verify the ACTUAL on-disk file changed.
     let raw = std::fs::read_to_string(dir.path().join("tables/crm.md")).unwrap();
@@ -159,7 +244,17 @@ fn pipeline_produce_update_cell_to_disk() {
     // Re-read through the pipeline → the change is visible to a fresh query.
     let reread = load(dir.path(), &path);
     let won = reread
-        .query(&QueryRequest { filters: vec![Filter { field: "stage".into(), op: Operator::Eq, value: "won".into() }], ..Default::default() }, now())
+        .query(
+            &QueryRequest {
+                filters: vec![Filter {
+                    field: "stage".into(),
+                    op: Operator::Eq,
+                    value: "won".into(),
+                }],
+                ..Default::default()
+            },
+            now(),
+        )
         .unwrap();
     println!("  re-query stage=won -> {:?}", names(&won.rows));
     assert_eq!(names(&won.rows), ["Cobalt", "Delta"]);
@@ -176,7 +271,13 @@ fn pipeline_produce_append_row_to_disk() {
     values.insert("amount".into(), "9000".into());
     values.insert("stage".into(), "new".into());
     table.append_row(values);
-    vault::write(dir.path(), &path, &table.serialize_body(), &entry.frontmatter).unwrap();
+    vault::write(
+        dir.path(),
+        &path,
+        &table.serialize_body(),
+        &entry.frontmatter,
+    )
+    .unwrap();
 
     let raw = std::fs::read_to_string(dir.path().join("tables/crm.md")).unwrap();
     println!("\n[produce/append_row] on-disk file after appending Foxtrot:\n{raw}");

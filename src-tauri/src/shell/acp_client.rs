@@ -45,6 +45,14 @@ pub struct AcpClient {
     stdin: ChildStdin,
     reader: BufReader<ChildStdout>,
     session_id: String,
+    /// Canonical Irisy session whose history primed this ACP process. A
+    /// different session must replace the client while holding the singleton
+    /// lock before any prompt is sent. (ADR-005 irisy §11 v40)
+    canonical_session_id: Option<String>,
+    /// Immutable :17873 authorization scope projected into this ACP session.
+    /// A live FCT projection change replaces the owner before another prompt.
+    /// (ADR-002 substrate §15.4 v84; ADR-005 irisy §11 v41)
+    gate_intent: Option<String>,
     next_id: i64,
     /// False after a timed-out turn cannot be drained to its terminal response.
     /// A live process alone is not safe to reuse because its next notification
@@ -53,18 +61,9 @@ pub struct AcpClient {
     reusable: bool,
     /// Whether the CTRL capability preamble has been sent this session (§1.8.2).
     primed: bool,
-    /// Which Irisy engine this client drives — `hermes` | `codex` | `claude-code`
-    /// (ADR-005 irisy §8.7). All speak ACP; only the spawn command differs. When
-    /// the user switches engine the caller resets the singleton so it restarts
-    /// with the chosen adapter.
-    engine_id: String,
-    /// The connected engine's negotiated multi-modal prompt capabilities, read
-    /// from `initialize`'s response (ADR-002 substrate §1.8.6 v75). Shared by
-    /// every ACP-driven engine (Irisy's selectable engine AND Coding's
-    /// opencode) — `prompt()` consults this before ever emitting an `Image` or
-    /// `EmbeddedResource` ContentBlock, since sending one the engine did not
-    /// advertise is a protocol violation the engine may reject the whole turn
-    /// over.
+    /// Hermes' negotiated multi-modal prompt capabilities, read from
+    /// `initialize`. `prompt()` checks these before sending an Image or
+    /// EmbeddedResource ContentBlock.
     prompt_caps: PromptCapsSnapshot,
 }
 
@@ -136,6 +135,49 @@ const MAX_IMAGE_BASE64_CHARS: usize = 8_000_000;
 /// with an explicit notice rather than silently cutting content or letting
 /// the stdio line balloon unbounded.
 const MAX_TEXT_RESOURCE_CHARS: usize = 100_000;
+
+fn compose_turn_text(
+    turns: &[(String, String)],
+    system_preamble: Option<&str>,
+    bootstrap_pending: bool,
+) -> String {
+    let last_user = turns
+        .iter()
+        .rev()
+        .find(|(role, _)| role == "user")
+        .map(|(_, content)| content.clone())
+        .unwrap_or_default();
+    let mut head = String::new();
+    if let Some(system) = system_preamble
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        head.push_str(system);
+    }
+    if bootstrap_pending {
+        if !head.is_empty() {
+            head.push_str("\n\n");
+        }
+        head.push_str(CTRL_CAPABILITY_BRIEF);
+        let last_idx = turns.iter().rposition(|(role, _)| role == "user");
+        let prior = match last_idx {
+            Some(index) => &turns[..index],
+            None => turns,
+        };
+        if !prior.is_empty() {
+            head.push_str("\n\n[Conversation so far — context only, continue it:]\n");
+            for (role, content) in prior {
+                let who = if role == "user" { "User" } else { "Irisy" };
+                head.push_str(&format!("{who}: {}\n", content.trim()));
+            }
+        }
+    }
+    if head.is_empty() {
+        last_user
+    } else {
+        format!("{head}\n\n{last_user}")
+    }
+}
 
 /// Build the ContentBlocks for one turn: the text prompt plus any attachment
 /// that the connected engine's negotiated capabilities actually admit
@@ -450,22 +492,19 @@ user's one-tap approval — this is normal and by design (their data sovereignty
 Proceed to the write as usual; if a call comes back denied, the user declined it \
 — acknowledge and adjust, do not silently retry the same write.]";
 
-/// Process-wide persistent client. `None` until the first turn starts it;
+/// Process-wide persistent Irisy client. `None` until the first turn starts it;
 /// reset to `None` on any error so the next turn restarts cleanly.
+/// (ADR-005 irisy §11 v40)
 pub fn singleton() -> &'static Mutex<Option<AcpClient>> {
     static ACP: OnceLock<Mutex<Option<AcpClient>>> = OnceLock::new();
     ACP.get_or_init(|| Mutex::new(None))
 }
 
-/// A SECOND, independent persistent client for the Coding module's `opencode`
-/// engine (ADR-001 spine §4 v16). Deliberately separate from `singleton()` — that
-/// one is Irisy's right-region engine (hermes/codex/claude-code) rooted at the
-/// vault; this one is the Coding scene's engine rooted at whichever workspace
-/// the user selected. The two must never share a slot: switching Irisy's
-/// engine must not kill a live Coding session and vice versa.
-pub fn coding_singleton() -> &'static Mutex<Option<AcpClient>> {
-    static ACP: OnceLock<Mutex<Option<AcpClient>>> = OnceLock::new();
-    ACP.get_or_init(|| Mutex::new(None))
+/// A missing or different owner requires a fresh Hermes process so its first
+/// prompt replays the requested canonical transcript under the singleton lock.
+/// (ADR-005 irisy §11 v40)
+pub(crate) fn canonical_session_changed(current: Option<&str>, requested: &str) -> bool {
+    current != Some(requested)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -530,8 +569,9 @@ pub struct AcpDiagnosticsSnapshot {
 /// Observe the live ACP singleton without starting it or waiting behind a turn.
 /// Owner activity is projected atomically while its lock is held, so a healthy
 /// active turn remains distinguishable from startup or failure. No prompt,
-/// thought, tool payload, or process path crosses this boundary.
-/// (ADR-005 irisy §8.6.1 v26)
+/// thought, tool payload, or process path crosses this boundary. The reported
+/// managed engine is always Hermes, never a selectable runtime identity.
+/// (ADR-005 irisy §11 v40)
 pub fn diagnostics_snapshot() -> AcpDiagnosticsSnapshot {
     let Ok(mut guard) = singleton().try_lock() else {
         return AcpDiagnosticsSnapshot {
@@ -546,7 +586,9 @@ pub fn diagnostics_snapshot() -> AcpDiagnosticsSnapshot {
             engine: None,
         };
     };
-    let engine = Some(client.engine_id.clone());
+    // Fixed diagnostic identity mirrors the sole managed Irisy owner.
+    // (ADR-005 irisy §11 v40)
+    let engine = Some("hermes".to_owned());
     let state = if client.is_alive() {
         let state = current_diagnostics_state();
         if matches!(
@@ -575,11 +617,6 @@ pub fn shutdown() {
             // Shutdown updates only ACP-owned lifecycle metadata.
             // (ADR-005 irisy §8.6.1 v26)
             set_diagnostics_state(AcpDiagnosticsState::Idle);
-        }
-    }
-    if let Ok(mut g) = coding_singleton().try_lock() {
-        if let Some(mut c) = g.take() {
-            let _ = c.child.start_kill();
         }
     }
 }
@@ -623,10 +660,9 @@ fn ensure_hermes_soul() {
     let _ = std::fs::write(&soul, HERMES_SOUL);
 }
 
-/// MCP-bus passthrough (ADR-001 spine §4 v21; ADR-010 communication
-/// § trust-domains v11): expose CTRL's governed kernel MCP server to an ACP
-/// owner with an explicit caller and optional capability intent. Assistant and
-/// Coding share transport only; their gate projections remain distinct.
+/// MCP-bus passthrough (ADR-001 spine §4 v22; ADR-010 communication
+/// § trust-domains v11): expose CTRL's governed kernel MCP server to the sole
+/// Irisy ACP owner with an explicit caller and optional capability intent.
 fn build_mcp_servers(caller: &str, intent: Option<&str>) -> Vec<Value> {
     let token = match std::env::var("CTRL_KERNEL_MCP_TOKEN") {
         Ok(t) if !t.is_empty() => t,
@@ -687,99 +723,34 @@ fn select_allow_outcome(req: &Value) -> Value {
     }
 }
 
-/// Build the spawn argv for an Irisy engine (ADR-005 irisy §8.7). All engines
-/// speak ACP; only the launch command differs. hermes is the bundled default
-/// (uvx, with the Python pin + `--with mcp` the adapter needs); Codex and
-/// Claude Code are driven via their npm-distributed ACP adapters (npx fetches
-/// on first use), which wrap the user's OWN installed CLI — the UI only offers
-/// a BYO engine once `list_byo_drivers` has detected it. `opencode` (the Coding
-/// module's engine, ADR-001 spine §4 v16) speaks ACP NATIVELY via its own `acp`
-/// subcommand — verified directly against the user's installed binary
-/// (`opencode acp` completes `initialize` -> `session/new` ->
-/// `session/prompt`, streaming `agent_thought_chunk` / `agent_message_chunk`
-/// exactly like hermes/codex/claude-code) — so it needs no wrapper adapter.
-fn engine_argv(engine: &str) -> Result<Vec<String>> {
-    use crate::shell::agent_installer::{
-        read_manifest, AgentName, HERMES_MCP_SPEC, HERMES_PYTHON,
-    };
-    match engine {
-        "" | "hermes" => {
-            let manifest =
-                read_manifest(&AgentName::Hermes).ok_or_else(|| anyhow!("hermes not installed"))?;
-            let mut argv = manifest.entry_cmd.clone();
-            if argv.is_empty() {
-                return Err(anyhow!("hermes manifest.entry_cmd empty"));
-            }
-            // Stale manifests lack the Python pin hermes-agent[acp] needs (>=3.11);
-            // inject it so uvx fetches a managed CPython (see agent_installer).
-            if argv[0].ends_with("uvx") && !argv.iter().any(|a| a == "--python") {
-                argv.splice(1..1, ["--python".to_string(), HERMES_PYTHON.to_string()]);
-            }
-            // CRITICAL: `hermes-agent[acp]` does NOT depend on the `mcp` package.
-            // Normalize stale manifests as well as inject missing dependencies:
-            // Hermes 0.18 checks `streamablehttp_client`, which MCP 2.x removed,
-            // and otherwise silently registers zero CTRL tools.
-            // (ADR-002 substrate §1.8 v23)
-            let mcp_spec_index = argv.windows(2).position(|w| {
-                w[0] == "--with"
-                    && (w[1] == "mcp"
-                        || w[1].starts_with("mcp<")
-                        || w[1].starts_with("mcp>")
-                        || w[1].starts_with("mcp="))
-            });
-            if let Some(index) = mcp_spec_index {
-                argv[index + 1] = HERMES_MCP_SPEC.to_string();
-            } else if argv[0].ends_with("uvx") {
-                argv.splice(
-                    1..1,
-                    ["--with".to_string(), HERMES_MCP_SPEC.to_string()],
-                );
-            }
-            Ok(argv)
-        }
-        // npm-distributed ACP adapters wrapping the user's own CLI (verified on a
-        // real machine 2026-06-29): codex moved to `@agentclientprotocol/codex-acp`
-        // (the old `@zed-industries/codex-acp` is DEPRECATED and answers nothing on
-        // stdio → silent hang); claude-code is still `@zed-industries/claude-code-acp`.
-        "codex" => Ok(vec![
-            "npx".to_string(),
-            "-y".to_string(),
-            "@agentclientprotocol/codex-acp".to_string(),
-        ]),
-        "claude-code" => Ok(vec![
-            "npx".to_string(),
-            "-y".to_string(),
-            "@zed-industries/claude-code-acp".to_string(),
-        ]),
-        // ADR-001 spine §4 v16: opencode speaks ACP natively via its own
-        // `acp` subcommand — no wrapper adapter needed.
-        "opencode" => Ok(vec!["opencode".to_string(), "acp".to_string()]),
-        other => Err(anyhow!("unknown Irisy engine: {other}")),
-    }
-}
+/// Build the spawn argv for the fixed managed Irisy runtime.
+/// External BYO CLIs connect to the gate independently and are never spawned
+/// through this ACP owner. (ADR-001 spine §4 v22; ADR-005 irisy §11 v40)
+fn hermes_argv() -> Result<Vec<String>> {
+    use crate::shell::agent_installer::{read_manifest, AgentName, HERMES_MCP_SPEC, HERMES_PYTHON};
 
-/// Resolve the actual CLI binary a BYO ACP adapter wraps (ADR-005 §8.8): CTRL's
-/// one-click managed install (~/.ctrl/agents/<id>/node_modules/.bin/<bin>) first,
-/// else the user's own on PATH. None when neither exists — the adapter then falls
-/// back to its own discovery. This is what lets codex-acp find the codex CTRL
-/// installed instead of hanging.
-fn resolve_engine_binary(engine: &str) -> Option<PathBuf> {
-    use crate::shell::agent_installer::{agent_dir, AgentName};
-    let agent = match engine {
-        "codex" => AgentName::Codex,
-        "claude-code" => AgentName::ClaudeCode,
-        // opencode is always the user's own PATH install (never CTRL-managed —
-        // it is the Coding module's BYO-CLI, ADR-001 §4), so it never has a
-        // ~/.ctrl/agents/<id> dir to check first.
-        _ => return None,
-    };
-    if let Ok(dir) = agent_dir(&agent) {
-        let p = dir.join("node_modules").join(".bin").join(agent.bin_name());
-        if p.exists() {
-            return Some(p);
-        }
+    let manifest =
+        read_manifest(&AgentName::Hermes).ok_or_else(|| anyhow!("hermes not installed"))?;
+    let mut argv = manifest.entry_cmd.clone();
+    if argv.is_empty() {
+        return Err(anyhow!("hermes manifest.entry_cmd empty"));
     }
-    crate::kernel::provider::path_resolver::resolve_binary_path(agent.bin_name())
+    if argv[0].ends_with("uvx") && !argv.iter().any(|argument| argument == "--python") {
+        argv.splice(1..1, ["--python".to_string(), HERMES_PYTHON.to_string()]);
+    }
+    let mcp_spec_index = argv.windows(2).position(|window| {
+        window[0] == "--with"
+            && (window[1] == "mcp"
+                || window[1].starts_with("mcp<")
+                || window[1].starts_with("mcp>")
+                || window[1].starts_with("mcp="))
+    });
+    if let Some(index) = mcp_spec_index {
+        argv[index + 1] = HERMES_MCP_SPEC.to_string();
+    } else if argv[0].ends_with("uvx") {
+        argv.splice(1..1, ["--with".to_string(), HERMES_MCP_SPEC.to_string()]);
+    }
+    Ok(argv)
 }
 
 // Keep response identity and cancellation framing separate from request dispatch so
@@ -806,30 +777,47 @@ fn cancel_notification(session_id: &str) -> Value {
 }
 
 impl AcpClient {
-    /// Spawn the selected ACP engine, handshake (initialize), and open one ACP
-    /// session. `engine` = `hermes` (default) | `codex` | `claude-code`
-    /// (ADR-005 irisy §8.7). `provider_env` is the BYOK credential the engine
-    /// should use (ADR-002 §1.3): for hermes the active Irisy provider (also
-    /// mirrored into ~/.hermes/.env); for a BYO engine its canonical key
-    /// (OPENAI_API_KEY / ANTHROPIC_API_KEY, via byo_engine_auth_env) — injected
-    /// into the adapter subprocess env below so Codex / Claude reuse the key the
-    /// user already configured in CTRL instead of a second sign-in (§8.8).
-    pub async fn start(engine: &str, provider_env: &BTreeMap<String, String>) -> Result<Self> {
-        Self::start_in_scoped(engine, provider_env, None, "hermes", None).await
+    pub(crate) fn canonical_session_id(&self) -> Option<&str> {
+        self.canonical_session_id.as_deref()
     }
 
-    /// Start an ACP owner with an explicit gate projection. Runtime/session
-    /// ownership and capability visibility remain actor-specific even though
-    /// all owners use the same ACP transport and :17873 gate.
-    /// (ADR-001 spine §4 v21; ADR-005 irisy §11 v38)
-    pub async fn start_in_scoped(
-        engine: &str,
+    /// Immutable gate scope carried by this ACP owner.
+    /// (ADR-002 substrate §15.4 v84)
+    pub(crate) fn gate_intent(&self) -> Option<&str> {
+        self.gate_intent.as_deref()
+    }
+
+    pub(crate) fn bind_canonical_session(&mut self, session_id: String) {
+        debug_assert!(!self.primed || self.canonical_session_id.as_deref() == Some(&session_id));
+        self.canonical_session_id = Some(session_id);
+    }
+
+    /// Spawn the fixed Hermes ACP owner, handshake, and open one session.
+    /// External BYO CLIs are independent gate clients and cannot enter this
+    /// managed owner. (ADR-001 spine §4 v22; ADR-005 irisy §11 v41)
+    pub async fn start(provider_env: &BTreeMap<String, String>) -> Result<Self> {
+        Self::start_with_intent(provider_env, None).await
+    }
+
+    /// Start Hermes with one resolved turn authorization projection.
+    /// (ADR-002 substrate §15.4 v84; ADR-005 irisy §11 v41)
+    pub(crate) async fn start_with_intent(
+        provider_env: &BTreeMap<String, String>,
+        gate_intent: Option<&str>,
+    ) -> Result<Self> {
+        Self::start_in_scoped(provider_env, None, "hermes", gate_intent).await
+    }
+
+    /// Internal constructor keeps caller, cwd, and resolved authorization
+    /// immutable for the lifetime of one ACP owner.
+    /// (ADR-002 substrate §15.4 v84)
+    async fn start_in_scoped(
         provider_env: &BTreeMap<String, String>,
         cwd_override: Option<&std::path::Path>,
         gate_caller: &str,
         gate_intent: Option<&str>,
     ) -> Result<Self> {
-        let engine = if engine.is_empty() { "hermes" } else { engine };
+        let engine = "hermes";
         set_diagnostics_state(AcpDiagnosticsState::Starting);
         let mut startup_diagnostics = AcpStartupDiagnostics {
             engine: engine.to_string(),
@@ -848,14 +836,11 @@ impl AcpClient {
             capture_only: false,
             attributes: serde_json::json!({ "engine": engine }),
         });
-        let argv = engine_argv(engine)?;
+        let argv = hermes_argv()?;
 
-        // Provider projection is synchronized by ProviderRegistry under its
-        // mutation lock before this launch. ACP owns only the Hermes soul here.
+        // Hermes owns the managed Irisy memory projection.
         // (ADR-002 substrate § provider v71)
-        if engine == "hermes" {
-            ensure_hermes_soul();
-        }
+        ensure_hermes_soul();
 
         let cwd = match cwd_override {
             Some(p) => p.to_path_buf(),
@@ -867,32 +852,6 @@ impl AcpClient {
             cmd.env(k, v);
         }
         cmd.current_dir(&cwd);
-        // BYO engines launch via npx and WRAP the user's own CLI binary. CTRL's
-        // one-click install lands codex/claude under ~/.ctrl/agents (NOT on PATH),
-        // so without this the adapter can't find the binary and hangs (ADR-005
-        // §8.8 — the pending PATH-wiring item). Make discoverable: (a) the Node
-        // runtime so `npx` resolves even where CTRL bootstrapped Node; (b) the
-        // wrapped binary's dir on PATH; (c) for codex, CODEX_PATH points straight
-        // at it (codex-acp honors it).
-        if engine == "codex" || engine == "claude-code" {
-            let mut extra: Vec<String> = Vec::new();
-            if let Ok(node_bin) = crate::shell::agent_installer::ensure_node() {
-                extra.push(node_bin.display().to_string());
-            }
-            if let Some(cli) = resolve_engine_binary(engine) {
-                if let Some(dir) = cli.parent() {
-                    extra.push(dir.display().to_string());
-                }
-                if engine == "codex" {
-                    cmd.env("CODEX_PATH", &cli);
-                }
-            }
-            if !extra.is_empty() {
-                let sep = if cfg!(windows) { ";" } else { ":" };
-                let existing = std::env::var("PATH").unwrap_or_default();
-                cmd.env("PATH", format!("{}{}{}", extra.join(sep), sep, existing));
-            }
-        }
         // stdout = JSON-RPC wire (clean); stderr = adapter logs, drained to CTRL's
         // stderr below so the pipe can't fill AND startup failures (npx fetch,
         // "binary not found", auth prompts) are VISIBLE instead of a silent 180s
@@ -923,10 +882,11 @@ impl AcpClient {
             stdin,
             reader: BufReader::new(stdout),
             session_id: String::new(),
+            canonical_session_id: None,
+            gate_intent: gate_intent.map(str::to_owned),
             next_id: 0,
             reusable: true,
             primed: false,
-            engine_id: engine.to_string(),
             // Filled in below once `initialize` responds.
             // (ADR-002 substrate § Multi-modal prompt attachments v75)
             prompt_caps: PromptCapsSnapshot::default(),
@@ -949,15 +909,9 @@ impl AcpClient {
         // ever emitting an Image/EmbeddedResource block.
         s.prompt_caps = parse_prompt_caps(&init);
 
-        // ACP authenticate (ADR-005 §8.8, verified vs codex-acp 1.0.1 2026-06-29):
-        // some engines REQUIRE an explicit `authenticate` before `session/new` —
-        // codex returns "Authentication required" otherwise. hermes advertises no
-        // authMethods, so this is skipped for it (no regression). We prefer the
-        // `api-key` method: codex-acp reads OPENAI_API_KEY (injected from the user's
-        // CTRL provider via byo_engine_auth_env), so this is what lets "use our
-        // OpenAI key, no second login" actually work. A failure here is logged but
-        // not fatal — session/new returns the authoritative error, which the caller
-        // surfaces (e.g. "configure an OpenAI key, or run codex login").
+        // Honor an ACP authentication method when Hermes advertises one. The
+        // environment is injected only into the managed Hermes child; secrets
+        // never enter prompts or diagnostics. (ADR-006 cross-cutting §1 v13)
         if let Some(methods) = init.get("authMethods").and_then(|m| m.as_array()) {
             let method_id = methods
                 .iter()
@@ -1045,14 +999,9 @@ impl AcpClient {
     /// request. A prompt timeout retains the session only after the ACP-required
     /// terminal response has been drained; otherwise callers must re-hydrate.
     /// (ADR-005 irisy §8.3 v33)
+    #[cfg(test)]
     pub fn is_reusable(&mut self) -> bool {
         self.reusable && self.is_alive()
-    }
-
-    /// Which Irisy engine this client drives (ADR-005 §8.7). The caller compares
-    /// it to the selected engine and resets the singleton on a switch.
-    pub fn engine(&self) -> &str {
-        &self.engine_id
     }
 
     /// Run one prompt turn; `on_event` receives streamed events as they arrive.
@@ -1074,10 +1023,9 @@ impl AcpClient {
             .await
     }
 
-    /// Run a prompt that can be cancelled by its owning UI request. Cancellation
-    /// always travels through ACP's `session/cancel` and terminal-response drain,
-    /// so a newer Coding turn cannot inherit stale output from an abandoned one.
-    /// (ADR-005 irisy §8.3 v33)
+    /// Run a prompt with protocol-level cancellation and terminal-response
+    /// drain. Kept as the generic ACP primitive; it does not own a transcript
+    /// or create another runtime slot. (ADR-005 irisy §11 v40)
     pub async fn prompt_cancellable(
         &mut self,
         turns: &[(String, String)],
@@ -1108,48 +1056,13 @@ impl AcpClient {
         cancellation: Option<&mut tokio::sync::oneshot::Receiver<()>>,
     ) -> Result<String> {
         let sid = self.session_id.clone();
-        let last_user = turns
-            .iter()
-            .rev()
-            .find(|(r, _)| r == "user")
-            .map(|(_, c)| c.clone())
-            .unwrap_or_default();
-        // Prime the first turn of a session with CTRL's composed system prompt
-        // (persona + capability catalog, ADR-005 v5 §6.2) THEN the capability
-        // brief THEN — the §8.4 fix — a replay of the prior conversation so a
-        // fresh / restarted engine session starts WITH context instead of blank
-        // (the durable transcript is the recovery source; the live session is
-        // the working context). While the SAME session continues, only the
-        // latest user message is sent (the engine already holds the history).
-        // (ADR-005 irisy §8.3 v33)
+        // Every turn carries the current canonical system/context envelope so
+        // live Resource, Skill, policy, and task facts cannot go stale while a
+        // same-session ACP owner remains primed. Only bootstrap adds the stable
+        // capability brief and durable transcript replay.
+        // (ADR-005 irisy §11 v41)
         let bootstrap_pending = !self.primed;
-        let turn_text = if !bootstrap_pending {
-            last_user
-        } else {
-            let mut head = String::new();
-            if let Some(sys) = system_preamble {
-                let sys = sys.trim();
-                if !sys.is_empty() {
-                    head.push_str(sys);
-                    head.push_str("\n\n");
-                }
-            }
-            head.push_str(CTRL_CAPABILITY_BRIEF);
-            // Replay everything before the final user message (§8.4).
-            let last_idx = turns.iter().rposition(|(r, _)| r == "user");
-            let prior = match last_idx {
-                Some(i) => &turns[..i],
-                None => &turns[..],
-            };
-            if !prior.is_empty() {
-                head.push_str("\n\n[Conversation so far \u{2014} context only, continue it:]\n");
-                for (role, content) in prior {
-                    let who = if role == "user" { "User" } else { "Irisy" };
-                    head.push_str(&format!("{who}: {}\n", content.trim()));
-                }
-            }
-            format!("{head}\n\n{last_user}")
-        };
+        let turn_text = compose_turn_text(turns, system_preamble, bootstrap_pending);
         // Record only turn timing and owner health after the existing ACP request.
         // (ADR-005 irisy §8.6.1 v26)
         let started = std::time::Instant::now();
@@ -1194,7 +1107,7 @@ impl AcpClient {
             outcome,
             duration_ms: Some(started.elapsed().as_millis() as u64),
             capture_only: true,
-            attributes: serde_json::json!({ "engine": self.engine_id }),
+            attributes: serde_json::json!({ "engine": "hermes" }),
         });
         let res = result?;
         // A drained cancellation restores stream ordering, but it does not
@@ -1297,7 +1210,9 @@ impl AcpClient {
             let read_result = if let Some(cancellation) = cancellation.as_deref_mut() {
                 tokio::select! {
                     _ = cancellation => {
-                        let acp = format!("{}-acp", self.engine_id);
+                        // Cancellation remains inside the sole Hermes owner.
+                        // (ADR-005 irisy §11 v40)
+                        let acp = "hermes-acp";
                         if method != "session/prompt" || self.session_id.is_empty() {
                             self.reusable = false;
                             return Err(anyhow!("{acp} request cancelled"));
@@ -1318,7 +1233,9 @@ impl AcpClient {
             let n = match read_result {
                 Ok(result) => result?,
                 Err(_) => {
-                    let acp = format!("{}-acp", self.engine_id);
+                    // Timeout cancellation remains inside the sole Hermes owner.
+                    // (ADR-005 irisy §11 v40)
+                    let acp = "hermes-acp";
                     if method != "session/prompt" || self.session_id.is_empty() {
                         self.reusable = false;
                         return Err(anyhow!("{acp} read timed out"));
@@ -1334,7 +1251,7 @@ impl AcpClient {
             };
             if n == 0 {
                 self.reusable = false;
-                return Err(anyhow!("{}-acp closed stdout", self.engine_id));
+                return Err(anyhow!("hermes-acp closed stdout"));
             }
             let Some(v) = parse_json_rpc_line(&line) else {
                 continue;
@@ -1429,6 +1346,37 @@ impl AcpClient {
 mod tests {
     use super::*;
 
+    #[test]
+    fn primed_turn_keeps_live_context_without_replaying_history() {
+        // The six canonical turn facts remain live after ACP bootstrap without
+        // duplicating prior conversation into the managed agent loop.
+        // (ADR-005 irisy §11 v41)
+        let turns = vec![
+            ("user".to_owned(), "old task".to_owned()),
+            ("assistant".to_owned(), "old answer".to_owned()),
+            ("user".to_owned(), "current task".to_owned()),
+        ];
+        let text = compose_turn_text(
+            &turns,
+            Some("<ctrl-context>{\"task\":\"current task\"}</ctrl-context>"),
+            false,
+        );
+        assert!(text.contains("\"task\":\"current task\""));
+        assert!(text.ends_with("current task"));
+        assert!(!text.contains("old task"));
+        assert!(!text.contains("Conversation so far"));
+        assert!(!text.contains(CTRL_CAPABILITY_BRIEF));
+    }
+
+    #[test]
+    fn canonical_session_change_requires_fresh_owner() {
+        // A Hermes process may be primed by exactly one canonical transcript.
+        // (ADR-005 irisy §11 v40)
+        assert!(canonical_session_changed(None, "session-a"));
+        assert!(!canonical_session_changed(Some("session-a"), "session-a"));
+        assert!(canonical_session_changed(Some("session-b"), "session-a"));
+    }
+
     fn perm_req(options: Value) -> Value {
         json!({ "params": { "options": options } })
     }
@@ -1458,15 +1406,18 @@ done"#,
             .expect("start ACP fixture");
         let stdin = child.stdin.take().expect("fixture stdin");
         let stdout = child.stdout.take().expect("fixture stdout");
+        // Test fixtures model the sole Hermes ACP owner without an engine selector.
+        // (ADR-005 irisy §11 v40)
         let mut client = AcpClient {
             child,
             stdin,
             reader: BufReader::new(stdout),
             session_id: "session-42".to_string(),
+            canonical_session_id: None,
+            gate_intent: None,
             next_id: 0,
             reusable: true,
             primed: false,
-            engine_id: "fixture".to_string(),
             prompt_caps: PromptCapsSnapshot::default(),
         };
         let mut events = Vec::new();
@@ -1521,15 +1472,18 @@ done"#,
             .expect("start ACP fixture");
         let stdin = child.stdin.take().expect("fixture stdin");
         let stdout = child.stdout.take().expect("fixture stdout");
+        // Test fixtures model the sole Hermes ACP owner without an engine selector.
+        // (ADR-005 irisy §11 v40)
         let mut client = AcpClient {
             child,
             stdin,
             reader: BufReader::new(stdout),
             session_id: "session-42".to_string(),
+            canonical_session_id: None,
+            gate_intent: None,
             next_id: 0,
             reusable: true,
             primed: false,
-            engine_id: "fixture".to_string(),
             prompt_caps: PromptCapsSnapshot::default(),
         };
         let result = client
@@ -1570,15 +1524,18 @@ done"#,
             .expect("start ACP fixture");
         let stdin = child.stdin.take().expect("fixture stdin");
         let stdout = child.stdout.take().expect("fixture stdout");
+        // Test fixtures model the sole Hermes ACP owner without an engine selector.
+        // (ADR-005 irisy §11 v40)
         let mut client = AcpClient {
             child,
             stdin,
             reader: BufReader::new(stdout),
             session_id: "session-42".to_string(),
+            canonical_session_id: None,
+            gate_intent: None,
             next_id: 0,
             reusable: true,
             primed: false,
-            engine_id: "fixture".to_string(),
             prompt_caps: PromptCapsSnapshot::default(),
         };
         let turns = vec![("user".to_string(), "first turn".to_string())];
@@ -1627,24 +1584,6 @@ done"#,
             &json!({ "method": "session/update", "params": {} }),
             7
         ));
-    }
-
-    // ADR-001 spine §4 v16: opencode speaks ACP NATIVELY via its own `acp`
-    // subcommand (verified directly against the installed binary), so its
-    // spawn argv is just `opencode acp` — no npx wrapper adapter like
-    // codex/claude-code.
-    #[test]
-    fn opencode_engine_argv_is_native_acp_subcommand() {
-        let argv = engine_argv("opencode").expect("opencode argv");
-        assert_eq!(argv, vec!["opencode".to_string(), "acp".to_string()]);
-    }
-
-    #[test]
-    fn resolve_engine_binary_never_looks_up_opencode() {
-        // opencode is always the user's own PATH install (never a
-        // CTRL-managed ~/.ctrl/agents/<id> dir) — resolve_engine_binary must
-        // return None for it so callers fall through to their own discovery.
-        assert!(resolve_engine_binary("opencode").is_none());
     }
 
     // §1.8.6 (ADR-002 substrate v75) — capability negotiation from a real
@@ -1793,17 +1732,6 @@ done"#,
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["type"], "text");
         assert_eq!(blocks[0]["text"], "hi");
-    }
-
-    // singleton() and coding_singleton() must be genuinely independent slots —
-    // switching Irisy's engine must never evict a live Coding session and
-    // vice versa (ADR-005 irisy §8.7 v30 / ADR-001 spine §4 v16).
-    #[test]
-    fn irisy_and_coding_singletons_are_independent_slots() {
-        assert!(!std::ptr::eq(
-            singleton() as *const _ as *const u8,
-            coding_singleton() as *const _ as *const u8
-        ));
     }
 
     #[test]
@@ -1975,14 +1903,15 @@ done"#,
             "source_describe",
             "manifest-owned unavailable_message",
         ] {
-            assert!(CTRL_CAPABILITY_BRIEF.contains(required), "missing {required}");
+            assert!(
+                CTRL_CAPABILITY_BRIEF.contains(required),
+                "missing {required}"
+            );
         }
-        let manifest: serde_json::Value = serde_json::from_slice(
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../packages/ctrl-mcps/optional/ctrl-libreoffice/manifest.json"
-            )),
-        )
+        let manifest: serde_json::Value = serde_json::from_slice(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../packages/ctrl-mcps/optional/ctrl-libreoffice/manifest.json"
+        )))
         .unwrap();
         let public_guidance = manifest
             .pointer("/record_source/unavailable_message")
@@ -1996,47 +1925,11 @@ done"#,
             "CTRL_LIBREOFFICE_BRIDGE_URL",
             "CTRL_LIBREOFFICE_BRIDGE_TOKEN",
         ] {
-            assert!(!CTRL_CAPABILITY_BRIEF.contains(forbidden), "leaked {forbidden}");
+            assert!(
+                !CTRL_CAPABILITY_BRIEF.contains(forbidden),
+                "leaked {forbidden}"
+            );
         }
-    }
-
-    /// Real end-to-end: spawn `opencode acp` via the kernel client (the SAME
-    /// AcpClient::start_in path coding_chat.rs uses), run one streamed prompt
-    /// turn in a temp workspace. Requires `opencode` on PATH + a configured
-    /// model. Verified manually 2026-07-27 against opencode 1.18.5 before this
-    /// test was written (initialize -> session/new -> session/prompt streamed
-    /// agent_thought_chunk then agent_message_chunk then stopReason=end_turn).
-    /// Run: `cargo test opencode_acp_smoke -- --ignored --nocapture`
-    // (ADR-001 spine §4 v21; ADR-003 frontend §8.5 v39; ADR-005 irisy §11 v38)
-    #[tokio::test]
-    #[ignore]
-    async fn opencode_acp_smoke() {
-        let dir = tempfile::TempDir::new().expect("tempdir");
-        let env = BTreeMap::new();
-        let mut client = AcpClient::start_in_scoped(
-            "opencode",
-            &env,
-            Some(dir.path()),
-            "coding",
-            Some(crate::kernel::projector::OPENCODE_CODING_INTENT),
-        )
-        .await
-        .expect("start opencode acp");
-        let mut answer = String::new();
-        let turns = vec![(
-            "user".to_string(),
-            "Say hello in exactly 3 words.".to_string(),
-        )];
-        let stop = client
-            .prompt(&turns, None, &[], |e| {
-                if let AcpEvent::Text(t) = e {
-                    answer.push_str(&t)
-                }
-            })
-            .await
-            .expect("prompt turn");
-        println!("\nANSWER: {answer:?}  stopReason={stop}");
-        assert!(!answer.trim().is_empty(), "no streamed text from opencode");
     }
 
     /// Real end-to-end: spawn hermes-acp via the kernel client, run one
@@ -2046,9 +1939,7 @@ done"#,
     #[ignore]
     async fn acp_smoke() {
         let env = BTreeMap::new();
-        let mut client = AcpClient::start("hermes", &env)
-            .await
-            .expect("start hermes-acp");
+        let mut client = AcpClient::start(&env).await.expect("start hermes-acp");
         let mut answer = String::new();
         let turns = vec![("user".to_string(), "Reply with exactly: ACP OK".to_string())];
         // No attachments in this smoke (ADR-002 substrate §1.8.6 v75).

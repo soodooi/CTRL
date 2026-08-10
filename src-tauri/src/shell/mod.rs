@@ -33,13 +33,10 @@ pub mod ollama_install;
 pub mod runtime_install;
 pub mod tray;
 pub mod window;
-// ADR-002 §1 v19 (3-agent aggregator): lazy install + on-demand launch of
-// the external brain agents (hermes / opencode) under ~/.ctrl/agents/.
-// No supervisor — PWA owns retry.
+// Fixed Hermes provisioning for Irisy's managed runtime.
+// (ADR-002 substrate §1 v83; ADR-005 irisy §11 v40)
 pub mod agent_installer;
-pub mod agent_launcher;
-// Kernel ACP client — drives hermes (assistant brain) over Agent Client
-// Protocol stdio JSON-RPC, streaming into chat-stream-delta (ADR-002 §1.8).
+// Kernel ACP client — drives Hermes over Agent Client Protocol stdio JSON-RPC, streaming into chat-stream-delta (ADR-002 §1.8).
 pub mod acp_client;
 // Built-in tool downloader for feature-pack provision (ADR-002 §7.2 v21).
 pub mod tool_installer;
@@ -47,8 +44,8 @@ pub mod tool_installer;
 pub mod provision_runner;
 
 pub use hotkey::HotkeyController;
-pub use keychain::KeychainStore;
 pub use kernel_supervisor::{KernelHandle, KernelSupervisor};
+pub use keychain::KeychainStore;
 pub use lifecycle::ShellLifecycle;
 pub use tray::TrayController;
 pub use window::WindowController;

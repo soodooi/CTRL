@@ -55,7 +55,10 @@ struct PendingWrite {
 /// never blocks or fails the call. No-op when the vault is not a git repo.
 pub fn schedule(caller: &str, tool: &str) {
     let tx = worker();
-    let _ = tx.send(PendingWrite { caller: caller.to_string(), tool: tool.to_string() });
+    let _ = tx.send(PendingWrite {
+        caller: caller.to_string(),
+        tool: tool.to_string(),
+    });
 }
 
 /// The background coalescer — one per process, started lazily.
@@ -109,12 +112,18 @@ fn worker() -> &'static mpsc::UnboundedSender<PendingWrite> {
 /// Land one coalesced commit. Quietly does nothing when the vault has no
 /// `.git` or nothing actually changed.
 async fn commit_batch(caller: &str, tools: &[String]) {
-    let Some(root) = default_vault_root() else { return };
+    let Some(root) = default_vault_root() else {
+        return;
+    };
     if !root.join(".git").is_dir() {
         return;
     }
     let (name, email) = author_of(caller);
-    let msg = format!("{}: {}", if caller == "pwa" { "edit" } else { "agent" }, tools.join(", "));
+    let msg = format!(
+        "{}: {}",
+        if caller == "pwa" { "edit" } else { "agent" },
+        tools.join(", ")
+    );
     if let Err(e) = add_all_and_commit(&root, &name, &email, &msg).await {
         tracing::debug!(error = %e, "vault git autocommit skipped");
     }
@@ -131,12 +140,7 @@ async fn run_git(root: &Path, args: &[&str]) -> Result<(String, i32), String> {
     Ok((stdout, out.status.code().unwrap_or(-1)))
 }
 
-async fn add_all_and_commit(
-    root: &Path,
-    name: &str,
-    email: &str,
-    msg: &str,
-) -> Result<(), String> {
+async fn add_all_and_commit(root: &Path, name: &str, email: &str, msg: &str) -> Result<(), String> {
     run_git(root, &["add", "-A"]).await?;
     // Anything staged? `diff --cached --quiet` exits 1 when there are changes.
     let (_, code) = run_git(root, &["diff", "--cached", "--quiet"]).await?;
@@ -180,11 +184,22 @@ pub struct NoteCommit {
 }
 
 /// Per-note history: `git log --follow` so renames keep their trail.
-pub async fn note_history(root: &Path, path: &str, limit: usize) -> Result<Vec<NoteCommit>, String> {
+pub async fn note_history(
+    root: &Path,
+    path: &str,
+    limit: usize,
+) -> Result<Vec<NoteCommit>, String> {
     let n = format!("-{limit}");
     let (out, code) = run_git(
         root,
-        &["log", &n, "--follow", "--pretty=format:%H%x1f%an%x1f%at%x1f%s", "--", path],
+        &[
+            "log",
+            &n,
+            "--follow",
+            "--pretty=format:%H%x1f%an%x1f%at%x1f%s",
+            "--",
+            path,
+        ],
     )
     .await?;
     if code != 0 {
@@ -235,7 +250,12 @@ pub async fn pulse(root: &Path, days: u32) -> Result<(Vec<PulseDay>, Vec<NoteCom
     let since = format!("--since={days} days ago");
     let (out, code) = run_git(
         root,
-        &["log", &since, "--date=short", "--pretty=format:%H%x1f%an%x1f%at%x1f%s%x1f%ad"],
+        &[
+            "log",
+            &since,
+            "--date=short",
+            "--pretty=format:%H%x1f%an%x1f%at%x1f%s%x1f%ad",
+        ],
     )
     .await?;
     if code != 0 {
@@ -310,7 +330,9 @@ mod tests {
         // Argv-injection guard: a flag-shaped rev must be rejected before git.
         let rt = tokio::runtime::Runtime::new().unwrap();
         let dir = tempfile::TempDir::new().unwrap();
-        let err = rt.block_on(note_diff(dir.path(), "a.md", "--output=/tmp/x")).unwrap_err();
+        let err = rt
+            .block_on(note_diff(dir.path(), "a.md", "--output=/tmp/x"))
+            .unwrap_err();
         assert!(err.contains("hex"));
         let err = rt.block_on(note_diff(dir.path(), "a.md", "")).unwrap_err();
         assert!(err.contains("hex"));
@@ -336,7 +358,9 @@ mod tests {
             .await
             .unwrap();
         // Nothing changed → no third commit, no error.
-        add_all_and_commit(&root, "irisy", "irisy@ctrl.local", "agent: noop").await.unwrap();
+        add_all_and_commit(&root, "irisy", "irisy@ctrl.local", "agent: noop")
+            .await
+            .unwrap();
 
         let hist = note_history(&root, "n.md", 10).await.unwrap();
         assert_eq!(hist.len(), 2);

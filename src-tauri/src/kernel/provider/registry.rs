@@ -96,9 +96,7 @@ const CTRL_MANAGED_PROVIDER_IDS: &[&str] = &[];
 /// Embedded builtin manifests are catalogue integrations only. Their presence
 /// proves neither local installation nor role binding. Ollama runtime status is
 /// adapter-probed before display/routing. (ADR-002 substrate § provider v71)
-const BUILTIN_MANIFESTS: &[(&str, &str)] = &[
-    ("ollama", include_str!("builtin/ollama.toml")),
-];
+const BUILTIN_MANIFESTS: &[(&str, &str)] = &[("ollama", include_str!("builtin/ollama.toml"))];
 
 pub type ProviderHandle = Arc<dyn Provider>;
 
@@ -240,7 +238,9 @@ impl ProviderRegistry {
         for (id, src) in BUILTIN_MANIFESTS {
             match parse_str(src, &format!("builtin/{id}.toml")) {
                 Ok(manifest) => registry.install_manifest(manifest, ProviderSource::Builtin),
-                Err(e) => tracing::warn!(provider = %id, error = %e, "provider: builtin manifest parse failed"),
+                Err(e) => {
+                    tracing::warn!(provider = %id, error = %e, "provider: builtin manifest parse failed")
+                }
             }
         }
 
@@ -457,9 +457,7 @@ impl ProviderRegistry {
                 .map(|loaded| {
                     let active_roles = active
                         .iter()
-                        .filter_map(|(role, id)| {
-                            (id == &loaded.manifest.id).then(|| role.id())
-                        })
+                        .filter_map(|(role, id)| (id == &loaded.manifest.id).then(|| role.id()))
                         .collect::<Vec<_>>();
                     (
                         loaded.manifest.clone(),
@@ -576,7 +574,10 @@ impl ProviderRegistry {
         if !removed {
             return;
         }
-        if let Some((_, src)) = BUILTIN_MANIFESTS.iter().find(|(builtin_id, _)| *builtin_id == id) {
+        if let Some((_, src)) = BUILTIN_MANIFESTS
+            .iter()
+            .find(|(builtin_id, _)| *builtin_id == id)
+        {
             match parse_str(src, &format!("builtin/{id}.toml")) {
                 Ok(manifest) => self.install_manifest(manifest, ProviderSource::Builtin),
                 Err(e) => tracing::warn!(
@@ -625,10 +626,7 @@ impl ProviderRegistry {
     /// Keys are canonical role ids ("irisy.primary" / "irisy.fallback").
     pub fn active_state(&self) -> BTreeMap<String, String> {
         let active = self.active.read().unwrap();
-        active
-            .iter()
-            .map(|(c, id)| (c.id(), id.clone()))
-            .collect()
+        active.iter().map(|(c, id)| (c.id(), id.clone())).collect()
     }
 
     /// Whether persisted trial evidence still matches the provider's current
@@ -651,9 +649,9 @@ impl ProviderRegistry {
     pub fn record_current_verification(&self, provider_id: &str) -> Result<(), ProviderError> {
         let fingerprint = self
             .current_verification_fingerprint(provider_id)
-            .ok_or_else(|| ProviderError::ProviderError(format!(
-                "provider {provider_id} is not configured"
-            )))?;
+            .ok_or_else(|| {
+                ProviderError::ProviderError(format!("provider {provider_id} is not configured"))
+            })?;
         self.verifications.write().unwrap().insert(
             provider_id.to_string(),
             VerificationEvidence { fingerprint },
@@ -672,9 +670,9 @@ impl ProviderRegistry {
     ) -> Result<(), ProviderError> {
         let current = self
             .current_verification_fingerprint(provider_id)
-            .ok_or_else(|| ProviderError::ProviderError(format!(
-                "provider {provider_id} is not configured"
-            )))?;
+            .ok_or_else(|| {
+                ProviderError::ProviderError(format!("provider {provider_id} is not configured"))
+            })?;
         if current != expected_fingerprint {
             return Err(ProviderError::ProviderError(format!(
                 "provider {provider_id} configuration changed during verification"
@@ -798,7 +796,12 @@ impl ProviderRegistry {
                 let is_openrouter = m.id == "openrouter";
                 env.insert(
                     "HERMES_INFERENCE_PROVIDER".into(),
-                    if is_openrouter { "openrouter" } else { "custom" }.into(),
+                    if is_openrouter {
+                        "openrouter"
+                    } else {
+                        "custom"
+                    }
+                    .into(),
                 );
                 env.insert(
                     if is_openrouter {
@@ -837,51 +840,6 @@ impl ProviderRegistry {
         // (ADR-002 substrate § provider v68)
         if project_hermes_config {
             let _ = crate::commands::agents::write_hermes_config_yaml(m, &key);
-        }
-        env
-    }
-
-    /// Resolve the BYOK credential a right-region BYO engine should reuse, so
-    /// installing Codex / Claude Code does NOT make the user sign in again
-    /// (ADR-005 §8.8 — close the auth loop with the key CTRL already holds).
-    ///
-    /// Unlike `agent_env_injection` (which mirrors the ACTIVE Irisy provider),
-    /// this is engine-specific and pins the CANONICAL provider so we never
-    /// misroute a coding CLI onto an OpenAI-compatible-but-not-OpenAI endpoint
-    /// (e.g. pointing Codex at doubao): codex → the `openai` provider's key;
-    /// claude-code → the `anthropic` provider's key. Returns empty when that
-    /// provider isn't configured — the engine then falls back to its own login,
-    /// never a wrong key. The key rides into the adapter SUBPROCESS env only
-    /// (acp_client spawn); it never reaches Irisy's prompt or the PWA
-    /// (ADR-006 byok-no-claude — the user's own CLI, their own BYOK key).
-    pub fn byo_engine_auth_env(&self, engine: &str) -> BTreeMap<String, String> {
-        let mut env = BTreeMap::new();
-        let canonical_id = match engine {
-            "codex" => "openai",
-            "claude-code" => "anthropic",
-            _ => return env,
-        };
-        let providers = self.providers.read().unwrap();
-        let Some(loaded) = providers.get(canonical_id) else {
-            return env;
-        };
-        let m = &loaded.manifest;
-        if m.kind != ProviderKind::HttpApi {
-            return env;
-        }
-        let key = match resolve_auth(m) {
-            Ok(k) if !k.is_empty() => k,
-            _ => return env,
-        };
-        let (key_var, url_var) = match engine {
-            "codex" => ("OPENAI_API_KEY", "OPENAI_BASE_URL"),
-            _ => ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"),
-        };
-        env.insert(key_var.to_string(), key);
-        if let Some(ep) = &m.endpoint {
-            if !ep.is_empty() {
-                env.insert(url_var.to_string(), ep.clone());
-            }
         }
         env
     }
@@ -933,15 +891,12 @@ impl ProviderRegistry {
         // unchanged through commit. (ADR-002 substrate § provider v71)
         let fingerprint_before = self
             .current_verification_fingerprint(provider_id)
-            .ok_or_else(|| ProviderError::ProviderError(format!(
-                "provider {provider_id} is not configured"
-            )))?;
+            .ok_or_else(|| {
+                ProviderError::ProviderError(format!("provider {provider_id} is not configured"))
+            })?;
         // Both Irisy roles serve text.chat; verification and binding use the
         // same provider contract. (ADR-002 substrate § provider v71)
-        let needs_text_chat = matches!(
-            consumer,
-            Consumer::IrisyPrimary | Consumer::IrisyFallback
-        );
+        let needs_text_chat = matches!(consumer, Consumer::IrisyPrimary | Consumer::IrisyFallback);
         if needs_text_chat && !provider.capabilities().contains(&Capability::TextChat) {
             return Err(ProviderError::ProviderError(format!(
                 "provider {provider_id} does not advertise text.chat for role {}",
@@ -957,9 +912,11 @@ impl ProviderRegistry {
         // while the trial was in flight. (ADR-002 substrate § provider v71)
         let fingerprint_after = self
             .current_verification_fingerprint(provider_id)
-            .ok_or_else(|| ProviderError::ProviderError(format!(
-                "provider {provider_id} configuration changed during verification"
-            )))?;
+            .ok_or_else(|| {
+                ProviderError::ProviderError(format!(
+                    "provider {provider_id} configuration changed during verification"
+                ))
+            })?;
         if fingerprint_after != fingerprint_before {
             return Err(ProviderError::ProviderError(format!(
                 "provider {provider_id} configuration changed during verification"
@@ -1103,9 +1060,7 @@ impl ProviderRegistry {
             }
             // Pre-v3 Ollama fallback was automatic, not explicit user intent.
             // (ADR-002 substrate § provider v71)
-            if version < 3
-                && roles.get("irisy.fallback").map(String::as_str) == Some("ollama")
-            {
+            if version < 3 && roles.get("irisy.fallback").map(String::as_str) == Some("ollama") {
                 roles.remove("irisy.fallback");
                 migrated_from = Some("legacy automatic Ollama fallback");
             }
@@ -1281,10 +1236,7 @@ fn resolve_auth(manifest: &ProviderManifest) -> Result<String, ProviderError> {
     match &manifest.auth {
         AuthSource::None => Ok(String::new()),
         AuthSource::Env { var } => std::env::var(var).map_err(|_| {
-            ProviderError::NotConfigured(format!(
-                "{}: env {var} not set",
-                manifest.id
-            ))
+            ProviderError::NotConfigured(format!("{}: env {var} not set", manifest.id))
         }),
         AuthSource::ConfigKey { field } => manifest
             .config
@@ -1292,10 +1244,7 @@ fn resolve_auth(manifest: &ProviderManifest) -> Result<String, ProviderError> {
             .cloned()
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| {
-                ProviderError::NotConfigured(format!(
-                    "{}: config.{field} not set",
-                    manifest.id
-                ))
+                ProviderError::NotConfigured(format!("{}: config.{field} not set", manifest.id))
             }),
         AuthSource::Keychain { account } => {
             keychain_read_with_aliases(account, &legacy_account_aliases(account)).ok_or_else(|| {
@@ -1332,7 +1281,9 @@ fn keychain_read_with_aliases(primary: &str, aliases: &[&str]) -> Option<String>
     // primary slug + any aliases. The vault is account-keyed only
     // (no service namespace), so the two-loop over keychain services
     // collapses into a single account lookup.
-    let candidates: Vec<&str> = std::iter::once(primary).chain(aliases.iter().copied()).collect();
+    let candidates: Vec<&str> = std::iter::once(primary)
+        .chain(aliases.iter().copied())
+        .collect();
     for account in &candidates {
         if let Ok(Some(secret)) = crate::shell::credential_vault::get(account) {
             if !secret.is_empty() {
@@ -1465,7 +1416,9 @@ fn apply_legacy_config(registry: &ProviderRegistry, legacy: &LegacyConfig) {
             continue;
         }
         let mut providers = registry.providers.write().unwrap();
-        let Some(loaded) = providers.get_mut(*manifest_id) else { continue };
+        let Some(loaded) = providers.get_mut(*manifest_id) else {
+            continue;
+        };
         let mut next_manifest = (*loaded.manifest).clone();
         if !entry.base_url.trim().is_empty() {
             next_manifest.endpoint = Some(entry.base_url.trim_end_matches('/').to_string());
@@ -1478,7 +1431,9 @@ fn apply_legacy_config(registry: &ProviderRegistry, legacy: &LegacyConfig) {
         // For HTTP providers, stash the api_key in config + flip auth to
         // ConfigKey — registry's `resolve_auth` will then surface it.
         if matches!(next_manifest.kind, ProviderKind::HttpApi) && entry.has_key() {
-            next_manifest.config.insert("api_key".to_string(), entry.api_key.clone());
+            next_manifest
+                .config
+                .insert("api_key".to_string(), entry.api_key.clone());
             next_manifest.auth = AuthSource::ConfigKey {
                 field: "api_key".to_string(),
             };
@@ -1638,7 +1593,10 @@ mod tests {
         let chain = reg.route_chain(&Consumer::IrisyPrimary);
         assert_eq!(chain.primary.as_deref(), Some("ollama"));
         assert_eq!(chain.fallbacks, vec!["fallback"]);
-        assert!(reg.route_chain(&Consumer::IrisyFallback).fallbacks.is_empty());
+        assert!(reg
+            .route_chain(&Consumer::IrisyFallback)
+            .fallbacks
+            .is_empty());
     }
 
     #[test]
@@ -1656,16 +1614,21 @@ mod tests {
         .unwrap();
         let decoded: ActiveStateV4 = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded.version, 4);
-        assert_eq!(decoded.roles.get("irisy.primary").map(String::as_str), Some("configured"));
         assert_eq!(
-            decoded.verifications.get("configured").map(|e| e.fingerprint.as_str()),
+            decoded.roles.get("irisy.primary").map(String::as_str),
+            Some("configured")
+        );
+        assert_eq!(
+            decoded
+                .verifications
+                .get("configured")
+                .map(|e| e.fingerprint.as_str()),
             Some("digest")
         );
 
-        let legacy: ActiveStateV4 = serde_json::from_str(
-            r#"{"version":3,"roles":{"irisy.primary":"configured"}}"#,
-        )
-        .unwrap();
+        let legacy: ActiveStateV4 =
+            serde_json::from_str(r#"{"version":3,"roles":{"irisy.primary":"configured"}}"#)
+                .unwrap();
         assert_eq!(legacy.version, 3);
         assert!(legacy.verifications.is_empty());
     }

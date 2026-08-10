@@ -28,7 +28,10 @@ impl std::fmt::Display for PublishError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PublishError::Blocked(issues) => {
-                let n = issues.iter().filter(|i| matches!(i.severity, pack_validate::Severity::Error)).count();
+                let n = issues
+                    .iter()
+                    .filter(|i| matches!(i.severity, pack_validate::Severity::Error))
+                    .count();
                 write!(f, "not published: {n} eval error(s) — fix them first")
             }
             PublishError::Http(e) => write!(f, "publish request failed: {e}"),
@@ -83,13 +86,23 @@ pub async fn publish(
     if !resp.status().is_success() {
         return Err(PublishError::Status(resp.status().as_u16()));
     }
-    let body: Value = resp.json().await.map_err(|e| PublishError::Parse(e.to_string()))?;
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| PublishError::Parse(e.to_string()))?;
 
     // Tolerant of the registry's response shape: take namespace/url if present,
     // fall back to the manifest id.
     Ok(PublishRef {
-        id: body.get("id").and_then(Value::as_str).map(str::to_string).unwrap_or(id),
-        namespace: body.get("namespace").and_then(Value::as_str).map(str::to_string),
+        id: body
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or(id),
+        namespace: body
+            .get("namespace")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         url: body.get("url").and_then(Value::as_str).map(str::to_string),
     })
 }
@@ -111,7 +124,9 @@ mod tests {
     #[tokio::test]
     async fn broken_manifest_is_blocked_before_any_http() {
         let bad = serde_json::json!({ "name": "no id, no actions" });
-        let err = publish(&bad, "http://127.0.0.1:1/never", "").await.unwrap_err();
+        let err = publish(&bad, "http://127.0.0.1:1/never", "")
+            .await
+            .unwrap_err();
         match err {
             PublishError::Blocked(issues) => {
                 assert!(issues.iter().any(|i| i.field == "id"));
@@ -142,9 +157,13 @@ mod tests {
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let out = publish(&ghostfolio_manifest(), &format!("http://{addr}/publish"), "tok")
-            .await
-            .unwrap();
+        let out = publish(
+            &ghostfolio_manifest(),
+            &format!("http://{addr}/publish"),
+            "tok",
+        )
+        .await
+        .unwrap();
         assert_eq!(out.id, "ctrl-ghostfolio");
         assert_eq!(out.namespace.as_deref(), Some("soodooi"));
         assert!(out.url.unwrap().contains("ctrl-ghostfolio"));
@@ -160,9 +179,13 @@ mod tests {
             let _ = axum::serve(listener, app).await;
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let err = publish(&ghostfolio_manifest(), &format!("http://{addr}/publish"), "")
-            .await
-            .unwrap_err();
+        let err = publish(
+            &ghostfolio_manifest(),
+            &format!("http://{addr}/publish"),
+            "",
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, PublishError::Status(403)));
     }
 }

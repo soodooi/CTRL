@@ -11,7 +11,9 @@
 // `SchedulerError::UnknownPrototype` until their well-known Actor subclass
 // is wired in (McpActor wiring is P5, MCPServerActor is its own handoff).
 
-use crate::kernel::actor::{Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority};
+use crate::kernel::actor::{
+    Actor, ActorContext, ActorHandle, ActorId, ActorManifest, ActorPriority,
+};
 use crate::kernel::capability::Capability;
 use crate::kernel::channel::Channel;
 use crate::kernel::event::Event;

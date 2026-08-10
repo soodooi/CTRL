@@ -12,12 +12,6 @@
   overflow: hidden;
 }
 
-/* Stays mounted but collapsed while a route owns the column — the class
-   `display:flex` would otherwise win over the bare `hidden` attribute. */
-.root[hidden] {
-  display: none;
-}
-
 /* ── slim top bar (calm chrome — command-surface-over-nav) ─────── */
 /* Status bar — the window's first line (bao 2026-06-13: refined to a proper
    editor-chrome row; mono labels = letterpress feel, paper floor, hairline
@@ -214,132 +208,6 @@
 .statusClose:hover {
   background: var(--destructive-soft, rgba(224, 49, 49, 0.08));
   color: var(--destructive, #e03131);
-}
-
-/* Role switcher (ADR-003 §8.6) — the active Irisy role, shown + switchable
-   directly above the chat box. The chip reads as a peer of the model chip;
-   the dropdown lists the role pool with a one-line hint each. */
-.roleSwitch {
-  position: relative;
-  display: inline-flex;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-.roleChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.02em;
-  color: var(--color-text);
-  background: var(--color-bg-l1);
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-pill);
-  padding: 3px 10px;
-  cursor: pointer;
-  max-width: 180px;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-  transition: border-color var(--duration-fast) var(--ease-out-quart);
-}
-.roleChip:hover {
-  border-color: var(--color-border);
-}
-.roleChipLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.roleCaret {
-  font-size: 9px;
-  line-height: 1;
-  color: var(--color-text-faint);
-}
-/* Agent ("shell") selector styles moved to the shared
-   components/agent/AgentSelector.module.css (ADR-005 irisy §8.6 — one selector,
-   every surface). */
-.roleBackdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-}
-.roleMenu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  z-index: 41;
-  display: flex;
-  flex-direction: column;
-  min-width: 220px;
-  padding: 5px;
-  background: var(--color-bg-l1);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 10px);
-  box-shadow: var(--shadow-lg, 0 8px 28px rgba(0, 0, 0, 0.28));
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-.roleItem {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  align-items: flex-start;
-  text-align: left;
-  padding: 7px 10px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out-quart);
-}
-.roleItem:hover,
-.roleItemActive {
-  background: var(--color-bg-l2);
-}
-.roleItemLabel {
-  font-family: var(--font-display);
-  font-size: 12px;
-  font-weight: var(--weight-semibold);
-  color: var(--color-text);
-}
-.roleItemActive .roleItemLabel {
-  color: var(--color-primary);
-}
-.roleItemHint {
-  font-size: 10.5px;
-  color: var(--color-text-faint);
-}
-
-/* A role's feature packs, listed inside its dropdown item (irisy-roles.md
-   sec.3 mockup: each role shows the packs it brings). Quiet tags under the
-   hint — display only; the menu item itself is the click target. Scoped to the
-   role's toolset whitelist, so a global pack (ghostfolio/Stocks) never pins
-   itself above every chat. */
-.packChips {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-}
-.packChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--font-display);
-  font-size: 9.5px;
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.02em;
-  color: var(--color-text-muted);
-  background: var(--color-bg-l2);
-  border-radius: var(--radius-pill);
-  padding: 1px 7px;
-}
-.packIcon {
-  font-size: 10px;
-  line-height: 1;
-  flex: none;
 }
 
 .modelChip {
@@ -913,7 +781,7 @@
 .agentModeSelect {
   flex: none;
   min-height: 26px;
-  max-width: 142px;
+  max-width: min(260px, calc(100% - 40px));
   padding: 0 24px 0 8px;
   color: var(--color-text);
   border: 1px solid var(--color-border-soft);
@@ -1238,52 +1106,11 @@
   background: var(--bg, #f5f5f7);
 }
 
-/* main column (AmbientHome .root or a routed page) sits right of sidebar */
-.workbench > .root,
-.workbench > .routeHost {
+/* The persistent AmbientHome shell fills the desktop window. */
+.workbench > .root {
   flex: 1;
   min-width: 0;
 }
-
-/* routed workspace host (settings / coding / notes) — keeps the sidebar
-   mounted; only the main column swaps (ADR-003 §8 v6 persistent shell). */
-.routeHost {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-.routeTopbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 12px;
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-.backBar {
-  flex: none;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted, #6e6e73);
-  background: var(--card, #fff);
-  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
-  border-radius: 8px;
-  cursor: pointer;
-}
-.backBar:hover {
-  color: var(--primary, #0d9488);
-  border-color: var(--primary-ring, rgba(13, 148, 136, 0.2));
-}
-.routeClose {
-  margin-left: auto;
-}
-
-.routeBody { flex: 1; min-height: 0; overflow: auto; }
 
 .menuBtn {
   display: none; /* desktop: sidebar always visible, no hamburger */

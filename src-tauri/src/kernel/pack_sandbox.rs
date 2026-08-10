@@ -113,7 +113,13 @@ pub fn wrap_program(
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let _ = (program, args, pack_dir, extra_writes, allow_loopback_network);
+        let _ = (
+            program,
+            args,
+            pack_dir,
+            extra_writes,
+            allow_loopback_network,
+        );
         tracing::warn!(
             "pack_sandbox: managed local child sandbox is not wired on this platform \n             (ADR-004 §1) — refusing to spawn the child"
         );
@@ -121,7 +127,13 @@ pub fn wrap_program(
     }
     #[cfg(windows)]
     {
-        let _ = (program, args, pack_dir, extra_writes, allow_loopback_network);
+        let _ = (
+            program,
+            args,
+            pack_dir,
+            extra_writes,
+            allow_loopback_network,
+        );
         tracing::warn!(
             "pack_sandbox: managed local child sandbox is not wired on Windows \n             (ADR-004 §1) — refusing to spawn the child"
         );
@@ -177,11 +189,15 @@ mod tests {
     use std::path::PathBuf;
 
     fn run(command: &str, pack_dir: &Path) -> std::process::Output {
-        wrap_shell(command, pack_dir, &[]).output().expect("spawn sandbox-exec")
+        wrap_shell(command, pack_dir, &[])
+            .output()
+            .expect("spawn sandbox-exec")
     }
 
     fn run_with(command: &str, pack_dir: &Path, extra: &[String]) -> std::process::Output {
-        wrap_shell(command, pack_dir, extra).output().expect("spawn sandbox-exec")
+        wrap_shell(command, pack_dir, extra)
+            .output()
+            .expect("spawn sandbox-exec")
     }
 
     #[test]
@@ -189,11 +205,11 @@ mod tests {
         let dir = std::env::temp_dir().join("ctrl-sbx-pack-ok");
         std::fs::create_dir_all(&dir).unwrap();
         let target = dir.join("out.txt");
-        let out = run(
-            &format!("echo hello > {}", target.display()),
-            &dir,
+        let out = run(&format!("echo hello > {}", target.display()), &dir);
+        assert!(
+            out.status.success(),
+            "in-scope write should succeed: {out:?}"
         );
-        assert!(out.status.success(), "in-scope write should succeed: {out:?}");
         assert_eq!(std::fs::read_to_string(&target).unwrap().trim(), "hello");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -203,8 +219,8 @@ mod tests {
         let pack = std::env::temp_dir().join("ctrl-sbx-pack-scope");
         std::fs::create_dir_all(&pack).unwrap();
         // Try to write to HOME (outside the pack dir + temp) — must fail.
-        let escape = PathBuf::from(std::env::var("HOME").unwrap())
-            .join("ctrl-sbx-should-not-exist.txt");
+        let escape =
+            PathBuf::from(std::env::var("HOME").unwrap()).join("ctrl-sbx-should-not-exist.txt");
         let out = run(&format!("echo pwned > {}", escape.display()), &pack);
         assert!(
             !out.status.success(),
@@ -232,12 +248,17 @@ mod tests {
         // Declared path → write succeeds.
         let target = allowed_dir.join("ok.txt");
         let ok = run_with(&format!("echo hi > {}", target.display()), &pack, &declared);
-        assert!(ok.status.success(), "declared path must be writable: {ok:?}");
+        assert!(
+            ok.status.success(),
+            "declared path must be writable: {ok:?}"
+        );
         assert_eq!(std::fs::read_to_string(&target).unwrap().trim(), "hi");
 
         // A DIFFERENT undeclared absolute path → still denied even though the
         // pack declared *a* write path.
-        let escape = std::env::var("HOME").map(std::path::PathBuf::from).unwrap()
+        let escape = std::env::var("HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap()
             .join("ctrl-sbx-declared-escape.txt");
         let bad = run_with(&format!("echo no > {}", escape.display()), &pack, &declared);
         assert!(!bad.status.success(), "undeclared path must stay denied");
@@ -284,7 +305,10 @@ mod tests {
         let output = wrap_program("/usr/bin/curl", &args, &pack, &[], true)
             .output()
             .expect("run sandboxed curl");
-        assert!(output.status.success(), "loopback request failed: {output:?}");
+        assert!(
+            output.status.success(),
+            "loopback request failed: {output:?}"
+        );
         assert_eq!(String::from_utf8_lossy(&output.stdout), "ok");
         server.join().unwrap();
         let _ = std::fs::remove_dir_all(&pack);

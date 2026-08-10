@@ -206,8 +206,14 @@ mod tests {
         let store = EventStore::open_memory().unwrap();
         let placeholder = "leaky-placeholder-xyz";
         let mut args = serde_json::Map::new();
-        args.insert("path".into(), serde_json::Value::String("crm/deals.md".into()));
-        args.insert("token".into(), serde_json::Value::String(placeholder.into()));
+        args.insert(
+            "path".into(),
+            serde_json::Value::String("crm/deals.md".into()),
+        );
+        args.insert(
+            "token".into(),
+            serde_json::Value::String(placeholder.into()),
+        );
         store
             .record_call(
                 &GateRequest::at_gate("hermes".into(), "smart_table_base_scaffold", Some(&args)),
@@ -225,7 +231,10 @@ mod tests {
             )
             .unwrap();
         // The real arg is kept for debugging…
-        assert!(a.contains("crm/deals.md"), "args should keep the real payload: {a}");
+        assert!(
+            a.contains("crm/deals.md"),
+            "args should keep the real payload: {a}"
+        );
         // …but the secret VALUE is redacted (privacy red-line).
         assert!(a.contains("<redacted>"), "secret must be redacted: {a}");
         assert!(!a.contains(placeholder), "secret value must not leak: {a}");
@@ -259,7 +268,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert!(r.ends_with("…<truncated>"), "truncation marker missing: {r}");
+        assert!(
+            r.ends_with("…<truncated>"),
+            "truncation marker missing: {r}"
+        );
         assert!(r.len() < big.len(), "result must actually be bounded");
     }
 }

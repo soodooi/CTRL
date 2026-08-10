@@ -1,260 +1,87 @@
-// L1 — minimal icon rail (ADR-003 §8 + ADR-006 §5).
-//
-// bao 2026-06-12: layout = L1 | Irisy | output bar. L1 is an icon-only rail
-// (~52px): the assistant, Notes / Tables / Coding, the Feature Pack Library,
-// your installed packs, Settings, model. Labels live in tooltips so the rail
-// stays minimal. Selecting an item drives the main area; Irisy is always the
-// conversation column to its right.
+// Canonical production L1 navigation.
+// Irisy is resident in the shell and capabilities are browsed only in Library.
+// (ADR-003 frontend §8.5 v40)
 
-import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
-import { loadConnectors } from '@/lib/connector';
-import { providerBadge } from '@/lib/provider-badge';
-import { type FeaturePack } from '@/components/featurepack/FeaturePackScene';
-import { loadInstalledPacks, PACKS_CHANGED_EVENT } from '@/lib/feature-pack';
-import { useTheme } from '@/hooks/useTheme';
+import type { ReactElement } from 'react';
 import styles from './Sidebar.module.css';
 
-// Unified line-icon set (bao 2026-06-16: L1 icons must all be the SAME size).
-// Raw unicode glyphs (✦ ✎ ⚙ …) render at wildly different visual sizes — ⚙ in
-// particular looked tiny. One 24-viewBox + one stroke width → identical optical
-// size, controlled by `.ic svg` in the CSS. Zero deps (matches the inline-SVG
-// precedent in PrimaryRail / the history button). ADR-003 frontend §7.6.
-type IconProps = { d: string };
-function Ico({ d }: IconProps): ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d={d} />
-    </svg>
-  );
-}
-// Sparkle (Irisy), dot-arrow (tool), pencil (Notes), code (Coding),
-// plus-circle (Discover), gear (Settings).
-const IRISY_D = 'M12 3l1.9 5.6L19.5 10l-5.6 1.4L12 17l-1.9-5.6L4.5 10l5.6-1.4z';
-const TOOL_D = 'M9 6l6 6-6 6';
-const NOTES_D = 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4';
-const DISCOVER_D = 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8v8M8 12h8';
-function ThemeIcon(): ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <circle cx="12" cy="12" r="8" />
-      <path d="M12 4a8 8 0 010 16z" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function GearIcon(): ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.09a2 2 0 011 1.74v.5a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.38a2 2 0 00-.73-2.73l-.15-.09a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" />
-    </svg>
-  );
-}
-// Remote Window — a phone glyph (mobile co-view config).
-function RemoteIcon(): ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="7" y="3" width="10" height="18" rx="2" />
-      <path d="M11 18h2" />
-    </svg>
-  );
-}
-function CodeIcon(): ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 9l-4 3 4 3M16 9l4 3-4 3" />
-    </svg>
-  );
-}
-function TableIcon(): ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M3 9h18M3 14.5h18M9 4v16" />
-    </svg>
-  );
-}
-// Today (LifeOS home) — a checkmark-in-circle for the task/day surface.
-function TodayIcon(): ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M8.5 12.5l2.5 2.5 4.5-5" />
-    </svg>
-  );
-}
-
-export type SidebarSection =
-  | { kind: 'irisy' }
-  | { kind: 'tool'; connectorId: string; toolName: string; label: string; sub: string }
-  | { kind: 'route'; to: string }
-  | { kind: 'feature-pack'; pack: FeaturePack }
-  | { kind: 'today' }
-  | { kind: 'notes' }
-  | { kind: 'tables' }
-  | { kind: 'coding' }
-  | { kind: 'mobile' }
-  | { kind: 'discover' };
+export type SidebarSection = 'work' | 'library' | 'settings';
 
 interface SidebarProps {
-  active: 'irisy' | 'discover' | string;
-  onSelect: (s: SidebarSection) => void;
-  modelLabel: string;
-  /** Provider slug (keychain account / toml stem). Drives the semantic
-   *  2-letter badge via `providerBadge()` — passes null when AmbientHome
-   *  doesn't know it (legacy call sites), and the helper falls back to
-   *  the legacy first-2-letters-of-label slice. Decision 0007 §display. */
-  providerId?: string | null;
-  onModel: () => void;
+  active: SidebarSection;
+  onSelect: (section: SidebarSection) => void;
 }
 
-export function Sidebar({ active, onSelect, modelLabel, providerId, onModel }: SidebarProps): ReactElement {
-  const connectors = loadConnectors();
-  const { effectiveTheme, setTheme } = useTheme();
-  const isDarkTheme = effectiveTheme === 'dark';
-  // Flip the effective theme rather than the stored preference so `system`
-  // users always see an immediate visual change. The shared theme store remains
-  // the persistence and DOM SSOT. (ADR-003 frontend §8.5 v25)
-  const toggleTheme = (): void => {
-    setTheme(isDarkTheme ? 'light' : 'dark');
-  };
-  // Installed feature packs (mcps whose manifest declares actions).
-  const [packs, setPacks] = useState<FeaturePack[]>([]);
-  useEffect(() => {
-    const refresh = (): void => {
-      void loadInstalledPacks().then(setPacks).catch(() => {});
-    };
-    refresh();
-    window.addEventListener(PACKS_CHANGED_EVENT, refresh);
-    return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
-  }, []);
+type IconProps = { children: ReactElement | ReactElement[] };
 
-  const hasActiveProvider = Boolean(providerId && modelLabel);
-  const modelBadge = providerBadge(providerId ?? '', modelLabel);
-  const modelTitle = hasActiveProvider
-    ? `Provider: ${modelLabel}`
-    : 'Choose AI provider';
-
-  // One unified L1 feature-pack list (bao 2026-06-26: a single pack list, no
-  // hardcoded faces interleaved with packs). Built-in faces (Notes / Tables /
-  // Coding) are entries of the SAME list as installed packs, rendered the same
-  // way; opening still routes to each one's rich scene via its `section` (the
-  // editor / grid / terminal aren't a generic action bar, so they keep their
-  // own viewer — unification is the list, not the renderer). The L1 rail is
-  // EVERY installed capability's entry point, so it is role-independent: all
-  // installed packs always show here (bao 2026-06-27: role-filtering the rail
-  // made the Stocks/ghostfolio entry vanish when a code role opened — you
-  // could no longer get back to it). Role scoping lives where it belongs —
-  // Irisy's per-turn toolset and the composer's context-pack row — not the rail.
-  interface L1Entry {
-    key: string;
-    title: string;
-    icon: ReactNode;
-    section: SidebarSection;
-  }
-  const builtinFaces: L1Entry[] = [
-    { key: 'today', title: 'Today', icon: <TodayIcon />, section: { kind: 'today' } },
-    { key: 'notes', title: 'Notes', icon: <Ico d={NOTES_D} />, section: { kind: 'notes' } },
-    { key: 'tables', title: 'Tables', icon: <TableIcon />, section: { kind: 'tables' } },
-    { key: 'coding', title: 'Coding', icon: <CodeIcon />, section: { kind: 'coding' } },
-    // Mobile — the remote-window capability as a first-class L1 entry (bao
-    // 2026-07-08: it's a module like any other, not a settings-corner route).
-    { key: 'mobile', title: 'Mobile', icon: <RemoteIcon />, section: { kind: 'mobile' } },
-  ];
-  const packEntries: L1Entry[] = packs.map((p) => ({
-    key: `pack.${p.id}`,
-    title: p.name,
-    icon: p.icon ?? '⚡',
-    section: { kind: 'feature-pack', pack: p },
-  }));
-  // The Feature Pack Library — the one resident entry to browse / install /
-  // uninstall packs (bao 2026-06-26: replaces a stray installed pack like the
-  // old dev-box sitting in L1). Opens the Discover view; keyed 'discover' so it
-  // highlights when that view is active. The bottom rail no longer needs a
-  // separate Discover button.
-  const libraryEntry: L1Entry = {
-    key: 'discover',
-    title: 'Feature Packs',
-    icon: <Ico d={DISCOVER_D} />,
-    section: { kind: 'discover' },
-  };
-  const packList: L1Entry[] = [...builtinFaces, libraryEntry, ...packEntries];
-
+function Icon({ children }: IconProps): ReactElement {
   return (
-    <aside className={styles.rail} data-tauri-drag-region>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
 
-      <button
-        type="button"
-        className={`${styles.ic} ${active === 'irisy' ? styles.active : ''}`}
-        onClick={() => onSelect({ kind: 'irisy' })}
-        title="Irisy"
-      >
-        <Ico d={IRISY_D} />
-      </button>
+const entries: Array<{
+  id: SidebarSection;
+  label: string;
+  icon: ReactElement;
+}> = [
+  {
+    id: 'work',
+    label: 'Work',
+    icon: (
+      <Icon>
+        <path d="M4 7h6l2 2h8v10H4z" />
+        <path d="M4 7V5h6l2 2" />
+      </Icon>
+    ),
+  },
+  {
+    id: 'library',
+    label: 'Library',
+    icon: (
+      <Icon>
+        <path d="M5 4h5v16H5zM14 4h5v16h-5z" />
+        <path d="M7.5 8h0M16.5 8h0" />
+      </Icon>
+    ),
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: (
+      <Icon>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9L7 7M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" />
+      </Icon>
+    ),
+  },
+];
 
-      {connectors.flatMap((c) =>
-        c.tools.map((t) => (
-          <button
-            key={`${c.id}.${t.name}`}
-            type="button"
-            className={`${styles.ic} ${active === `${c.id}.${t.name}` ? styles.active : ''}`}
-            onClick={() =>
-              onSelect({
-                kind: 'tool',
-                connectorId: c.id,
-                toolName: t.name,
-                label: t.title ?? t.name,
-                sub: c.title,
-              })
-            }
-            title={t.title ?? t.name}
-          >
-            <Ico d={TOOL_D} />
-          </button>
-        )),
-      )}
-
-      {packList.map((e) => (
+export function Sidebar({ active, onSelect }: SidebarProps): ReactElement {
+  return (
+    <aside className={styles.rail} data-tauri-drag-region aria-label="Primary navigation">
+      {entries.map((entry) => (
         <button
-          key={e.key}
+          key={entry.id}
           type="button"
-          className={`${styles.ic} ${active === e.key ? styles.active : ''}`}
-          onClick={() => onSelect(e.section)}
-          title={e.title}
+          className={`${styles.ic} ${active === entry.id ? styles.active : ''}`}
+          onClick={() => onSelect(entry.id)}
+          title={entry.label}
+          aria-label={entry.label}
+          aria-current={active === entry.id ? 'page' : undefined}
         >
-          {e.icon}
+          {entry.icon}
         </button>
       ))}
-
-      <div className={styles.spacer} />
-
-      <button
-        type="button"
-        className={styles.ic}
-        onClick={toggleTheme}
-        title={`Switch to ${isDarkTheme ? 'light' : 'dark'} theme`}
-        aria-label={`Switch to ${isDarkTheme ? 'light' : 'dark'} theme`}
-        aria-pressed={isDarkTheme}
-      >
-        <ThemeIcon />
-      </button>
-      <button
-        type="button"
-        className={styles.ic}
-        onClick={() => onSelect({ kind: 'route', to: '/settings' })}
-        title="Settings"
-      >
-        <GearIcon />
-      </button>
-      <button
-        type="button"
-        className={`${styles.model} ${hasActiveProvider ? styles.modelActive : ''}`}
-        onClick={onModel}
-        title={modelTitle}
-        aria-label={modelTitle}
-      >
-        {modelBadge}
-      </button>
     </aside>
   );
 }

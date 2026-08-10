@@ -11,8 +11,8 @@ use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
-use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::event_ws::EventWsBridge;
+use crate::kernel::runtime::KernelRuntime;
 use crate::kernel::EVENT_WS_LISTEN_ADDR;
 
 /// Fixed loopback port for hermes's own dashboard web UI (the PWA's Settings ->
@@ -95,8 +95,8 @@ impl KernelSupervisor {
     /// `app.manage()` so commands can resolve them as Tauri State.
     pub fn start(app: &AppHandle) -> Result<()> {
         tracing::info!("KernelSupervisor::start — booting L1 kernel");
-        let runtime = KernelRuntime::boot_default()
-            .map_err(|e| anyhow!("kernel boot failed: {e:?}"))?;
+        let runtime =
+            KernelRuntime::boot_default().map_err(|e| anyhow!("kernel boot failed: {e:?}"))?;
         let runtime = Arc::new(runtime);
 
         let bridge = EventWsBridge::new();
@@ -230,8 +230,12 @@ impl KernelSupervisor {
             let agent = AgentName::Hermes;
             let label = agent.as_str();
             match install(agent, false) {
-                Ok(m) => tracing::info!(agent = label, version = %m.version, "agent resource pack ready"),
-                Err(e) => tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)"),
+                Ok(m) => {
+                    tracing::info!(agent = label, version = %m.version, "agent resource pack ready")
+                }
+                Err(e) => {
+                    tracing::info!(agent = label, error = %e, "agent prefetch deferred (will retry on first use)")
+                }
             }
             // Obsidian connector RETIRED per ADR-002 substrate §1.9 v46
             // (2026-07-02, notes-module-replacement-plan S1): no app install,
@@ -282,25 +286,25 @@ impl KernelSupervisor {
                 return;
             };
             let entry = manifest.entry_cmd; // ADR-002 substrate § brain v59 (2026-07-07)
-            // entry_cmd = [<uvx>, ...uvx flags (--python/--with/--from <spec>)...,
-            // hermes-acp]. The dashboard reuses the SAME uvx prefix but runs
-            // `hermes dashboard` in place of the trailing `hermes-acp`, so slice
-            // off that last arg and keep everything else. (A hardcoded
-            // `entry[1..3]` silently broke the launch when install_via_uvx
-            // injected --python/--with ahead of --from — the dashboard command
-            // lost its `--from <spec>` and uvx could no longer resolve hermes;
-            // it went unnoticed only because a stale dashboard kept squatting
-            // the port across reboots.)
+                                            // entry_cmd = [<uvx>, ...uvx flags (--python/--with/--from <spec>)...,
+                                            // hermes-acp]. The dashboard reuses the SAME uvx prefix but runs
+                                            // `hermes dashboard` in place of the trailing `hermes-acp`, so slice
+                                            // off that last arg and keep everything else. (A hardcoded
+                                            // `entry[1..3]` silently broke the launch when install_via_uvx
+                                            // injected --python/--with ahead of --from — the dashboard command
+                                            // lost its `--from <spec>` and uvx could no longer resolve hermes;
+                                            // it went unnoticed only because a stale dashboard kept squatting
+                                            // the port across reboots.)
             if entry.len() < 3 {
                 return;
             }
             let uvx_prefix = &entry[1..entry.len() - 1]; // uvx flags, minus trailing hermes-acp
-            // Self-heal on upgrade: the previous boot's detached `hermes
-            // dashboard` outlives kernel reboots and squats :17890, so the
-            // just-upgraded (0.18.0) dashboard below would fail to bind and the
-            // old version would keep serving forever. Free the port first so the
-            // fresh-version dashboard takes it (best-effort; only on a real
-            // version change, never on a steady-state boot).
+                                                         // Self-heal on upgrade: the previous boot's detached `hermes
+                                                         // dashboard` outlives kernel reboots and squats :17890, so the
+                                                         // just-upgraded (0.18.0) dashboard below would fail to bind and the
+                                                         // old version would keep serving forever. Free the port first so the
+                                                         // fresh-version dashboard takes it (best-effort; only on a real
+                                                         // version change, never on a steady-state boot).
             if upgraded {
                 free_dashboard_port(DASHBOARD_PORT);
             }
@@ -328,22 +332,16 @@ impl KernelSupervisor {
             }
         });
 
-        // Code Space env registry — coding remote desktop v1 (zeus Z1, event-stream spec v0.7).
-        // commands::code_space::cs_* invocations pull this State to spawn /
-        // control SubprocessActor instances. Independent from KernelHandle so
-        // the registry lifetime is tied to the app, not to a specific kernel
-        // boot cycle.
-        // Tauri commands and diagnostics clone the same owner handle; no
-        // parallel Coding registry exists. (ADR-002 substrate § diagnostics-projection v72)
-        app.manage(crate::commands::code_space::CodeSpaceRegistry::shared());
-
         // Spawn the WS bridge on the Tauri tokio runtime. The on_op callback
         // is currently a no-op log; sub-PR d/2 routes it to scheduler::dispatch.
         let bridge_for_serve = bridge.clone();
         tauri::async_runtime::spawn(async move {
             if let Err(e) = bridge_for_serve
                 .serve(EVENT_WS_LISTEN_ADDR, |op| {
-                    tracing::info!("kernel received op kind={:?} (dispatch TBD sub-PR d/2)", op.kind);
+                    tracing::info!(
+                        "kernel received op kind={:?} (dispatch TBD sub-PR d/2)",
+                        op.kind
+                    );
                 })
                 .await
             {
@@ -351,7 +349,9 @@ impl KernelSupervisor {
             }
         });
 
-        tracing::info!("KernelSupervisor::start — ready (kernel + WS bridge on {EVENT_WS_LISTEN_ADDR})");
+        tracing::info!(
+            "KernelSupervisor::start — ready (kernel + WS bridge on {EVENT_WS_LISTEN_ADDR})"
+        );
         Ok(())
     }
 

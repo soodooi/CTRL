@@ -1,0 +1,135 @@
+/* Sources — the data-supply surface. Calm, dense, source-first.
+   (ADR-005 irisy §12 v42 U3/U4/U7) */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) 0;
+  width: 100%;
+}
+
+.bar {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.input {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  background: var(--color-bg-l1);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  padding: 5px 10px;
+}
+.input:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.action {
+  appearance: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  padding: 4px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.action:not(:disabled):hover {
+  color: var(--color-text);
+  background: var(--color-bg-l2);
+}
+.action:disabled {
+  color: var(--color-text-faint);
+  cursor: not-allowed;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.groupTitle {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+
+.empty,
+.note,
+.noPassage {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+.note {
+  color: var(--color-warning);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-soft);
+  min-width: 0;
+}
+
+.hitPath {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-sm);
+  color: var(--color-accent);
+  cursor: pointer;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.hitPath:not(:disabled):hover {
+  text-decoration: underline;
+}
+.hitPath:disabled {
+  color: var(--color-text);
+  cursor: default;
+}
+
+.host {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-text-soft);
+}
+
+.passage {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}

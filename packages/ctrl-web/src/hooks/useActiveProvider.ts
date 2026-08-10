@@ -19,8 +19,12 @@
 //                 model_id today; future: pretty-printed "GLM 5.2")
 
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+// Through the shared bridge, not a direct `@tauri-apps/api/core` import: that
+// bypass meant this hook could never resolve outside the desktop shell, so the
+// browser PWA always reported "no provider" and the composer refused to send.
+// (ADR-003 frontend §8.5 v40)
+import { invoke } from '@/lib/bridge';
 
 export interface ActiveProvider {
   id: string;

@@ -20,9 +20,7 @@ pub(super) const MAX_REST_BODY_BYTES: usize = 5 * 1024 * 1024;
 /// Read a response body with a hard byte cap. Returns Err if the body
 /// exceeds the cap before fully reading. Uses byte-level reading rather than
 /// `resp.json()` so we can short-circuit on size.
-pub(super) async fn read_body_capped(
-    mut resp: reqwest::Response,
-) -> Result<Vec<u8>, String> {
+pub(super) async fn read_body_capped(mut resp: reqwest::Response) -> Result<Vec<u8>, String> {
     let mut buf: Vec<u8> = Vec::new();
     loop {
         match resp.chunk().await {

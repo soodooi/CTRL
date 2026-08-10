@@ -17,6 +17,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { invoke } from '@/lib/bridge';
 import {
+  defaultTransport,
   engineTransport,
   type IrisyCustomMessage,
   // Attachments module (ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32).
@@ -24,8 +25,6 @@ import {
   type LLMMessage,
 } from '@/lib/llm-transport';
 import { IrisyCustomMessageView } from './IrisyCustomMessage';
-// ADR-005 irisy §8.6 — the shared agent ("shell") selector, on every surface.
-import { AgentSelector } from '@/components/agent/AgentSelector';
 import {
   ensurePromptsBootstrap,
   loadIrisySystemPrompt,
@@ -44,7 +43,6 @@ import { ensureMemoryBootstrap, loadCoreMemory } from '@/lib/irisy-memory';
 // ADR-002 substrate § vault v1 §8.3 (2026-06-01): saveReplyToVault writes via
 // the vaultWrite wrapper (maps content→body for the gate's VaultWriteArgs).
 import { gateInvoke, resetEngine, vaultWrite, listMcps, type McpSummary } from '@/lib/kernel';
-import { useSessionStateStore, sessionLabel } from '@/lib/session-state';
 // bao 2026-06-05 Pi-first cleanup: PWA-side XML tool dispatch
 // (`dispatchAllCalls` / `formatResultsAsUserTurn` /
 // `isFrontierNativeProvider`) removed. Pi runs its own agent loop
@@ -87,29 +85,7 @@ import { SessionTabs } from './SessionTabs';
 import { useNativeFileDrop } from '@/lib/native-file-drop';
 import styles from './IrisyChat.module.css';
 
-/** Base storage key. ADR-002 substrate § brain v15 (2026-06-07): Coding L1
- *  tab passes `mode="coding"` and its history persists under a separate
- *  suffix so Irisy + Coding chats never bleed into each other. */
-const persistKey_BASE = 'irisy:chat:v1';
-function chatStorageKey(mode: 'assistant' | 'coding'): string {
-  return mode === 'coding'
-    ? `${persistKey_BASE}:coding`
-    : persistKey_BASE;
-}
-
-/** Synchronous snapshot of the store's current mode for the IrisyChat
- *  useState initializer (runs once before any subscription is wired).
- *  ADR-002 substrate § brain v15 (2026-06-07). */
-function readInitialMode(): 'assistant' | 'coding' {
-  if (typeof window === 'undefined') return 'assistant';
-  try {
-    return useSessionStateStore.getState().mode === 'coding'
-      ? 'coding'
-      : 'assistant';
-  } catch {
-    return 'assistant';
-  }
-}
+const LEGACY_IRISY_TRANSCRIPT_KEY = 'irisy:chat:v1';
 
 interface KernelLlmStatus {
   adapter: string | null;
@@ -281,56 +257,48 @@ function buildSystemPrompt(
   });
 }
 
-/** ADR-002 substrate § brain v15 (2026-06-07) — `forceMode` lets the L1
- *  Coding tab mount this chat with `mode="coding"` independent of the
- *  global session-state store (which the Irisy tab also reads from). When
- *  unset, behaves exactly as before: reads `mode` from the store, so the
- *  homepage Irisy chat keeps tracking project-dir / cap toggles. */
-interface IrisyChatProps {
-  forceMode?: 'assistant' | 'coding';
-}
-
-export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElement {
-  // ADR-002 substrate § brain v15 (2026-06-07): resolve mode BEFORE the
-  // useState initializer so it can pick the mode-specific storage key on
-  // first render. `useSessionStateStore.getState()` reads the store
-  // synchronously without subscribing — the subscribed read below keeps
-  // the chat reactive to store changes for the no-forceMode case.
-  const persistKey = chatStorageKey(forceMode ?? readInitialMode());
-
-  // Kiro-style redesign — Session module (ADR-005 irisy §8.7 v32; ADR-003
-  // frontend §8.6 v36): Coding mode (`forceMode==='coding'`) keeps its own,
-  // separate persistence entirely (this legacy single-conversation key is
-  // untouched for that mode — CodingScene.tsx owns Coding's own workspace-
-  // keyed conversations now anyway, so this component's Coding rendering
-  // path is effectively dormant, but we don't disturb it in this change).
-  // Only the Personal ("assistant") surface gets multi-session tabs.
-  const sessionsEnabled = forceMode !== 'coding';
+/** One mounted Irisy surface backed only by the canonical session store.
+ *  (ADR-003 frontend §8.5 v40; ADR-005 irisy §11 v40) */
+export function IrisyChat(): React.ReactElement {
   useEffect(() => {
-    if (!sessionsEnabled) return;
-    migrateLegacySingleSession(persistKey);
+    migrateLegacySingleSession(LEGACY_IRISY_TRANSCRIPT_KEY);
     ensureActiveIrisySession();
-    // Runs once per mount — the legacy-key migration and "ensure a session
-    // exists" logic are both idempotent no-ops on every subsequent call, so
-    // this intentionally does not re-run on persistKey changes (forceMode
-    // does not change after mount in practice).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const sessions = useIrisySessionsStore((s) => s.sessions);
-  const activeSessionId = useIrisySessionsStore((s) => s.activeSessionId);
-  const setSessionMessages = useIrisySessionsStore((s) => s.setMessages);
-  const clearSessionMessages = useIrisySessionsStore((s) => s.clearSessionMessages);
-  const renameSession = useIrisySessionsStore((s) => s.renameSession);
-  const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
+  const sessions = useIrisySessionsStore((state) => state.sessions);
+  const activeSessionId = useIrisySessionsStore((state) => state.activeSessionId);
+  const setSessionMessages = useIrisySessionsStore((state) => state.setMessages);
+  const clearSessionMessages = useIrisySessionsStore((state) => state.clearSessionMessages);
+  const renameSession = useIrisySessionsStore((state) => state.renameSession);
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+  const messages: DisplayMessage[] = activeSession?.messages ?? [];
+  const setMessages = useCallback(
+    (updater: DisplayMessage[] | ((previous: DisplayMessage[]) => DisplayMessage[])): void => {
+      if (!activeSessionId) return;
+      setSessionMessages(activeSessionId, (previous) =>
+        typeof updater === 'function' ? updater(previous) : updater,
+      );
+    },
+    [activeSessionId, setSessionMessages],
+  );
 
-  // A visible session tab and the ACP engine must move together. Resetting
-  // here makes the next prompt re-prime from the newly active transcript
-  // instead of leaking context from the previous tab. (ADR-005 irisy §8.7 v38)
+  const engineResetRef = useRef<Promise<void>>(Promise.resolve());
+  const queueEngineReset = useCallback((): Promise<void> => {
+    const next = engineResetRef.current
+      .catch(() => undefined)
+      .then(() => resetEngine());
+    engineResetRef.current = next;
+    return next;
+  }, []);
+
+  // The canonical store owns all mounted transcript state, and a visible
+  // session moves with the sole managed ACP owner. (ADR-005 irisy §11 v40)
   useEffect(() => {
-    if (!sessionsEnabled || !activeSessionId) return;
-    void resetEngine().catch(() => undefined);
-  }, [activeSessionId, sessionsEnabled]);
+    if (!activeSessionId) return;
+    void queueEngineReset().catch(() => undefined);
+  }, [activeSessionId, queueEngineReset]);
 
+  // Runtime status and composer state do not create another transcript owner.
+  // (ADR-005 irisy §11 v40)
   const [status, setStatus] = useState<IrisyStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [mcps, setMcps] = useState<McpSummary[]>([]);
@@ -338,59 +306,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const [coreMemory, setCoreMemory] = useState<string>('');
   const [systemBase, setSystemBase] = useState<string>(IRISY_SYSTEM_DEFAULT);
   const [brainState, setBrainState] = useState<BrainState | null>(null);
-
-  // Coding mode (dormant path, see above) keeps its OWN local `messages`
-  // state exactly as before — restored from the legacy single-conversation
-  // key. The Personal surface instead reads/writes through the session
-  // store (`activeSession.messages`); `setMessages` below is a small shim so
-  // the rest of this file's existing `setMessages(...)` call sites don't all
-  // need rewriting to know which mode they're in.
-  // (ADR-005 irisy §8.7 v32)
-  const [codingModeMessages, setCodingModeMessages] = useState<DisplayMessage[]>(() => {
-    if (sessionsEnabled) return [];
-    if (typeof window === 'undefined') return [];
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('fresh') === '1') {
-        window.localStorage.removeItem(persistKey);
-        return [];
-      }
-    } catch {
-      // URL parsing failed — fall through to normal restore path
-    }
-    try {
-      const raw = window.localStorage.getItem(persistKey);
-      if (!raw) return [];
-      const parsed: unknown = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed
-        .filter((m): m is DisplayMessage => {
-          if (typeof m !== 'object' || m === null) return false;
-          const role = (m as Record<string, unknown>).role;
-          return role === 'user' || role === 'assistant' || role === 'custom';
-        })
-        .map((m) => ({ ...m, streaming: false }));
-    } catch {
-      return [];
-    }
-  });
-  // (ADR-005 irisy §8.7 v32)
-  const messages: DisplayMessage[] = sessionsEnabled
-    ? activeSession?.messages ?? []
-    : codingModeMessages;
-  const setMessages = useCallback(
-    (updater: DisplayMessage[] | ((prev: DisplayMessage[]) => DisplayMessage[])): void => {
-      const apply = (prev: DisplayMessage[]): DisplayMessage[] =>
-        typeof updater === 'function' ? updater(prev) : updater;
-      if (sessionsEnabled) {
-        if (!activeSessionId) return;
-        setSessionMessages(activeSessionId, apply);
-      } else {
-        setCodingModeMessages(apply);
-      }
-    },
-    [sessionsEnabled, activeSessionId, setSessionMessages],
-  );
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendingStartedAt, setSendingStartedAt] = useState<number | null>(null);
@@ -400,38 +315,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [importMenuOpen, setImportMenuOpen] = useState(false);
   const [importing, setImporting] = useState(false);
-
-  // bao 2026-06-04 (3-mode full): session state is global (persisted to
-  // localStorage via zustand) so Coding mode can be entered from L1
-  // PrimaryRail (file picker → enterCodingMode) while the chat picks up
-  // the change live. The catalog `availableSkills` stays local — it's a
-  // read-only directory listing pulled once on mount.
-  // ADR-002 substrate § brain v17 (2026-06-07): SessionMode is now
-  // `'personal' | 'coding'` — the legacy `cap` mode (Pi "wears" a SKILL.md
-  // as a one-shot hat) was retired along with the keycap concept it was
-  // derived from. Skills are invocable references Irisy reads on demand
-  // via `list_skills` / `read_skill`; they are not a session mode. The
-  // `wireMode` narrowing below maps the 2-mode store to the on-wire enum
-  // the kernel + mcp-server + PiBridge agree on (`'assistant' | 'coding'`).
-  const mode = useSessionStateStore((s) => s.mode);
-  const wireMode: 'assistant' | 'coding' =
-    forceMode ?? (mode === 'coding' ? 'coding' : 'assistant');
-  // persistKey was bound at top of component via the synchronous
-  // readInitialMode() snapshot so the useState initializer could pick the
-  // right localStorage key on first render. We keep using that one to
-  // avoid mid-session key churn. ADR-002 substrate § brain v15.
-  const projectDir = useSessionStateStore((s) => s.projectDir);
-  const [availableSkills, setAvailableSkills] = useState<
-    ReadonlyArray<{ name: string; description?: string | null; path: string }>
-  >([]);
-  useEffect(() => {
-    invoke<Array<{ name: string; description?: string | null; path: string }>>(
-      'list_local_skills',
-      { query: null },
-    )
-      .then((items) => setAvailableSkills(items ?? []))
-      .catch(() => setAvailableSkills([]));
-  }, []);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   // Kiro-style redesign — Attachments module (ADR-002 substrate §1.8.6 v75;
@@ -483,29 +366,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     return () => window.clearInterval(interval);
   }, [sendingStartedAt]);
 
-  // Persist message history on every change so a tab close / reload
-  // doesn't lose the conversation. Only for the dormant Coding-mode path —
-  // the Personal surface's session store already persists itself via
-  // zustand's `persist` middleware (irisy-sessions.ts), so writing here too
-  // would just be a second, redundant write of the same data.
-  // (ADR-005 irisy §8.7 v32)
-  useEffect(() => {
-    if (sessionsEnabled) return;
-    if (typeof window === 'undefined') return;
-    try {
-      if (messages.length === 0) {
-        window.localStorage.removeItem(persistKey);
-      } else {
-        window.localStorage.setItem(
-          persistKey,
-          JSON.stringify(messages),
-        );
-      }
-    } catch {
-      // Quota errors are silent — the chat works, persistence just lapses.
-    }
-  }, [messages, sessionsEnabled, persistKey]);
-
   // (ADR-005 irisy §8.7 v32; ADR-003 frontend §8.6 v36)
   // Auto-title a fresh "New Session" tab from the first user message —
   // matches Kiro's own tab-titling-from-the-prompt behavior. Only fires
@@ -513,7 +373,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   // afterward; this effect never overwrites a rename).
   const autoLabeledSessionsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!sessionsEnabled || !activeSession) return;
+    if (!activeSession) return;
     if (autoLabeledSessionsRef.current.has(activeSession.id)) return;
     if (activeSession.label !== 'New Session') {
       autoLabeledSessionsRef.current.add(activeSession.id);
@@ -525,13 +385,17 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     if (!firstUser) return;
     autoLabeledSessionsRef.current.add(activeSession.id);
     renameSession(activeSession.id, deriveSessionLabel(firstUser.content));
-  }, [sessionsEnabled, activeSession, renameSession]);
+  }, [activeSession, renameSession]);
 
   // Pi is THE brain (ADR-002 substrate). irisyChatTransport routes through Pi.
   // When Pi isn't reachable, the chat surface flips to a "being upgraded"
   // stub rather than silently degrading — keeps the user from thinking
   // Irisy is broken or slow.
   const transport = useMemo(() => engineTransport(), []);
+  // Reflection is stateless provider work. It must never mutate Hermes's
+  // persistent session behind the canonical transcript authority.
+  // (ADR-005 irisy §11 v40)
+  const reflectionTransport = useMemo(() => defaultTransport(), []);
   const activeBrain = status?.active_brain ?? 'pi';
   // Post-v19 the Pi probe is dead logic (always unreachable) — gating
   // the composer on it locked fresh installs behind a permanent
@@ -540,15 +404,33 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const upgradeStub = statusError != null;
   void activeBrain;
 
-  // (ADR-005 irisy §8.7 v32)
+  const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
+  // Per-turn abort handle — drives Stop, clear, and interrupt-and-redirect.
+  // (ADR-005 irisy §11 v40)
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Clear aborts visible delivery, clears the canonical transcript, and queues
+  // replacement of the matching Hermes owner. The next send waits for reset.
+  // (ADR-005 irisy §11 v40)
   const clearConversation = useCallback((): void => {
-    if (sessionsEnabled && activeSessionId) {
+    abortRef.current?.abort();
+    if (activeSessionId) {
       clearSessionMessages(activeSessionId);
-    } else {
-      setMessages([]);
+      void queueEngineReset().catch((error: unknown) => {
+        setChatError(humanizePiError(String(error), activeBrain));
+      });
     }
     setChatError(null);
-  }, [sessionsEnabled, activeSessionId, clearSessionMessages, setMessages]);
+  }, [activeBrain, activeSessionId, clearSessionMessages, queueEngineReset]);
+
+  // Stop cancels and drains the active ACP request before owner reuse.
+  // (ADR-005 irisy §11 v40)
+  const stopGeneration = useCallback((): void => {
+    abortRef.current?.abort();
+    void queueEngineReset().catch((error: unknown) => {
+      setChatError(humanizePiError(String(error), activeBrain));
+    });
+  }, [activeBrain, queueEngineReset]);
 
   const lastUserMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -557,13 +439,6 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     }
     return '';
   }, [messages]);
-
-  const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
-  // Per-turn abort handle — drives the Stop button + interrupt-and-redirect so
-  // the user is never blocked from sending while a turn streams
-  // (ADR-005 irisy § persona v5 (2026-06-09); memory
-  // feedback-irisy-never-block-input-and-be-fast).
-  const abortRef = useRef<AbortController | null>(null);
 
   // Cmd/Ctrl+K — clear conversation. Cmd/Ctrl+Enter — send.
   useEffect(() => {
@@ -672,7 +547,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
   const sendMessage = useCallback(
     async (text: string): Promise<void> => {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      if (!trimmed || !activeSessionId || !activeSession) return;
       if (upgradeStub) {
         // Refuse silently when the backend isn't wired — the stub view
         // already explains what's happening; bouncing here keeps the
@@ -680,11 +555,28 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         return;
       }
 
-      // Interrupt-and-redirect (ADR-005 irisy § persona v5 (2026-06-09)):
-      // never block a send while a turn streams — abort the in-flight turn and
-      // start the new one. The finally guard (abortRef.current === ac) keeps the
-      // aborted turn from clobbering the new turn's `sending` state.
-      abortRef.current?.abort();
+      // Session switches and clear operations replace the Hermes owner before
+      // this canonical transcript can submit another turn.
+      // (ADR-005 irisy §11 v40)
+      try {
+        await engineResetRef.current;
+      } catch (error: unknown) {
+        setChatError(humanizePiError(String(error), activeBrain));
+        return;
+      }
+
+      // Interrupt-and-redirect cancels and drains the active ACP request through
+      // the existing reset command before another turn can reuse the owner.
+      // (ADR-005 irisy §11 v40)
+      if (abortRef.current) {
+        abortRef.current.abort();
+        try {
+          await queueEngineReset();
+        } catch (error: unknown) {
+          setChatError(humanizePiError(String(error), activeBrain));
+          return;
+        }
+      }
       const ac = new AbortController();
       abortRef.current = ac;
 
@@ -761,10 +653,15 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         let aborted = false;
         // (ADR-002 substrate §1.8.6 v75; ADR-005 irisy §8.7 v32)
         for await (const chunk of transport.stream(history, {
-          mode: wireMode,
-          project_dir: projectDir ?? undefined,
           signal: ac.signal,
           attachments: attachmentsForTurn,
+          context: {
+            session_id: activeSessionId,
+            resources: activeSession.resources,
+            capability_scope: ['describe', 'query', 'produce'],
+            policy: 'review-gated-writes',
+            task: trimmed,
+          },
         })) {
           if (chunk.error === 'aborted') {
             // User pressed Stop or sent a new message — end quietly, no banner.
@@ -850,21 +747,19 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           ];
           const activeProviderId =
             brainState?.providers?.['irisy.primary']?.id ?? null;
+          // Reflection is stateless and cannot become a second transcript owner.
+          // (ADR-005 irisy §11 v40)
           void runReflection({
             trigger,
             recentTurns,
             activeProviderId,
             streamFn: async (systemPrompt, userPrompt) => {
               let acc = '';
-              for await (const chunk of transport.stream(
+              for await (const chunk of reflectionTransport.stream(
                 [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt },
                 ],
-                // ADR-005 irisy § persona v5 §5 (2026-06-09): tie
-                // reflection to the turn's AbortController so Stop / a new
-                // turn cancels the sleep-time stream too (was leaking past
-                // abort).
                 { signal: ac.signal },
               )) {
                 if (chunk.error) break;
@@ -900,15 +795,15 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
       // humanizePiError, so it must be a dep or error copy names a stale
       // provider after a brain switch.
       activeBrain,
+      activeSession,
+      activeSessionId,
       brainState,
       coreMemory,
       mcps,
       longTermMemory,
       messages,
-      mode,
-      // (ADR-005 irisy §8.7 v32)
       pendingAttachments,
-      projectDir,
+      queueEngineReset,
       setMessages,
       systemBase,
       transport,
@@ -920,14 +815,14 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
-  // ADR-005 irisy § persona v5 (2026-06-09): abort any in-flight turn
-  // on unmount so a streaming request doesn't outlive the component (no
-  // setState-after-unmount, no orphaned stream).
+  // Unmount aborts delivery and starts the same cancel-and-drain reset so no
+  // orphaned prompt can remain reusable. (ADR-005 irisy §11 v40)
   useEffect(
     () => (): void => {
       abortRef.current?.abort();
+      void queueEngineReset().catch(() => undefined);
     },
-    [],
+    [queueEngineReset],
   );
 
   // Homepage hand-off: `/?text=<encoded>` from default.tsx's ChatInput
@@ -1119,30 +1014,8 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
           Drop to attach
         </div>
       )}
-      {/* Mode banner — ADR-002 substrate § brain v17 (2026-06-07).
-          Cap mode + keycap concept retired; banner now only fires for
-          coding mode with a project dir set. Personal mode hides
-          entirely (cleanest default). */}
-      {mode === 'coding' && projectDir && (
-        <div
-          style={{
-            padding: '6px 12px',
-            borderBottom: '1px solid var(--surface-border, rgba(0,0,0,0.08))',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 12,
-            background: 'var(--surface-elevated, rgba(0,0,0,0.02))',
-            color: 'var(--text-muted, #6b7280)',
-          }}
-        >
-          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {`Coding · ${projectDir}`}
-          </span>
-        </div>
-      )}
       <ChatHeaderControls />
-      {sessionsEnabled && <SessionTabs />}
+      <SessionTabs />
       <div className={styles.scrollerWrap}>
         {/* Right-rail control stack — vertical, 22x22 each. ADR-002
             substrate §1 v19: the Pi RPC controls (history / compact /
@@ -1153,17 +1026,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
             type="button"
             className={styles.railButton}
             onClick={() => {
-              // Kiro-style redesign (ADR-005 irisy §8.7 v32): on the Personal
-              // surface, "new" means a new SESSION TAB (SessionTabs already
-              // renders its own "+" for this, but the rail button stays as a
-              // second entry point — matches most tabbed apps offering both
-              // a keyboard-adjacent control and an explicit tab-bar button).
-              // Coding mode (dormant path) keeps its old in-place clear.
-              if (sessionsEnabled) {
-                useIrisySessionsStore.getState().createSession();
-              } else {
-                setMessages([]);
-              }
+              useIrisySessionsStore.getState().createSession();
               setChatError(null);
               setStatusMessage('Started new chat.');
               window.setTimeout(() => setStatusMessage(null), 2500);
@@ -1199,7 +1062,7 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
             <button
               type="button"
               className={styles.railButton}
-              onClick={() => abortRef.current?.abort()}
+              onClick={stopGeneration}
               aria-label="Stop generating"
               title="Stop"
             >
@@ -1373,12 +1236,10 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
         />
       </div>
 
-      {/* Kiro-style redesign — Model module (ADR-005 irisy §8.7 v32): the
-          engine/model picker moves from above the composer to a bottom
-          toolbar row alongside it, matching Kiro's bottom bar. Same
-          `AgentSelector` component/logic — position + styling only change. */}
       <div className={styles.bottomToolbar}>
         <div className={styles.composerActions}>
+          {/* Imports add explicit context to the fixed Irisy identity. */}
+          {/* (ADR-005 irisy §11 v40) */}
           <div className={styles.importMenuWrap}>
             {importMenuOpen && (
               <div className={styles.importMenu} role="menu" aria-label="Add to Irisy">
@@ -1409,8 +1270,9 @@ export function IrisyChat({ forceMode }: IrisyChatProps = {}): React.ReactElemen
             </button>
           </div>
           {importing && <span className={styles.importStatus}>Importing…</span>}
+          {/* Imported material becomes canonical Irisy context only. */}
+          {/* (ADR-005 irisy §11 v40) */}
         </div>
-        <AgentSelector />
       </div>
     </div>
   );

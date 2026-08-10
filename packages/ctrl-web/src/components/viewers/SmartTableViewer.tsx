@@ -20,6 +20,9 @@ import {
   type SmartTableQueryRequest,
 } from '@/lib/kernel';
 import { readVault, writeVault, vaultRelativePath } from '@/lib/viewer-uri';
+// A cell edit is a canonical bounded write, not a whole-file overwrite.
+// (ADR-002 substrate §15.2 v87)
+import { setTableCell } from '@/lib/table-write';
 import {
   addColumn,
   appendRow,
@@ -112,6 +115,29 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
       await qc.invalidateQueries({ queryKey: ['smart-table-file', path] });
     } catch (e) {
       setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // A cell edit is one bounded change, so it goes through the canonical write
+  // verb conditioned on the table the user is looking at. It used to rewrite the
+  // whole file with no precondition, which silently discarded a concurrent
+  // editor's work and could not report whether the write held.
+  // (ADR-002 substrate §15.2 v87; ADR-005 irisy §12 v42 U6)
+  const commitCell = async (rowIndex: number, field: string, value: string): Promise<void> => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      const result = await setTableCell(path, rowIndex, field, value);
+      if (result.kind === 'conflict') {
+        // The table on screen is provably out of date, so refetch and say why
+        // rather than leaving an edit that was never written looking applied.
+        setError(`${result.message} Reloaded the table as it is on disk.`);
+      } else if (result.kind === 'failed') {
+        setError(result.message);
+      }
+      await qc.invalidateQueries({ queryKey: ['smart-table-file', path] });
     } finally {
       setSaving(false);
     }
@@ -219,7 +245,7 @@ export const SmartTableViewer = ({ resource }: ViewerProps): ReactElement => {
         editable={resource.editable}
         relations={relations ?? {}}
         linkTargets={(allTables ?? []).filter((t) => t.path !== path).map((t) => ({ path: t.path, title: t.title }))}
-        onCellChange={(rowIndex, key, value) => void commit(updateCell(table, rowIndex, key, value))}
+        onCellChange={(rowIndex, key, value) => void commitCell(rowIndex, key, value)}
         onDeleteRow={(rowIndex) => void commit(deleteRow(table, rowIndex))}
         onDeleteRows={resource.editable ? (idxs) => void commit(deleteRows(table, idxs)) : undefined}
         onMoveRow={resource.editable ? (from, to) => void commit(moveRow(table, from, to)) : undefined}

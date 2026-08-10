@@ -76,6 +76,15 @@ export interface LLMAttachment {
   name: string;
 }
 
+export interface IrisyTurnContext {
+  session_id: string;
+  resources: string[];
+  skill_id?: string;
+  capability_scope: string[];
+  policy: string;
+  task: string;
+}
+
 export interface LLMStreamOptions {
   model?: string;
   temperature?: number;
@@ -85,23 +94,10 @@ export interface LLMStreamOptions {
    *  path (irisy_chat_stream); the provider-router fallback has no
    *  attachment support. */
   attachments?: LLMAttachment[];
-  // ADR-002 substrate § brain v17 (2026-06-07): kept as an optional
-  // per-prompt parameter so a future slash-command flow can prepend a
-  // skill's SKILL.md as a system message for one turn. The cap-mode UX
-  // that used to set this from session state was retired with keycap.
-  skill_id?: string;
-  // Pi session mode hint ("assistant" | "coding"). ADR-002 substrate
-  // § brain v17 (2026-06-07): the legacy "cap" value was retired with
-  // the keycap concept; only the two real modes flow through.
-  mode?: string;
-  // Coding-mode project directory (Pi's cwd). Reserved for v2.x.
-  project_dir?: string;
-  // ADR-005 irisy §8.6 — the selected agent ("shell") id for this surface
-  // (hermes / codex / claude-code). The engine path reads it; `chat_stream`
-  // ignores it. BYO-CLI selection is short-circuited client-side in
-  // `engineTransport` (CTRL does not supervise a BYO loop), so this reaching
-  // the wire means the embedded engine is in play.
-  agent?: string;
+  /** The complete Irisy runtime projection for one canonical session turn.
+   *  Legacy mode, project-path, and engine selectors are intentionally absent.
+   *  (ADR-005 irisy §11 v40) */
+  context?: IrisyTurnContext;
 }
 
 export interface LLMTransport {
@@ -212,7 +208,6 @@ export class ChatStreamTransport implements LLMTransport {
       return;
     }
     const requestId = crypto.randomUUID();
-    const { listen } = await import('@tauri-apps/api/event');
 
     // One ordered queue carries every channel so text, reasoning and tool steps
     // interleave in the true order the engine produced them (ADR-005 §8.6).
@@ -221,51 +216,68 @@ export class ChatStreamTransport implements LLMTransport {
       | { tool: ToolStep }
       | { thought: string };
     const queue: QueueItem[] = [];
+    const unlisteners: UnlistenFn[] = [];
     let resolveNext: (() => void) | null = null;
     const wakeWaiter = (): void => {
-      const w = resolveNext;
-      if (w) {
+      const waiter = resolveNext;
+      if (waiter) {
         resolveNext = null;
-        w();
+        waiter();
       }
     };
-    const unlistenDelta: UnlistenFn = await listen<ChatStreamDelta>(
-      'chat-stream-delta',
-      (event) => {
-        if (event.payload.request_id !== requestId) return;
-        queue.push({ delta: event.payload });
-        wakeWaiter();
-      },
-    );
-    const unlistenTool: UnlistenFn = await listen<ToolStep>(
-      'chat-stream-tool',
-      (event) => {
-        if (event.payload.request_id !== requestId) return;
-        queue.push({ tool: event.payload });
-        wakeWaiter();
-      },
-    );
-    const unlistenThought: UnlistenFn = await listen<{
-      request_id: string;
-      delta: string;
-    }>('chat-stream-thought', (event) => {
-      if (event.payload.request_id !== requestId) return;
-      queue.push({ thought: event.payload.delta });
-      wakeWaiter();
-    });
-    const unlisten: UnlistenFn = () => {
-      unlistenDelta();
-      unlistenTool();
-      unlistenThought();
-    };
-    // Abort listener wakes any pending Promise so the while-loop's
-    // signal.aborted check fires immediately instead of hanging forever
-    // when no further chat-stream-delta arrives (e.g. user cancelled
-    // before the first chunk).
     const onAbort = (): void => wakeWaiter();
     opts.signal?.addEventListener('abort', onAbort);
+    const aborted = (): boolean => opts.signal?.aborted === true;
 
     try {
+      const { listen } = await import('@tauri-apps/api/event');
+      if (aborted()) {
+        yield { delta: '', done: true, error: 'aborted' };
+        return;
+      }
+
+      unlisteners.push(await listen<ChatStreamDelta>(
+        'chat-stream-delta',
+        (event) => {
+          if (event.payload.request_id !== requestId) return;
+          queue.push({ delta: event.payload });
+          wakeWaiter();
+        },
+      ));
+      if (aborted()) {
+        yield { delta: '', done: true, error: 'aborted' };
+        return;
+      }
+
+      unlisteners.push(await listen<ToolStep>(
+        'chat-stream-tool',
+        (event) => {
+          if (event.payload.request_id !== requestId) return;
+          queue.push({ tool: event.payload });
+          wakeWaiter();
+        },
+      ));
+      if (aborted()) {
+        yield { delta: '', done: true, error: 'aborted' };
+        return;
+      }
+
+      unlisteners.push(await listen<{
+        request_id: string;
+        delta: string;
+      }>('chat-stream-thought', (event) => {
+        if (event.payload.request_id !== requestId) return;
+        queue.push({ thought: event.payload.delta });
+        wakeWaiter();
+      }));
+      if (aborted()) {
+        yield { delta: '', done: true, error: 'aborted' };
+        return;
+      }
+
+      // No command can cross the native boundary after cancellation during
+      // dynamic import or listener setup. Partial setup is always unwound by
+      // the cleanup stack below. (ADR-005 irisy §11 v40)
       await invoke(this.commandName, {
         args: {
           request_id: requestId,
@@ -273,17 +285,12 @@ export class ChatStreamTransport implements LLMTransport {
           model: opts.model,
           temperature: opts.temperature,
           max_tokens: opts.max_tokens,
-          // 3-mode P0 fields — Rust side reads these on the
-          // irisy_chat_stream wire; chat_stream ignores them.
-          skill_id: opts.skill_id,
-          mode: opts.mode,
-          project_dir: opts.project_dir,
-          agent: opts.agent,
+          context: opts.context,
           attachments: opts.attachments ?? [],
         },
       });
       while (true) {
-        if (opts.signal?.aborted) {
+        if (aborted()) {
           yield { delta: '', done: true, error: 'aborted' };
           return;
         }
@@ -295,14 +302,10 @@ export class ChatStreamTransport implements LLMTransport {
         }
         const item = queue.shift();
         if (!item) continue;
-        // Tool-step channel — yield as a discrete chunk (empty delta) so the
-        // consumer renders it as a step, not appended text (ADR-005 §8.6).
         if ('tool' in item) {
           yield { delta: '', done: false, tool: item.tool };
           continue;
         }
-        // Reasoning channel — a discrete chunk the consumer folds into the
-        // turn's "thinking" trace, never the answer text (ADR-005 §8.6).
         if ('thought' in item) {
           yield { delta: '', done: false, thought: item.thought };
           continue;
@@ -312,13 +315,7 @@ export class ChatStreamTransport implements LLMTransport {
           yield { delta: '', done: true, error: next.error };
           return;
         }
-        if (next.custom) {
-          // ADR-002 substrate (orig ADR-009 retired by v19) P3 — emit the custom payload to the chat UI in its
-          // own chunk so the consumer can render it as a discrete
-          // entry. Text deltas in the same delivery cycle still flow
-          // through the `next.delta` branch on subsequent iterations.
-          yield { delta: '', done: false, custom: next.custom };
-        }
+        if (next.custom) yield { delta: '', done: false, custom: next.custom };
         if (next.delta) yield { delta: next.delta, done: false };
         if (next.done) {
           yield { delta: '', done: true };
@@ -326,12 +323,10 @@ export class ChatStreamTransport implements LLMTransport {
         }
       }
     } finally {
-      // Drain any pending deltas the listener queued after the consumer
-      // stopped pulling — otherwise an aborted/early-returning stream
-      // leaves them dangling in the closure until GC.
       queue.length = 0;
+      resolveNext = null;
       opts.signal?.removeEventListener('abort', onAbort);
-      unlisten();
+      for (const unlisten of unlisteners.reverse()) unlisten();
     }
   }
 }
@@ -348,55 +343,23 @@ export function irisyChatTransport(): LLMTransport {
   return new ChatStreamTransport(true, 'irisy_chat_stream');
 }
 
-// ── engineTransport — the UNIFIED terminal-essence entrypoint (ADR-005 §8.6) ──
+// ── engineTransport — the one managed Irisy entrypoint ──────────────────────
 //
-// Every interaction surface (ambient chat, coding companion, shell chat) uses
-// THIS, so "terminal essence + selectable agent" is implemented once and applies
-// everywhere. It reads the shared active-agent store (the agent axis = the
-// right-region Irisy engine, ADR-005 §8.7):
-//   • embedded (hermes / none) → the §8 persistent engine (`irisy_chat_stream`).
-//   • BYO-CLI INSTALLED (codex / claude-code) → ALSO the engine: CTRL drives it
-//     over ACP and it streams a REAL answer in-surface (not a terminal hand-off).
-//   • BYO-CLI NOT installed → the only honest short-circuit: a hand-off pointing
-//     at the one-click managed install (§8.8). We never fake a stream for an
-//     engine that isn't on disk yet.
+// The embedded path is fixed to Irisy. User-owned CLIs are external :17873
+// clients and are never selected, started, or supervised by this transport.
+// (ADR-001 spine §4 v22; ADR-005 irisy §11 v40)
 class EngineTransport implements LLMTransport {
   private readonly inner = irisyChatTransport();
 
-  async *stream(
+  stream(
     messages: LLMMessage[],
     opts: LLMStreamOptions = {},
   ): AsyncIterable<LLMChunk> {
-    // Lazy import avoids a static cycle (active-agent → bridge only).
-    const { useActiveAgentStore, activeDriver, isUsable } = await import('./active-agent');
-    const state = useActiveAgentStore.getState();
-    const agent = activeDriver(state);
-
-    // ADR-005 §8.8: only drive a BYO engine that can actually answer (installed AND
-    // CTRL holds its required account key). Otherwise be HONEST instead of silently
-    // falling back to the provider router (which would answer "as" the wrong engine):
-    //   • not installed → point at the one-click set-up.
-    //   • installed but no matching account → say so plainly. Codex needs OpenAI,
-    //     Claude needs Anthropic; neither can use an OpenAI-compatible provider like
-    //     Volc (verified 2026-06-29). Hermes is the engine for those — one tap back.
-    if (agent.kind === 'byo-cli' && !isUsable(agent)) {
-      const text = !agent.present
-        ? `**${agent.label}** isn’t set up yet. Open the set-up panel and hit ` +
-          `**Install** — CTRL installs it for you (no terminal). Switch back to ` +
-          `**Hermes** to chat in the meantime.`
-        : `**${agent.label}** needs ${agent.id === 'codex' ? 'an OpenAI' : 'an Anthropic'} ` +
-          `account — it can’t use your current provider. **Hermes** runs on your ` +
-          `provider, so switch the engine back to Hermes to chat here.`;
-      yield { delta: text, done: false };
-      yield { delta: '', done: true };
-      return;
-    }
-
-    yield* this.inner.stream(messages, { ...opts, agent: agent.id });
+    return this.inner.stream(messages, opts);
   }
 }
 
-/** The unified terminal-essence transport — use this on EVERY surface. */
+/** The sole managed Irisy transport. */
 export function engineTransport(): LLMTransport {
   return new EngineTransport();
 }

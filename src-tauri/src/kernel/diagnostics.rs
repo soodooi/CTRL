@@ -501,50 +501,15 @@ fn irisy_status_from_snapshot(
 }
 
 fn coding_status() -> (StartupPhase, bool, bool, Health, String, Value) {
-    coding_status_from_snapshot(
-        crate::commands::code_space::CodeSpaceRegistry::shared().diagnostics_snapshot(),
-    )
-}
-
-fn coding_status_from_snapshot(
-    snapshot: crate::commands::code_space::CodeSpaceDiagnosticsSnapshot,
-) -> (StartupPhase, bool, bool, Health, String, Value) {
-    let health = if snapshot.owner_busy || snapshot.crashed_processes > 0 {
-        Health::Degraded
-    } else {
-        Health::Ok
-    };
-    let startup = if snapshot.owner_busy {
-        StartupPhase::Starting
-    } else if snapshot.total_processes == 0 {
-        StartupPhase::Idle
-    } else {
-        StartupPhase::Ready
-    };
-    let ready = !snapshot.owner_busy;
-    let summary = if snapshot.owner_busy {
-        "Coding owner is busy; diagnostics did not wait for it".to_string()
-    } else if snapshot.total_processes == 0 {
-        "Coding runtime is available; no process is registered".to_string()
-    } else {
-        format!(
-            "Coding owner has {} running, {} stopped, and {} crashed process(es)",
-            snapshot.running_processes, snapshot.stopped_processes, snapshot.crashed_processes
-        )
-    };
+    // Coding is a user-owned external CLI projected through the gate; CTRL does
+    // not own or supervise its process lifecycle. (ADR-003 frontend §8.5 v40)
     (
-        startup,
-        true,
-        ready,
-        health,
-        summary,
-        serde_json::json!({
-            "owner_busy": snapshot.owner_busy,
-            "total_processes": snapshot.total_processes,
-            "running_processes": snapshot.running_processes,
-            "stopped_processes": snapshot.stopped_processes,
-            "crashed_processes": snapshot.crashed_processes,
-        }),
+        StartupPhase::Idle,
+        false,
+        false,
+        Health::Ok,
+        "Coding is available through a user-owned external CLI".to_string(),
+        serde_json::json!({ "owner": "external-user-cli" }),
     )
 }
 
@@ -763,6 +728,8 @@ mod tests {
         assert_eq!(trace(module, Some("test-204"), None).events.len(), 1);
     }
 
+    // ACP diagnostics observe the one Irisy runtime without creating a second
+    // session or lifecycle owner. (ADR-003 frontend § diagnostics-surface v26)
     #[test]
     fn active_acp_turn_is_ready_and_healthy() {
         let (_, live, ready, health, _, _) =
@@ -773,21 +740,6 @@ mod tests {
         assert!(live);
         assert!(ready);
         assert_eq!(health, Health::Ok);
-    }
-
-    #[test]
-    fn coding_crash_is_derived_from_owner_snapshot() {
-        let (_, _, ready, health, _, _) = coding_status_from_snapshot(
-            crate::commands::code_space::CodeSpaceDiagnosticsSnapshot {
-                owner_busy: false,
-                total_processes: 1,
-                running_processes: 0,
-                stopped_processes: 0,
-                crashed_processes: 1,
-            },
-        );
-        assert!(ready);
-        assert_eq!(health, Health::Degraded);
     }
 
     #[test]

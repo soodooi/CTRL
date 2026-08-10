@@ -40,6 +40,9 @@ export interface CodingLaunchReply {
 export const codingLauncherStatus = (): Promise<CodingLauncherStatus> =>
   invoke<CodingLauncherStatus>('coding_launcher_status');
 
+export const registerProjectResource = (path: string): Promise<string> =>
+  invoke<string>('register_project_resource', { path });
+
 export const launchCodingWorkspace = (args: {
   target: string;
   workspace: string;

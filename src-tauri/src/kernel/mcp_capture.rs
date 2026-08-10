@@ -171,9 +171,8 @@ fn append_to_table(
         }
     }
 
-    let frontmatter = format!(
-        "---\ntitle: {mcp_id} runs\nmcp: {mcp_id}\ntype: mcp-output-table\n---\n\n"
-    );
+    let frontmatter =
+        format!("---\ntitle: {mcp_id} runs\nmcp: {mcp_id}\ntype: mcp-output-table\n---\n\n");
 
     let separator = format!(
         "|{}|\n|{}|\n",
@@ -233,12 +232,7 @@ fn append_to_table(
     } else if existing.contains('|') {
         format!("{}{}", existing.trim_end(), format!("\n{row}"))
     } else {
-        format!(
-            "{}\n\n{}{}",
-            existing.trim_end(),
-            separator,
-            row,
-        )
+        format!("{}\n\n{}{}", existing.trim_end(), separator, row,)
     };
     std::fs::write(&abs, new_body)?;
     Ok(())

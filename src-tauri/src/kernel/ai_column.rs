@@ -282,7 +282,10 @@ mod tests {
     fn render_substitutes_field_tokens() {
         let mut row = Row::new();
         row.insert("review".into(), "Loved it".into());
-        assert_eq!(render_prompt("Sentiment of: {review}", &row), "Sentiment of: Loved it");
+        assert_eq!(
+            render_prompt("Sentiment of: {review}", &row),
+            "Sentiment of: Loved it"
+        );
         assert_eq!(render_prompt("{missing} done", &row), " done");
     }
 
@@ -376,10 +379,17 @@ mod tests {
                 let n = self.chunks.len();
                 for (i, c) in self.chunks.iter().enumerate() {
                     let finish_reason = (i + 1 == n).then(|| "stop".to_string());
-                    let _ = tx.send(Ok(ChatChunk { delta: c.to_string(), finish_reason })).await;
+                    let _ = tx
+                        .send(Ok(ChatChunk {
+                            delta: c.to_string(),
+                            finish_reason,
+                        }))
+                        .await;
                 }
             } else {
-                let _ = tx.send(Err(ProviderError::ProviderError("boom".to_string()))).await;
+                let _ = tx
+                    .send(Err(ProviderError::ProviderError("boom".to_string())))
+                    .await;
             }
             Ok(rx)
         }
@@ -390,14 +400,26 @@ mod tests {
 
     #[tokio::test]
     async fn complete_row_accumulates_chunks_and_trims() {
-        let p = FakeProvider { ok: true, chunks: vec![" pos", "itive "] };
-        assert_eq!(complete_row(&p, "classify", "Loved it").await.unwrap(), "positive");
+        let p = FakeProvider {
+            ok: true,
+            chunks: vec![" pos", "itive "],
+        };
+        assert_eq!(
+            complete_row(&p, "classify", "Loved it").await.unwrap(),
+            "positive"
+        );
     }
 
     #[tokio::test]
     async fn complete_row_surfaces_stream_error() {
-        let p = FakeProvider { ok: false, chunks: vec![] };
+        let p = FakeProvider {
+            ok: false,
+            chunks: vec![],
+        };
         let out = complete_row(&p, "classify", "x").await;
-        assert!(out.is_err(), "a provider stream error must surface as Err, not a silent empty cell");
+        assert!(
+            out.is_err(),
+            "a provider stream error must surface as Err, not a silent empty cell"
+        );
     }
 }

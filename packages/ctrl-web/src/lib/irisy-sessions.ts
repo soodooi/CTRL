@@ -1,27 +1,7 @@
-// irisy-sessions — multi-session chat state for Irisy's chat surface.
-//
-// Kiro-style redesign (bao: "Irisy的页面，清修改成跟kiro一样...session，model，
-// attachments等等模块都要"). Prior to this, IrisyChat.tsx persisted exactly ONE
-// conversation per mode under a single localStorage key (`irisy:chat:v1[:coding]`).
-// This store replaces that with a LIST of sessions the user can create, switch
-// between, close, and rename via a tab bar (SessionTabs.tsx) — the top-of-page
-// module Kiro's screenshot shows ("构建并评估 Irisy 调试" / "ACP attachment ca..."
-// / "New Session" tabs).
-//
-// Scope discipline (explicit, per bao's "先不要 token" + no checkpoint/restore
-// this round): this store owns ONLY session identity + message history. It does
-// NOT track token/credit usage (out of scope) and does NOT implement
-// checkpoint/restore snapshots (separately scoped, not built). Attachments and
-// the active engine/model selection remain owned by their existing modules
-// (coding-chat.ts's Attachment shape reused verbatim; active-agent.ts's engine
-// store) — this store only carries the PER-SESSION message list attachments end
-// up rendered into, not a duplicate of either.
-//
-// Coding mode is explicitly OUT of this store. Coding's workspace-keyed
-// conversation state lives in coding-sessions.ts and CodingAgentPanel.tsx.
-// Only Irisy's persistent dialog mode uses this store.
-// (ADR-003 frontend §8.5 v38) (ADR-003 frontend §8.6 v38)
-// (ADR-005 irisy §8.7 v37) (ADR-005 irisy §11 v37)
+// irisy-sessions — the sole live and recovery transcript authority for Irisy.
+// Sessions own their messages and canonical ResourceRefs; runtime engines are
+// projections and never provide a second selectable identity or history store.
+// (ADR-003 frontend §8.6 v40; ADR-005 irisy §11 v40)
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -57,12 +37,25 @@ export interface IrisySession {
   label: string;
   messages: IrisySessionMessage[];
   createdAt: number;
+  /** Canonical ResourceRefs owned by this session's exact runtime context.
+   *  (ADR-005 irisy §11 v40) */
+  resources: string[];
+  /** Stable FCT selection only. Expanded Resources, Skill, scope, and policy
+   *  resolve live from the canonical catalog before every turn.
+   *  (ADR-002 substrate §15.4 v84; ADR-005 irisy §11 v41) */
+  selectedFctRef?: string;
+  /** Read-only provenance for a former Coding transcript explicitly imported
+   *  into this canonical Irisy session. It never resumes the retired runtime.
+   *  (ADR-005 irisy §11 v40) */
+  importedFrom?: { kind: 'coding'; projectPath: string };
   /** Bumped on every message change — lets the tab bar order by recency if
    *  ever needed; not currently used for ordering (sessions render in
    *  creation order, matching a stable tab bar instead of jumping around). */
   lastActiveAt: number;
 }
 
+// All session mutations remain in the sole canonical transcript authority.
+// (ADR-005 irisy §11 v40)
 interface IrisySessionsState {
   sessions: IrisySession[];
   activeSessionId: string | null;
@@ -71,6 +64,8 @@ interface IrisySessionsState {
   closeSession: (id: string) => void;
   activateSession: (id: string) => void;
   renameSession: (id: string, label: string) => void;
+  setResources: (id: string, resources: string[]) => void;
+  setSelectedFct: (id: string, ref: string | null) => void;
   setMessages: (
     id: string,
     updater: (prev: IrisySessionMessage[]) => IrisySessionMessage[],
@@ -96,12 +91,15 @@ export function deriveSessionLabel(firstUserMessage: string): string {
     : trimmed;
 }
 
+// New tabs are canonical Irisy sessions, never engine-owned sessions.
+// (ADR-005 irisy §11 v40)
 function makeSession(label: string): IrisySession {
   return {
     id: newId(),
     label,
     messages: [],
     createdAt: now(),
+    resources: [],
     lastActiveAt: now(),
   };
 }
@@ -157,6 +155,26 @@ export const useIrisySessionsStore = create<IrisySessionsState>()(
         }));
       },
 
+      // Explicit ResourceRefs are persisted with the canonical session context.
+      // (ADR-005 irisy §11 v40)
+      setResources: (id, resources) => {
+        set((s) => ({
+          sessions: s.sessions.map((session) =>
+            session.id === id ? { ...session, resources: [...resources], lastActiveAt: now() } : session,
+          ),
+        }));
+      },
+
+      setSelectedFct: (id, ref) => {
+        set((state) => ({
+          sessions: state.sessions.map((session) =>
+            session.id === id
+              ? { ...session, selectedFctRef: ref ?? undefined, lastActiveAt: now() }
+              : session,
+          ),
+        }));
+      },
+
       setMessages: (id, updater) => {
         set((s) => ({
           sessions: s.sessions.map((sess) =>
@@ -177,22 +195,26 @@ export const useIrisySessionsStore = create<IrisySessionsState>()(
     }),
     {
       name: 'ctrl:irisy-sessions:v1',
-      version: 1,
+      version: 2,
       partialize: (s) => ({
         sessions: s.sessions,
         activeSessionId: s.activeSessionId,
       }),
+      // Persist only the stable selection ref. v1's global raw-Skill pin had no
+      // session owner, so migration discards it and starts every session at Auto.
+      // (ADR-002 substrate §15.4 v84; ADR-005 irisy §11 v41)
       migrate: (persisted, version) => {
-        // v1 is the first shape for this store — no prior version to
-        // migrate FROM here. The legacy single-conversation localStorage
-        // key (`irisy:chat:v1`) is migrated separately by
-        // `migrateLegacySingleSession` (called once from IrisyChat.tsx's
-        // mount effect) rather than here, since that key lives outside
-        // this store's own persisted shape entirely.
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem('ctrl:irisy-assistant-skill:v1');
+        }
         if (version < 1) return { sessions: [], activeSessionId: null };
         const p = persisted as Partial<IrisySessionsState>;
         return {
-          sessions: p.sessions ?? [],
+          sessions: (p.sessions ?? []).map((session) => ({
+            ...session,
+            resources: session.resources ?? [],
+            selectedFctRef: version < 2 ? undefined : session.selectedFctRef,
+          })),
           activeSessionId: p.activeSessionId ?? null,
         };
       },
@@ -262,5 +284,81 @@ export function migrateLegacySingleSession(legacyKey: string): void {
   } catch {
     // Malformed legacy payload — nothing to migrate, leave the key alone
     // rather than risk destroying data we can't parse.
+  }
+}
+
+const LEGACY_CODING_SESSIONS_KEY = 'ctrl:coding-sessions:v1';
+const IRISY_SESSIONS_KEY = 'ctrl:irisy-sessions:v1';
+
+/** Explicitly import former workspace-keyed Coding history as read-only source
+ * material for new canonical Irisy sessions. Project identities are issued by
+ * the kernel owner before canonical state changes. The source is removed only
+ * after every project and message is copied and persistence is verified.
+ * (ADR-005 irisy §11 v40) */
+export async function importLegacyCodingSessions(
+  registerProject: (projectPath: string) => Promise<string>,
+): Promise<number> {
+  if (typeof window === 'undefined') return 0;
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(LEGACY_CODING_SESSIONS_KEY);
+  } catch {
+    return 0;
+  }
+  if (!raw) return 0;
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return 0;
+    const entries = Object.entries(parsed as Record<string, unknown>);
+    if (entries.length === 0) return 0;
+    const imported: IrisySession[] = [];
+    for (const [projectPath, value] of entries) {
+      if (!Array.isArray(value) || value.length === 0) return 0;
+      const messages: IrisyTextMessage[] = [];
+      for (const message of value) {
+        if (typeof message !== 'object' || message === null) return 0;
+        const candidate = message as Record<string, unknown>;
+        if (
+          typeof candidate.id !== 'string'
+          || (candidate.role !== 'user' && candidate.role !== 'assistant')
+          || typeof candidate.content !== 'string'
+        ) return 0;
+        messages.push({ ...candidate, streaming: false } as unknown as IrisyTextMessage);
+      }
+      const projectName = projectPath.split(/[\\/]/).filter(Boolean).pop() ?? 'Project';
+      const session = makeSession(`Imported: ${projectName}`);
+      session.messages = messages;
+      session.resources = [await registerProject(projectPath)];
+      session.importedFrom = { kind: 'coding', projectPath };
+      imported.push(session);
+    }
+
+    const previous = useIrisySessionsStore.getState();
+    try {
+      useIrisySessionsStore.setState({
+        sessions: [...previous.sessions, ...imported],
+        activeSessionId: imported[0]!.id,
+      });
+      const persisted = window.localStorage.getItem(IRISY_SESSIONS_KEY);
+      if (!persisted || !imported.every((session) => persisted.includes(session.id))) {
+        throw new Error('Canonical Irisy session persistence verification failed');
+      }
+      window.localStorage.removeItem(LEGACY_CODING_SESSIONS_KEY);
+      return imported.length;
+    } catch {
+      try {
+        useIrisySessionsStore.setState({
+          sessions: previous.sessions,
+          activeSessionId: previous.activeSessionId,
+        });
+      } catch {
+        // Zustand applies the in-memory state before its persist write. A
+        // failing storage backend can therefore throw after rollback succeeds.
+      }
+      return 0;
+    }
+  } catch {
+    return 0;
   }
 }

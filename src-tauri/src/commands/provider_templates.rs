@@ -249,7 +249,10 @@ mod tests {
         ];
         retain_executable_templates(&mut templates);
         assert_eq!(
-            templates.iter().map(|template| template.id.as_str()).collect::<Vec<_>>(),
+            templates
+                .iter()
+                .map(|template| template.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["safe", "bedrock-proxy"]
         );
     }

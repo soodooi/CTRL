@@ -47,16 +47,11 @@ pub fn spawn(vault_root: std::path::PathBuf) {
 async fn tick(vault_root: &Path) -> Result<(), String> {
     let cron = read_cron_expression(vault_root)
         .ok_or_else(|| "cron expression unavailable".to_string())?;
-    let (cron_minute, cron_hour) = parse_minute_hour(&cron)
-        .ok_or_else(|| format!("unsupported cron expression: {cron}"))?;
+    let (cron_minute, cron_hour) =
+        parse_minute_hour(&cron).ok_or_else(|| format!("unsupported cron expression: {cron}"))?;
 
     let now = Local::now();
-    let today_yyyy_mm_dd = format!(
-        "{:04}-{:02}-{:02}",
-        now.year(),
-        now.month(),
-        now.day(),
-    );
+    let today_yyyy_mm_dd = format!("{:04}-{:02}-{:02}", now.year(), now.month(), now.day(),);
 
     // Has today's run already happened?
     let sentinel_path = vault_root.join(".ctrl/state/sourcing-last-run.txt");

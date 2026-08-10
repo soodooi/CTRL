@@ -4,20 +4,31 @@
 // surface (bao "session...都要", Kiro-style tab bar). Covers create/switch/
 // close fallback ordering, label derivation, and the legacy single-conversation
 // migration path so an upgrading user's existing chat isn't silently dropped.
+// Canonical import and rollback behavior follows the sole transcript authority.
+// (ADR-005 irisy §11 v40)
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   deriveSessionLabel,
   ensureActiveIrisySession,
+  importLegacyCodingSessions,
   migrateLegacySingleSession,
   useIrisySessionsStore,
 } from './irisy-sessions';
 
 const LEGACY_KEY = 'irisy:chat:v1:test';
+const LEGACY_CODING_KEY = 'ctrl:coding-sessions:v1';
+const IRISY_SESSIONS_KEY = 'ctrl:irisy-sessions:v1';
 
 beforeEach(() => {
   useIrisySessionsStore.setState({ sessions: [], activeSessionId: null });
   window.localStorage.clear();
+});
+
+// Store cleanup never introduces another transcript owner.
+// (ADR-005 irisy §11 v40)
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('deriveSessionLabel', () => {
@@ -108,6 +119,20 @@ describe('useIrisySessionsStore', () => {
     expect(useIrisySessionsStore.getState().sessions[0]?.label).toBe('Renamed');
   });
 
+  // Stable selection is session-owned and expanded facts are never persisted.
+  // (ADR-005 irisy §11 v41)
+  it('setSelectedFct updates only the targeted session and Auto clears it', () => {
+    const a = useIrisySessionsStore.getState().createSession('A');
+    const b = useIrisySessionsStore.getState().createSession('B');
+    useIrisySessionsStore.getState().setSelectedFct(a.id, 'skill:office');
+    let state = useIrisySessionsStore.getState();
+    expect(state.sessions.find((session) => session.id === a.id)?.selectedFctRef).toBe('skill:office');
+    expect(state.sessions.find((session) => session.id === b.id)?.selectedFctRef).toBeUndefined();
+    useIrisySessionsStore.getState().setSelectedFct(a.id, null);
+    state = useIrisySessionsStore.getState();
+    expect(state.sessions.find((session) => session.id === a.id)?.selectedFctRef).toBeUndefined();
+  });
+
   it('setMessages updates only the targeted session', () => {
     const a = useIrisySessionsStore.getState().createSession('A');
     const b = useIrisySessionsStore.getState().createSession('B');
@@ -196,5 +221,85 @@ describe('migrateLegacySingleSession', () => {
     window.localStorage.setItem(LEGACY_KEY, JSON.stringify([]));
     migrateLegacySingleSession(LEGACY_KEY);
     expect(useIrisySessionsStore.getState().sessions).toHaveLength(0);
+  });
+});
+
+// Former Coding history is import material only; these tests prove lossless
+// canonical migration and source preservation on failure.
+// (ADR-005 irisy §11 v40)
+describe('importLegacyCodingSessions', () => {
+  const registerProject = async (_projectPath: string): Promise<string> =>
+    'ctrl://local/project/opaque-project-id';
+  const message = (id: string, role: 'user' | 'assistant' = 'user') => ({
+    id,
+    role,
+    content: `content-${id}`,
+  });
+
+  it('imports every project and message without truncation', async () => {
+    const legacy: Record<string, unknown> = {};
+    for (let project = 0; project < 21; project += 1) {
+      legacy[`/Users/example/project-${project}`] = project === 0
+        ? Array.from({ length: 201 }, (_, index) => message(`m-${index}`, index % 2 === 0 ? 'user' : 'assistant'))
+        : [message(`project-${project}`)];
+    }
+    window.localStorage.setItem(LEGACY_CODING_KEY, JSON.stringify(legacy));
+
+    expect(await importLegacyCodingSessions(registerProject)).toBe(21);
+    const state = useIrisySessionsStore.getState();
+    expect(state.sessions).toHaveLength(21);
+    expect(state.sessions[0]?.messages).toHaveLength(201);
+    expect(window.localStorage.getItem(LEGACY_CODING_KEY)).toBeNull();
+  });
+
+  it('leaves mixed malformed source untouched and imports nothing', async () => {
+    const existing = useIrisySessionsStore.getState().createSession('Existing');
+    const legacy = {
+      '/Users/example/valid': [message('valid')],
+      '/Users/example/broken': [message('valid-2'), { id: 'broken', role: 'tool' }],
+    };
+    const raw = JSON.stringify(legacy);
+    window.localStorage.setItem(LEGACY_CODING_KEY, raw);
+
+    expect(await importLegacyCodingSessions(registerProject)).toBe(0);
+    const state = useIrisySessionsStore.getState();
+    expect(state.sessions.map((session) => session.id)).toEqual([existing.id]);
+    expect(window.localStorage.getItem(LEGACY_CODING_KEY)).toBe(raw);
+  });
+
+  it('binds each imported project as a canonical session ResourceRef', async () => {
+    const projectPath = '/Users/example/My Project';
+    window.localStorage.setItem(
+      LEGACY_CODING_KEY,
+      JSON.stringify({ [projectPath]: [message('one')] }),
+    );
+
+    expect(await importLegacyCodingSessions(registerProject)).toBe(1);
+    const imported = useIrisySessionsStore.getState().sessions[0];
+    expect(imported?.resources).toEqual(['ctrl://local/project/opaque-project-id']);
+    expect(imported?.resources[0]).not.toContain('/Users');
+    expect(imported?.resources[0]).not.toContain('My%20Project');
+    expect(imported?.importedFrom).toEqual({ kind: 'coding', projectPath });
+  });
+
+  it('rolls state back and preserves source when canonical persistence fails', async () => {
+    const existing = useIrisySessionsStore.getState().createSession('Existing');
+    const raw = JSON.stringify({ '/Users/example/project': [message('one')] });
+    window.localStorage.setItem(LEGACY_CODING_KEY, raw);
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function setItem(
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === IRISY_SESSIONS_KEY) throw new DOMException('quota exceeded', 'QuotaExceededError');
+      originalSetItem.call(this, key, value);
+    });
+
+    expect(await importLegacyCodingSessions(registerProject)).toBe(0);
+    const state = useIrisySessionsStore.getState();
+    expect(state.sessions.map((session) => session.id)).toEqual([existing.id]);
+    expect(state.activeSessionId).toBe(existing.id);
+    expect(window.localStorage.getItem(LEGACY_CODING_KEY)).toBe(raw);
   });
 });

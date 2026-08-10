@@ -18,6 +18,4 @@ pub mod rest;
 
 pub use cli::one_shot::OneShotCliProvider;
 pub use http_api::HttpApiProvider;
-pub use rest::{
-    RestAnthropicProvider, RestGoogleProvider, RestOllamaProvider, RestOpenaiProvider,
-};
+pub use rest::{RestAnthropicProvider, RestGoogleProvider, RestOllamaProvider, RestOpenaiProvider};

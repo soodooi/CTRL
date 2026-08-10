@@ -198,9 +198,15 @@ fn verify_sha256(path: &Path, expected_hex: &str) -> Result<()> {
     let bytes = fs::read(path).context("read artifact for checksum")?;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    let got: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let got: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     if !got.eq_ignore_ascii_case(expected_hex) {
-        return Err(anyhow!("checksum mismatch: expected {expected_hex}, got {got}"));
+        return Err(anyhow!(
+            "checksum mismatch: expected {expected_hex}, got {got}"
+        ));
     }
     Ok(())
 }
@@ -220,7 +226,9 @@ fn make_executable(_path: &Path) -> Result<()> {
 }
 
 fn run_ok(cmd: &mut Command, what: &str) -> Result<()> {
-    let out = cmd.output().with_context(|| format!("{what}: spawn failed"))?;
+    let out = cmd
+        .output()
+        .with_context(|| format!("{what}: spawn failed"))?;
     if !out.status.success() {
         return Err(anyhow!(
             "{what} failed: {}",

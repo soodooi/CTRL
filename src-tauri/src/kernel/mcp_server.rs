@@ -22,18 +22,16 @@
 //     stay against those modules, not the MCP envelope.
 
 use crate::kernel::audit;
-use crate::kernel::review_gate;
 use crate::kernel::local_storage::LocalStorage;
-use crate::kernel::visibility::{self, Intent};
+use crate::kernel::review_gate;
 use crate::kernel::runtime::KernelRuntime;
+use crate::kernel::visibility::{self, Intent};
 // Production LLM tools share the explicit verified provider router.
 // (ADR-002 substrate § provider v71)
 use crate::kernel::{
-    ai_column, calendar_source, manifest_source,
-    provider::{
-        routing::route_text_completion, ChatOpts, Consumer, LlmMessage, LlmPrompt,
-    },
-    query, runtime_sources, smart_table_index, tasks_source, vault, vault_doc,
+    ai_column, calendar_source, manifest_source, note_resource, project_resource,
+    provider::{routing::route_text_completion, ChatOpts, Consumer, LlmMessage, LlmPrompt},
+    query, resource, runtime_sources, smart_table_index, tasks_source, vault, vault_doc,
     vault_notes_source, vault_smart_table,
 };
 use anyhow::Result;
@@ -90,13 +88,11 @@ pub struct KernelMcpRouter {
     runtime: Arc<KernelRuntime>,
     local_storage: Option<Arc<LocalStorage>>,
     tool_router: ToolRouter<Self>,
+    /// Sole ResourceRef dispatcher for describe/query/produce.
+    /// (ADR-002 substrate §15 v83)
+    resource_registry: Arc<resource::ResourceRegistry>,
     /// In-flight AI-column jobs (ADR-003 §6.5.4 async run_ai_column).
     ai_jobs: ai_column::JobRegistry,
-    /// Per-vault-path async write locks. Produce verbs hold the matching path
-    /// lock across their whole read-modify-write so concurrent writers
-    /// serialize instead of clobbering each other (full-review P0 lost-update
-    /// fix, 2026-06-21).
-    vault_write_locks: VaultWriteLocks,
     /// Smart-table SQLite derived index (ADR-002 §14 v30 route C). A pure
     /// accelerator: large-table reads route through it, produce writes refresh
     /// it. None when the db can't open — every read falls back to the in-memory
@@ -108,11 +104,6 @@ pub struct KernelMcpRouter {
     /// the emit is then a no-op (ADR-001 spine §3 event_ws, ADR-010 transports).
     bridge: Option<crate::kernel::EventWsBridge>,
 }
-
-/// Registry of per-path write locks (lazily created). The outer mutex guards
-/// the map; each inner mutex serializes produce on one vault path.
-type VaultWriteLocks =
-    Arc<tokio::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>>;
 
 // ─── Tool argument structs ──────────────────────────────────────────────
 // Each tool's args are a struct deriving Deserialize + JsonSchema so rmcp
@@ -142,6 +133,30 @@ pub struct DiagnosticsTraceArgs {
     /// Maximum metadata events to return (1-200, default 100).
     #[serde(default)]
     pub limit: Option<usize>,
+}
+
+// Canonical gate payloads expose only the descriptor-governed three verbs.
+// (ADR-002 substrate §15 v83)
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CanonicalDescribeArgs {
+    /// Canonical ResourceRef, e.g. `ctrl://local/note/daily/2026-08-05.md`.
+    pub r#ref: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CanonicalQueryArgs {
+    /// Canonical ResourceRef.
+    pub r#ref: String,
+    /// Payload governed by the ResourceDescriptor query schema.
+    pub request: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CanonicalProduceArgs {
+    /// Canonical ResourceRef.
+    pub r#ref: String,
+    /// Payload governed by one ResourceDescriptor produce operation schema.
+    pub operation: serde_json::Value,
 }
 
 /// smart_table.query — a structured read over a smart-table RecordSource
@@ -1031,14 +1046,99 @@ impl KernelMcpRouter {
         let st_index = smart_table_index::default_st_index_path()
             .and_then(|p| smart_table_index::SmartTableIndex::open(&p).ok())
             .map(Arc::new);
+        // One registry owns all canonical verb dispatch.
+        // (ADR-002 substrate §15 v83)
+        let resource_registry = Arc::new(resource::ResourceRegistry::default());
+        resource_registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "note".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "markdown-note".to_owned(),
+                owner: Arc::new(note_resource::MarkdownNoteOwner::from_default_vault()),
+            })
+            .expect("register canonical Markdown note Resource owner");
+        resource_registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "project".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "local-project".to_owned(),
+                owner: Arc::new(project_resource::ProjectResourceOwner::from_default_store()),
+            })
+            .expect("register canonical Project Resource owner");
+        resource_registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "system".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "fct-catalog".to_owned(),
+                owner: Arc::new(crate::kernel::fct_catalog::FctCatalogOwner::new(
+                    Arc::clone(&runtime.mcp_host),
+                )),
+            })
+            .expect("register canonical FCT catalog Resource owner");
+        // A conversation is user content, so it is a Resource with a readable
+        // file behind it rather than frontend-only browser state.
+        // (ADR-002 substrate §15 v83)
+        resource_registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "session".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "session-transcript".to_owned(),
+                owner: Arc::new(
+                    crate::kernel::session_resource::SessionResourceOwner::from_default_root(),
+                ),
+            })
+            .expect("register canonical session transcript Resource owner");
+        // A note's tasks are a Resource, so a task write carries staged
+        // before/after and a verified effect rather than a sentence.
+        // (ADR-002 substrate §15 v83)
+        resource_registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "task".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "vault-tasks".to_owned(),
+                owner: Arc::new(crate::kernel::task_resource::TaskResourceOwner::from_default_vault()),
+            })
+            .expect("register canonical task Resource owner");
+        // One event note is one Resource, so an event edit is addressed by
+        // identity rather than by its position in an earlier scan.
+        // (ADR-002 substrate §15 v83)
+        resource_registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "calendar".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "vault-calendar".to_owned(),
+                owner: Arc::new(
+                    crate::kernel::calendar_resource::CalendarResourceOwner::from_default_vault(),
+                ),
+            })
+            .expect("register canonical calendar event Resource owner");
+        // A smart table's cells, with the same write contract as every other
+        // canonical mutation. (ADR-002 substrate §15 v83)
+        resource_registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "table".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "vault-smart-table".to_owned(),
+                owner: Arc::new(
+                    crate::kernel::table_resource::TableResourceOwner::from_default_vault(),
+                ),
+            })
+            .expect("register canonical smart table Resource owner");
         Self {
             runtime,
             local_storage,
             tool_router: Self::tool_router(),
+            // Preserve the single registry instance selected above.
+            // (ADR-002 substrate §15 v83)
+            resource_registry,
             ai_jobs: ai_column::new_registry(),
-            vault_write_locks: Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
             st_index,
             bridge,
         }
@@ -1093,11 +1193,112 @@ impl KernelMcpRouter {
     /// Acquire (creating on first use) the per-path write lock. Hold the
     /// returned guard across the entire read-modify-write of a produce verb so
     /// two concurrent writers on the same vault file cannot clobber each other.
+    /// Delegates to the ONE process-wide registry so a legacy bespoke write and a
+    /// canonical `produce` on the same file cannot interleave. Keeping a second
+    /// per-server map would let a future caller lock the wrong authority.
+    /// (ADR-002 substrate §15.2 v87 clause 7)
     async fn vault_write_lock(&self, path: &str) -> Arc<tokio::sync::Mutex<()>> {
-        let mut map = self.vault_write_locks.lock().await;
-        map.entry(path.to_string())
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone()
+        crate::kernel::vault_write_lock::for_path(path)
+    }
+
+    /// describe(ref) — canonical Resource type/semantic layer.
+    /// (ADR-002 substrate §15 v83)
+    #[tool(
+        description = "Describe one canonical CTRL ResourceRef. Returns its content type, revision, presentation, and descriptor-owned query/produce schemas."
+    )]
+    async fn describe(
+        &self,
+        Parameters(args): Parameters<CanonicalDescribeArgs>,
+        request_context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let resource_ref = parse_resource_ref(&args.r#ref)?;
+        let context = canonical_resource_context(&request_context);
+        match self
+            .resource_registry
+            .describe(&context, &resource_ref)
+            .await
+        {
+            Ok(descriptor) => json_tool_result(&descriptor),
+            Err(error) => resource_error_result(error, &resource_ref),
+        }
+    }
+
+    /// query(ref, request) — canonical read-only Resource operation.
+    /// (ADR-002 substrate §15 v83)
+    #[tool(
+        description = "Read one canonical CTRL ResourceRef. Call describe first; request must match the descriptor-owned query schema. Query is always side-effect-free."
+    )]
+    async fn query(
+        &self,
+        Parameters(args): Parameters<CanonicalQueryArgs>,
+        request_context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let resource_ref = parse_resource_ref(&args.r#ref)?;
+        let context = canonical_resource_context(&request_context);
+        match self
+            .resource_registry
+            .query(&context, &resource_ref, args.request)
+            .await
+        {
+            Ok(result) => json_tool_result(&result),
+            Err(error) => resource_error_result(error, &resource_ref),
+        }
+    }
+
+    /// produce(ref, operation) — canonical side-effecting Resource operation.
+    /// Descriptor binding and schema validation occur before ReviewGate; the
+    /// prepared operation retains that exact owner snapshot across approval.
+    /// (ADR-002 substrate §15 v83)
+    #[tool(
+        description = "Mutate or act on one canonical CTRL ResourceRef. Call describe first; operation must match an advertised schema. A call from an autonomous caller passes through ReviewGate; direct user-surface actions are governed by the existing gate policy instead."
+    )]
+    async fn produce(
+        &self,
+        Parameters(args): Parameters<CanonicalProduceArgs>,
+        request_context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let resource_ref = parse_resource_ref(&args.r#ref)?;
+        let context = canonical_resource_context(&request_context);
+        let prepared = match self
+            .resource_registry
+            .prepare_produce(&context, &resource_ref, args.operation.clone())
+            .await
+        {
+            Ok(prepared) => prepared,
+            Err(error) => return resource_error_result(error, &resource_ref),
+        };
+
+        if review_gate::ReviewGate::enforcing() && !visibility::is_user_surface(&context.caller) {
+            let summary = summarize_args(Some(&serde_json::Map::from_iter([
+                ("ref".to_owned(), serde_json::json!(resource_ref)),
+                ("operation".to_owned(), args.operation),
+            ])));
+            // The human sees what will change, taken from the prepared owner
+            // Outcome; a missing stage stays missing rather than being replaced
+            // by an argument dump. (ADR-002 substrate §15.5.3 v86; §15.2 v87)
+            let outcome_facts = prepared.review_facts(&context).await;
+            let decision = self.runtime.review_gate.request_with_outcome(
+                &context.caller,
+                "produce",
+                summary,
+                outcome_facts,
+            );
+            let approved = matches!(
+                tokio::time::timeout(review_gate::REVIEW_TIMEOUT, decision).await,
+                Ok(Ok(true))
+            );
+            if !approved {
+                return Err(McpError::invalid_request(
+                    "tool 'produce' denied at the review gate (no approval)",
+                    None,
+                ));
+            }
+        }
+
+        match prepared.execute(&context).await {
+            Ok(result) => json_tool_result(&result),
+            Err(error) => resource_error_result(error, &resource_ref),
+        }
     }
 
     /// gate.tool_search — the tool-discovery layer. The brain's curated list is a
@@ -1142,12 +1343,8 @@ impl KernelMcpRouter {
         let mut scored: Vec<(usize, _)> = all
             .into_iter()
             .filter_map(|t| {
-                let hay = format!(
-                    "{} {}",
-                    t.name,
-                    t.description.as_deref().unwrap_or("")
-                )
-                .to_lowercase();
+                let hay =
+                    format!("{} {}", t.name, t.description.as_deref().unwrap_or("")).to_lowercase();
                 let score = terms.iter().filter(|term| hay.contains(*term)).count();
                 (score > 0).then_some((score, t))
             })
@@ -1181,9 +1378,15 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<GateToolCallArgs>,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, McpError> {
-        if args.name == "gate_tool_call" || args.name == "gate_tool_search" {
+        // Canonical verbs must retain their direct authorization, audit, and
+        // ReviewGate path instead of re-entering through a generic meta-call.
+        // (ADR-002 substrate §15 v83)
+        if matches!(
+            args.name.as_str(),
+            "gate_tool_call" | "gate_tool_search" | "describe" | "query" | "produce"
+        ) {
             return Err(McpError::invalid_params(
-                "gate_tool_call cannot call the tool-discovery tools themselves",
+                "gate_tool_call cannot call discovery or canonical Resource tools; call the canonical verb directly",
                 None,
             ));
         }
@@ -1243,12 +1446,16 @@ impl KernelMcpRouter {
             "provider_chain": provider_chain,
             "mcp_servers_installed": installed.len(),
         });
-        Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
+        Ok(CallToolResult::success(vec![Content::text(
+            body.to_string(),
+        )]))
     }
 
     /// diagnostics.status — read-only module health projection.
     /// (ADR-010 communication § diagnostics v11)
-    #[tool(description = "Read metadata-only health for Irisy, Coding, or Notes. Does not start, stop, or rebuild any owner.")]
+    #[tool(
+        description = "Read metadata-only health for Irisy, Coding, or Notes. Does not start, stop, or rebuild any owner."
+    )]
     async fn diagnostics_status(
         &self,
         Parameters(args): Parameters<DiagnosticsModuleArgs>,
@@ -1260,7 +1467,9 @@ impl KernelMcpRouter {
 
     /// diagnostics.smoke — one-shot non-mutating owner probe.
     /// (ADR-010 communication § diagnostics v11)
-    #[tool(description = "Run a non-mutating metadata-only smoke probe for Irisy, Coding, or Notes. Never sends a prompt, spawns a process, starts a watcher, or rebuilds an index.")]
+    #[tool(
+        description = "Run a non-mutating metadata-only smoke probe for Irisy, Coding, or Notes. Never sends a prompt, spawns a process, starts a watcher, or rebuilds an index."
+    )]
     async fn diagnostics_smoke(
         &self,
         Parameters(args): Parameters<DiagnosticsModuleArgs>,
@@ -1272,7 +1481,9 @@ impl KernelMcpRouter {
 
     /// diagnostics.trace — bounded correlated lifecycle breadcrumbs.
     /// (ADR-010 communication § diagnostics v11)
-    #[tool(description = "Read a bounded metadata-only lifecycle timeline for Irisy, Coding, or Notes, optionally filtered by correlation_id. Raw prompts, tool data, PTY I/O, note bodies, secrets, and absolute paths are never returned.")]
+    #[tool(
+        description = "Read a bounded metadata-only lifecycle timeline for Irisy, Coding, or Notes, optionally filtered by correlation_id. Raw prompts, tool data, PTY I/O, note bodies, secrets, and absolute paths are never returned."
+    )]
     async fn diagnostics_trace(
         &self,
         Parameters(args): Parameters<DiagnosticsTraceArgs>,
@@ -1321,7 +1532,9 @@ impl KernelMcpRouter {
             "operators": describe.operators,
             "relations": table.relations,
         });
-        Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
+        Ok(CallToolResult::success(vec![Content::text(
+            body.to_string(),
+        )]))
     }
 
     /// smart_table.query — the read half of the Unified Operation Interface
@@ -1345,9 +1558,14 @@ impl KernelMcpRouter {
         let now = chrono::Local::now().date_naive();
         // ONE authoritative §14 query path, shared with the Tauri command surface
         // (SC5 dual-surface collapse — they had drifted: index vs in-memory).
-        let (table, mut result) =
-            vault_smart_table::query_smart_table(self.st_index.as_deref(), &root, &args.path, &req, now)
-                .map_err(|e| McpError::invalid_params(e, None))?;
+        let (table, mut result) = vault_smart_table::query_smart_table(
+            self.st_index.as_deref(),
+            &root,
+            &args.path,
+            &req,
+            now,
+        )
+        .map_err(|e| McpError::invalid_params(e, None))?;
         // Surface computed relational columns (Lookup / Rollup) into the result
         // rows — query-time derivatives, never written to markdown (slice 4c).
         // Caller-side post-step (the PWA computes relations client-side).
@@ -1432,7 +1650,9 @@ impl KernelMcpRouter {
     /// record-delete parity). Reads fresh, removes the row by index, re-serializes,
     /// writes back. Routed through the gate so it is audited + review-gated (a
     /// destructive write, like vault.delete).
-    #[tool(description = "Delete a row from a smart table by zero-based row index, then write it back.")]
+    #[tool(
+        description = "Delete a row from a smart table by zero-based row index, then write it back."
+    )]
     async fn smart_table_delete_row(
         &self,
         Parameters(args): Parameters<SmartTableDeleteRowArgs>,
@@ -1504,7 +1724,10 @@ impl KernelMcpRouter {
                 frontmatter
                     .as_object_mut()
                     .ok_or_else(|| McpError::internal_error("frontmatter not an object", None))?
-                    .insert("schema".into(), serde_json::json!([serde_json::Value::Object(item)]));
+                    .insert(
+                        "schema".into(),
+                        serde_json::json!([serde_json::Value::Object(item)]),
+                    );
             }
         }
         let new_body = table.serialize_body();
@@ -1522,7 +1745,9 @@ impl KernelMcpRouter {
     /// field-delete parity). Removes the field from the frontmatter `schema` (by
     /// key, both object + flow-string forms) and from every row. Schema write →
     /// audited + review-gated.
-    #[tool(description = "Delete a column from a smart table by schema key (drops it from the schema + every row).")]
+    #[tool(
+        description = "Delete a column from a smart table by schema key (drops it from the schema + every row)."
+    )]
     async fn smart_table_delete_field(
         &self,
         Parameters(args): Parameters<SmartTableDeleteFieldArgs>,
@@ -1608,7 +1833,10 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<SmartTableCreateArgs>,
     ) -> Result<CallToolResult, McpError> {
         if args.fields.is_empty() {
-            return Err(McpError::invalid_params("a table needs at least one field", None));
+            return Err(McpError::invalid_params(
+                "a table needs at least one field",
+                None,
+            ));
         }
         let root = vault_root()?;
         let fields: Vec<query::FieldSpec> = args
@@ -1630,7 +1858,9 @@ impl KernelMcpRouter {
             let table = vault_smart_table::SmartTable::parse(&frontmatter, &body);
             table.reindex_into(idx, &path);
         }
-        Ok(CallToolResult::success(vec![Content::text(format!("created table {path}"))]))
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "created table {path}"
+        ))]))
     }
 
     /// smart_table.base_scaffold — build a whole multi-sheet BASE in one atomic
@@ -1645,7 +1875,10 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<BaseScaffoldArgs>,
     ) -> Result<CallToolResult, McpError> {
         if args.tables.is_empty() {
-            return Err(McpError::invalid_params("a base needs at least one table", None));
+            return Err(McpError::invalid_params(
+                "a base needs at least one table",
+                None,
+            ));
         }
         for t in &args.tables {
             if t.fields.is_empty() {
@@ -1689,7 +1922,9 @@ impl KernelMcpRouter {
 
     /// smart_table.batch_append_rows — produce many rows in one write (ADR-002 §14;
     /// Bitable batchCreate parity). Reads fresh, appends all, one re-serialize.
-    #[tool(description = "Append multiple rows to a smart table in one call (each row = values keyed by field key). Bitable batch-create parity.")]
+    #[tool(
+        description = "Append multiple rows to a smart table in one call (each row = values keyed by field key). Bitable batch-create parity."
+    )]
     async fn smart_table_batch_append_rows(
         &self,
         Parameters(args): Parameters<SmartTableBatchAppendArgs>,
@@ -1699,7 +1934,12 @@ impl KernelMcpRouter {
         let _write_guard = lock.lock().await;
         let entry = vault::read(&root, &args.path).map_err(map_vault_err)?;
         let mut table = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
-        let n = table.append_rows(args.rows.into_iter().map(|r| r.into_iter().collect()).collect());
+        let n = table.append_rows(
+            args.rows
+                .into_iter()
+                .map(|r| r.into_iter().collect())
+                .collect(),
+        );
         let new_body = table.serialize_body();
         vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
         if let Some(idx) = self.st_index.as_deref() {
@@ -1713,7 +1953,9 @@ impl KernelMcpRouter {
 
     /// smart_table.batch_delete_rows — delete many rows in one write (ADR-002 §14;
     /// Bitable batchDelete parity). Descending-order removal; out-of-range ignored.
-    #[tool(description = "Delete multiple rows from a smart table by zero-based indices in one call (out-of-range + duplicate indices ignored). Bitable batch-delete parity.")]
+    #[tool(
+        description = "Delete multiple rows from a smart table by zero-based indices in one call (out-of-range + duplicate indices ignored). Bitable batch-delete parity."
+    )]
     async fn smart_table_batch_delete_rows(
         &self,
         Parameters(args): Parameters<SmartTableBatchDeleteArgs>,
@@ -1885,7 +2127,9 @@ impl KernelMcpRouter {
             now,
         )
         .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!("created task in {path}"))]))
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "created task in {path}"
+        ))]))
     }
 
     /// task.update — the produce/write verb (ADR-002 §14): rewrite one checkbox
@@ -1944,7 +2188,9 @@ impl KernelMcpRouter {
         source
             .produce(args.op)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!("task produce {summary}"))]))
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "task produce {summary}"
+        ))]))
     }
 
     /// calendar.describe — the calendar source's type layer (ADR-002 §14.13
@@ -2012,7 +2258,9 @@ impl KernelMcpRouter {
         source
             .produce(args.op)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(format!("calendar produce {summary}"))]))
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "calendar produce {summary}"
+        ))]))
     }
 
     /// doc.produce — the UNIFIED §14.13 write verb over one markdown note (the
@@ -2051,8 +2299,7 @@ impl KernelMcpRouter {
                 // write_body, NOT write: raw frontmatter bytes pass through
                 // verbatim (key order / comments / quoting), and a plain note
                 // without frontmatter stays writable + fm-less.
-                vault::write_body(&root, &args.path, &doc.serialize())
-                    .map_err(map_vault_err)?;
+                vault::write_body(&root, &args.path, &doc.serialize()).map_err(map_vault_err)?;
             }
         }
         Ok(CallToolResult::success(vec![Content::text(format!(
@@ -2282,10 +2529,14 @@ impl KernelMcpRouter {
         &self,
         Parameters(args): Parameters<McpPackProvisionArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
+        let dir =
+            crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
         let path = dir.join(&args.mcp_id).join("manifest.json");
         let bytes = std::fs::read(&path).map_err(|e| {
-            McpError::invalid_params(format!("no installed manifest for {}: {e}", args.mcp_id), None)
+            McpError::invalid_params(
+                format!("no installed manifest for {}: {e}", args.mcp_id),
+                None,
+            )
         })?;
         let manifest: serde_json::Value = serde_json::from_slice(&bytes).map_err(map_serde_err)?;
         let summary = crate::kernel::pack_provision::install_pack(&args.mcp_id, &manifest)
@@ -2326,14 +2577,20 @@ impl KernelMcpRouter {
         Parameters(args): Parameters<McpPackScaffoldArgs>,
     ) -> Result<CallToolResult, McpError> {
         let method = args.method.as_deref().unwrap_or("GET");
-        let scaffold = crate::kernel::openapi::record_source_from_openapi(&args.openapi, &args.path, method)
-            .ok_or_else(|| {
+        let scaffold =
+            crate::kernel::openapi::record_source_from_openapi(&args.openapi, &args.path, method)
+                .ok_or_else(|| {
                 McpError::invalid_params(
-                    format!("no {} operation at '{}' in the OpenAPI spec", method.to_uppercase(), args.path),
+                    format!(
+                        "no {} operation at '{}' in the OpenAPI spec",
+                        method.to_uppercase(),
+                        args.path
+                    ),
                     None,
                 )
             })?;
-        let out = serde_json::json!({ "record_source": scaffold.record_source, "notes": scaffold.notes });
+        let out =
+            serde_json::json!({ "record_source": scaffold.record_source, "notes": scaffold.notes });
         let body = serde_json::to_string(&out).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
@@ -2362,7 +2619,10 @@ impl KernelMcpRouter {
                 crate::kernel::pack_publish::PublishError::Blocked(issues) => {
                     // Surface the eval issues so the author fixes them (not published).
                     let detail = serde_json::to_string(&issues).unwrap_or_default();
-                    McpError::invalid_params(format!("pack has eval errors, not published: {detail}"), None)
+                    McpError::invalid_params(
+                        format!("pack has eval errors, not published: {detail}"),
+                        None,
+                    )
                 }
                 other => McpError::internal_error(other.to_string(), None),
             })?;
@@ -2451,7 +2711,8 @@ impl KernelMcpRouter {
         let rows_written = ai_column::apply_results(&mut table, &args.target_field, &results);
         if rows_written > 0 {
             let new_body = table.serialize_body();
-            vault::write(&root, &args.path, &new_body, &entry.frontmatter).map_err(map_vault_err)?;
+            vault::write(&root, &args.path, &new_body, &entry.frontmatter)
+                .map_err(map_vault_err)?;
             // Write-through: refresh the derived index from the just-written table.
             if let Some(idx) = self.st_index.as_deref() {
                 table.reindex_into(idx, &args.path);
@@ -2503,7 +2764,10 @@ impl KernelMcpRouter {
         let planned = plan.len();
         let job_id = Uuid::new_v4().to_string();
         let state = ai_column::new_job(planned);
-        self.ai_jobs.write().await.insert(job_id.clone(), state.clone());
+        self.ai_jobs
+            .write()
+            .await
+            .insert(job_id.clone(), state.clone());
 
         // Background job — non-blocking; the tool returns the id immediately.
         let runtime = self.runtime.clone();
@@ -2607,8 +2871,12 @@ impl KernelMcpRouter {
                         vault_smart_table::SmartTable::parse(&fresh.frontmatter, &fresh.content);
                     let written = ai_column::apply_results(&mut table, &target, &results);
                     if written > 0 {
-                        let _ =
-                            vault::write(&root2, &path, &table.serialize_body(), &fresh.frontmatter);
+                        let _ = vault::write(
+                            &root2,
+                            &path,
+                            &table.serialize_body(),
+                            &fresh.frontmatter,
+                        );
                     }
                     state.write().await.rows_written = written;
                 }
@@ -2635,12 +2903,16 @@ impl KernelMcpRouter {
         });
 
         let body = serde_json::json!({ "job_id": job_id, "rows_planned": planned });
-        Ok(CallToolResult::success(vec![Content::text(body.to_string())]))
+        Ok(CallToolResult::success(vec![Content::text(
+            body.to_string(),
+        )]))
     }
 
     /// smart_table.run_ai_column.status — poll an async AI-column job (the
     /// authoritative truth; ADR-003 §6.5.4).
-    #[tool(description = "Get the status of an AI-column job: phase, rows_done/total, rows_written, errors.")]
+    #[tool(
+        description = "Get the status of an AI-column job: phase, rows_done/total, rows_written, errors."
+    )]
     async fn smart_table_run_ai_column_status(
         &self,
         Parameters(args): Parameters<JobIdArgs>,
@@ -2658,7 +2930,9 @@ impl KernelMcpRouter {
     }
 
     /// smart_table.run_ai_column.cancel — cooperatively cancel a running job.
-    #[tool(description = "Cancel an in-flight AI-column job by id (already-written cells are kept).")]
+    #[tool(
+        description = "Cancel an in-flight AI-column job by id (already-written cells are kept)."
+    )]
     async fn smart_table_run_ai_column_cancel(
         &self,
         Parameters(args): Parameters<JobIdArgs>,
@@ -2697,7 +2971,10 @@ impl KernelMcpRouter {
         };
         if let Some(g) = &args.group_by {
             if !table.fields.iter().any(|f| &f.key == g) {
-                return Err(McpError::invalid_params(format!("field_not_found: '{g}'"), None));
+                return Err(McpError::invalid_params(
+                    format!("field_not_found: '{g}'"),
+                    None,
+                ));
             }
         } else if matches!(args.kind, ViewKind::Kanban) {
             return Err(McpError::invalid_params(
@@ -2820,7 +3097,14 @@ impl KernelMcpRouter {
                 r.insert("models".into(), e.models.len().to_string());
                 // The §14 row mirrors provider-list facts without collapsing
                 // them into a ready bit. (ADR-002 substrate § provider v71)
-                r.insert("configured".into(), if e.configured { "x".into() } else { String::new() });
+                r.insert(
+                    "configured".into(),
+                    if e.configured {
+                        "x".into()
+                    } else {
+                        String::new()
+                    },
+                );
                 let runtime_status = serde_json::to_value(&e.runtime_status)
                     .ok()
                     .and_then(|value| value.as_str().map(str::to_string))
@@ -2828,7 +3112,14 @@ impl KernelMcpRouter {
                 r.insert("runtime_status".into(), runtime_status);
                 // Verification and role bindings remain separate provider facts
                 // in the shared query surface. (ADR-002 substrate § provider v71)
-                r.insert("verified".into(), if e.verified { "x".into() } else { String::new() });
+                r.insert(
+                    "verified".into(),
+                    if e.verified {
+                        "x".into()
+                    } else {
+                        String::new()
+                    },
+                );
                 r.insert("active_roles".into(), e.active_roles.join(", "));
                 r.insert("capabilities".into(), e.capabilities.join(", "));
                 r
@@ -2945,8 +3236,13 @@ impl KernelMcpRouter {
         let entry = vault::read(&root, &path).ok();
         let exists = entry.is_some();
         if !exists && args.create {
-            vault::write(&root, &path, "", &periodic_notes::seed_frontmatter(args.period))
-                .map_err(map_vault_err)?;
+            vault::write(
+                &root,
+                &path,
+                "",
+                &periodic_notes::seed_frontmatter(args.period),
+            )
+            .map_err(map_vault_err)?;
         }
         let body = serde_json::to_string(&serde_json::json!({
             "path": path,
@@ -3033,12 +3329,13 @@ impl KernelMcpRouter {
         let root = vault_root()?;
         // Validate existence so the UI never navigates to a dead path.
         vault::read(&root, &args.path).map_err(map_vault_err)?;
-        let delivered = self.runtime.ui_bridge.request_open(
-            crate::kernel::ui_bridge::OpenNoteRequest {
-                path: args.path.clone(),
-                heading: args.heading.clone(),
-            },
-        );
+        let delivered =
+            self.runtime
+                .ui_bridge
+                .request_open(crate::kernel::ui_bridge::OpenNoteRequest {
+                    path: args.path.clone(),
+                    heading: args.heading.clone(),
+                });
         let body = serde_json::to_string(&serde_json::json!({
             "path": args.path,
             "delivered": delivered,
@@ -3059,7 +3356,9 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         if !root.join(".git").is_dir() {
-            return Ok(CallToolResult::success(vec![Content::text("[]".to_string())]));
+            return Ok(CallToolResult::success(vec![Content::text(
+                "[]".to_string(),
+            )]));
         }
         let limit = args.limit.unwrap_or(20);
         let hist = crate::kernel::vault_git::note_history(&root, &args.path, limit)
@@ -3149,7 +3448,9 @@ impl KernelMcpRouter {
 
     /// vault.mentions — substring matches across body, excluding linked
     /// occurrences (the unlinked-mention view).
-    #[tool(description = "Find unlinked mentions of text across the vault (excludes [[wikilinked]] hits)")]
+    #[tool(
+        description = "Find unlinked mentions of text across the vault (excludes [[wikilinked]] hits)"
+    )]
     async fn vault_mentions(
         &self,
         Parameters(args): Parameters<VaultMentionArgs>,
@@ -3201,8 +3502,7 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         let entry = vault::read(&root, &args.from).map_err(map_vault_err)?;
-        vault::write(&root, &args.to, &entry.content, &entry.frontmatter)
-            .map_err(map_vault_err)?;
+        vault::write(&root, &args.to, &entry.content, &entry.frontmatter).map_err(map_vault_err)?;
         vault::delete(&root, &args.from).map_err(map_vault_err)?;
         // Link-aware (ADR-002 §1.9 v46 E11): rewrite [[wikilinks]] that pointed
         // at the old name so an Irisy rename never silently breaks links (the
@@ -3224,8 +3524,7 @@ impl KernelMcpRouter {
     ) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         let entry = vault::read(&root, &args.from).map_err(map_vault_err)?;
-        vault::write(&root, &args.to, &entry.content, &entry.frontmatter)
-            .map_err(map_vault_err)?;
+        vault::write(&root, &args.to, &entry.content, &entry.frontmatter).map_err(map_vault_err)?;
         vault::delete(&root, &args.from).map_err(map_vault_err)?;
         Ok(CallToolResult::success(vec![Content::text(format!(
             "moved {} -> {}",
@@ -3295,7 +3594,9 @@ impl KernelMcpRouter {
     /// vault.watch — drain filesystem events since `since_ms`. Lazy-
     /// starts the watcher on first call so external MCP clients don't
     /// need a separate setup step.
-    #[tool(description = "Drain recent vault filesystem events since a millis cursor (lazy-starts watcher)")]
+    #[tool(
+        description = "Drain recent vault filesystem events since a millis cursor (lazy-starts watcher)"
+    )]
     async fn vault_watch(
         &self,
         Parameters(args): Parameters<VaultWatchArgs>,
@@ -3312,7 +3613,9 @@ impl KernelMcpRouter {
     /// vault.sourcing_run — run the kernel-seeded sourcing routine for
     /// `date` (YYYY-MM-DD) and overwrite the matching review-queue
     /// file. Idempotent.
-    #[tool(description = "Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file")]
+    #[tool(
+        description = "Run the kernel sourcing routine for the given YYYY-MM-DD date and write the review-queue file"
+    )]
     async fn vault_sourcing_run(
         &self,
         Parameters(args): Parameters<VaultSourcingRunMcpArgs>,
@@ -3337,8 +3640,8 @@ impl KernelMcpRouter {
         let value = ls
             .get(&args.namespace, &args.key)
             .map_err(|e| McpError::internal_error(format!("kv.get: {e}"), None))?;
-        let body =
-            serde_json::to_string(&value.unwrap_or(serde_json::Value::Null)).map_err(map_serde_err)?;
+        let body = serde_json::to_string(&value.unwrap_or(serde_json::Value::Null))
+            .map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -3442,10 +3745,12 @@ impl KernelMcpRouter {
     /// NOT downstream MCP servers (that's mcp_list_servers). Lets the brain see
     /// what tools it already has + their actions before running or installing
     /// (bao 2026-06-25: Irisy uses feature packs). Reuses the Tauri command core.
-    #[tool(description = "List installed feature packs (the user's own mcps), with id/name/actions")]
+    #[tool(
+        description = "List installed feature packs (the user's own mcps), with id/name/actions"
+    )]
     async fn mcp_pack_list(&self) -> Result<CallToolResult, McpError> {
-        let dir = crate::commands::kernel::mcp_dir()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let dir =
+            crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
         let summaries = crate::commands::kernel::list_installed_in(&dir);
         let body = serde_json::to_string(&summaries).map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
@@ -3468,8 +3773,8 @@ impl KernelMcpRouter {
                 Some(data),
             ));
         }
-        let dir = crate::commands::kernel::mcp_dir()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let dir =
+            crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
         let manifest = args.manifest.clone();
         let install_args = crate::commands::kernel::InstallMcpArgs {
             manifest: args.manifest,
@@ -3481,7 +3786,10 @@ impl KernelMcpRouter {
         // Notify the PWA so it reloads its pack list (+ can auto-open). A
         // brain/gate install otherwise never reaches the frontend — its
         // `PACKS_CHANGED_EVENT` is browser-only, fired only by PWA-side installs.
-        let installed_id = manifest.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+        let installed_id = manifest
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         self.notify_packs_changed("installed", installed_id);
         // mcp-server variant (ADR-002 §7 Pattern D): a manifest may declare a
         // `server` block — a local MCP server the pack IS. Consume it here:
@@ -3506,7 +3814,11 @@ impl KernelMcpRouter {
             let cmd_args: Vec<String> = server
                 .get("args")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
             if !command.is_empty() {
                 let desc = crate::kernel::mcp_host::McpServerDescriptor {
@@ -3588,8 +3900,8 @@ impl KernelMcpRouter {
         &self,
         Parameters(args): Parameters<McpPackRunArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = crate::commands::kernel::mcp_dir()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let dir =
+            crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
         let output = tokio::task::spawn_blocking(move || {
             crate::commands::kernel::run_action_blocking(&dir, &args.mcp_id, &args.action_id)
         })
@@ -3603,13 +3915,15 @@ impl KernelMcpRouter {
     /// the user's packs, e.g. "uninstall the stocks pack and let's redo it").
     /// Same remove path the PWA uses; errors clearly if the pack isn't installed
     /// so the brain reports "X was not installed" instead of faking success.
-    #[tool(description = "Uninstall a feature pack by id (removes it from the user's installed packs)")]
+    #[tool(
+        description = "Uninstall a feature pack by id (removes it from the user's installed packs)"
+    )]
     async fn mcp_pack_uninstall(
         &self,
         Parameters(args): Parameters<McpPackUninstallArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = crate::commands::kernel::mcp_dir()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let dir =
+            crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
         // Stop both deterministic Actor identities before removing local truth;
         // manifest drift cannot orphan a child. (ADR-004 cap §1 v13)
         for server_id in crate::kernel::mcp_host::installed_pack_actor_ids(&args.mcp_id) {
@@ -3634,17 +3948,21 @@ impl KernelMcpRouter {
     /// install_into carries only manifest + server code). The path stays inside
     /// the pack dir (no traversal). This is how Irisy ships a pack WITH a skill:
     /// install the manifest, then write each declared skill/asset file.
-    #[tool(description = "Write a skill or asset file (e.g. skills/<name>/SKILL.md) into an installed feature pack")]
+    #[tool(
+        description = "Write a skill or asset file (e.g. skills/<name>/SKILL.md) into an installed feature pack"
+    )]
     async fn mcp_pack_write_file(
         &self,
         Parameters(args): Parameters<McpPackWriteFileArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let dir = crate::commands::kernel::mcp_dir()
-            .map_err(|e| McpError::internal_error(e, None))?;
+        let dir =
+            crate::commands::kernel::mcp_dir().map_err(|e| McpError::internal_error(e, None))?;
         crate::commands::kernel::write_pack_file(&dir, &args.mcp_id, &args.path, &args.content)
             .map_err(|e| McpError::invalid_params(e, None))?;
-        let body = serde_json::to_string(&serde_json::json!({ "wrote": args.path, "mcp_id": args.mcp_id }))
-            .map_err(map_serde_err)?;
+        let body = serde_json::to_string(
+            &serde_json::json!({ "wrote": args.path, "mcp_id": args.mcp_id }),
+        )
+        .map_err(map_serde_err)?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -3657,15 +3975,23 @@ impl KernelMcpRouter {
         &self,
         Parameters(args): Parameters<HttpGetArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let body = http_request(reqwest::Method::GET, args.url, args.headers, None, args.timeout_ms)
-            .await?;
+        let body = http_request(
+            reqwest::Method::GET,
+            args.url,
+            args.headers,
+            None,
+            args.timeout_ms,
+        )
+        .await?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
     /// http.post — POST to any HTTPS URL. Base mcp atomic. Used by
     /// composite mcps that need to trigger external workflows
     /// (n8n webhooks, Coze bot API, generic REST POST).
-    #[tool(description = "HTTP POST request — send JSON or text body and return status + body + headers")]
+    #[tool(
+        description = "HTTP POST request — send JSON or text body and return status + body + headers"
+    )]
     async fn http_post(
         &self,
         Parameters(args): Parameters<HttpPostArgs>,
@@ -3702,7 +4028,10 @@ start with ^ (e.g. ^GSPC, ^IXIC, ^HSI)."
             return Err(McpError::invalid_params("symbols must not be empty", None));
         }
         if args.symbols.len() > 50 {
-            return Err(McpError::invalid_params("at most 50 symbols per call", None));
+            return Err(McpError::invalid_params(
+                "at most 50 symbols per call",
+                None,
+            ));
         }
         let mut out: Vec<serde_json::Value> = Vec::with_capacity(args.symbols.len());
         for sym in &args.symbols {
@@ -3843,12 +4172,10 @@ server before authoring one."
         &self,
         Parameters(args): Parameters<DiscoverPacksArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let body = crate::commands::pack_registry::discover_packs(
-            args.query,
-            args.limit.unwrap_or(25),
-        )
-        .await
-        .map_err(|e| McpError::internal_error(e, None))?;
+        let body =
+            crate::commands::pack_registry::discover_packs(args.query, args.limit.unwrap_or(25))
+                .await
+                .map_err(|e| McpError::internal_error(e, None))?;
         Ok(CallToolResult::success(vec![Content::text(body)]))
     }
 
@@ -3887,7 +4214,9 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
     /// plugin cache), so the brain can reuse a skill the user already has before
     /// authoring one or searching GitHub (discover_skills). Returns name /
     /// description / path; pass the path to skill_read to see the full SKILL.md.
-    #[tool(description = "List the user's local installed skills (name + description + path), optional keyword filter")]
+    #[tool(
+        description = "List the user's local installed skills (name + description + path), optional keyword filter"
+    )]
     async fn skill_list(
         &self,
         Parameters(args): Parameters<SkillListArgs>,
@@ -3936,9 +4265,7 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
     }
 
     /// mcp.proxy_call_tool — invoke a tool on a downstream MCP server.
-    #[tool(
-        description = "Invoke a tool on a downstream MCP server (kernel proxies the call)"
-    )]
+    #[tool(description = "Invoke a tool on a downstream MCP server (kernel proxies the call)")]
     async fn mcp_proxy_call_tool(
         &self,
         Parameters(args): Parameters<McpProxyCallArgs>,
@@ -3999,7 +4326,9 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
     /// on-disk truth. Returns the indexed-file count. Slow on big
     /// vaults; bao 2026-06-03 — exposed so creators have a recovery
     /// path if the index ever drifts.
-    #[tool(description = "Rebuild the FTS5 vault search index from disk (returns indexed file count)")]
+    #[tool(
+        description = "Rebuild the FTS5 vault search index from disk (returns indexed file count)"
+    )]
     async fn vault_rebuild_index(&self) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         let count = vault::rebuild_index(&root)
@@ -4014,7 +4343,9 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
     /// AI-generated image) into the vault, optionally with a sidecar
     /// markdown carrying the generation prompt + provider so the FTS
     /// index can surface it later.
-    #[tool(description = "Write a binary image asset to the vault (optionally with sidecar .md frontmatter)")]
+    #[tool(
+        description = "Write a binary image asset to the vault (optionally with sidecar .md frontmatter)"
+    )]
     async fn vault_write_image(
         &self,
         Parameters(args): Parameters<VaultWriteImageArgs>,
@@ -4034,7 +4365,9 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
                 let stem = p.with_extension("md");
                 stem.to_string_lossy().to_string()
             };
-            let fm = args.sidecar_frontmatter.unwrap_or_else(|| serde_json::json!({}));
+            let fm = args
+                .sidecar_frontmatter
+                .unwrap_or_else(|| serde_json::json!({}));
             vault::write(&root, &sidecar_path, &md, &fm).map_err(map_vault_err)?;
         }
         Ok(CallToolResult::success(vec![Content::text(format!(
@@ -4092,9 +4425,9 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
         let root = vault_root()?;
         vault::write(&root, "irisy/SOUL.md", &args.body, &args.frontmatter)
             .map_err(map_vault_err)?;
-        Ok(CallToolResult::success(vec![Content::text(
-            String::from("irisy/SOUL.md updated"),
-        )]))
+        Ok(CallToolResult::success(vec![Content::text(String::from(
+            "irisy/SOUL.md updated",
+        ))]))
     }
 
     // ── 5 NEW Vault embeddings MCP tools (ADR-002 v5 §10.4, 2026-06-03) ────
@@ -4136,7 +4469,9 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
     }
 
     /// vault.reembed_all — bulk re-embed. Respects `force`.
-    #[tool(description = "Re-embed all vault notes (bulk; respects content_hash unless force=true)")]
+    #[tool(
+        description = "Re-embed all vault notes (bulk; respects content_hash unless force=true)"
+    )]
     async fn vault_reembed_all(
         &self,
         Parameters(args): Parameters<VaultReembedAllArgs>,
@@ -4184,7 +4519,9 @@ pack, to find a reusable skill before writing one. Requires a GitHub token."
     }
 
     /// vault.embedding_status — snapshot of the index.
-    #[tool(description = "Snapshot of the vault embedding index (available / total / embedded / stale)")]
+    #[tool(
+        description = "Snapshot of the vault embedding index (available / total / embedded / stale)"
+    )]
     async fn vault_embedding_status(&self) -> Result<CallToolResult, McpError> {
         let root = vault_root()?;
         let total = vault::list(&root, None).map(|v| v.len()).unwrap_or(0);
@@ -4272,10 +4609,7 @@ fn open_embed_db() -> Result<crate::kernel::vault_embeddings::VaultEmbeddings, M
 /// Read a request header from the HTTP parts that rmcp's StreamableHttp
 /// transport stashes in the `RequestContext` extensions. Returns `None` when
 /// the transport is not HTTP (e.g. an in-process test) or the header is absent.
-fn request_header<'a>(
-    context: &'a RequestContext<RoleServer>,
-    name: &str,
-) -> Option<&'a str> {
+fn request_header<'a>(context: &'a RequestContext<RoleServer>, name: &str) -> Option<&'a str> {
     context
         .extensions
         .get::<axum::http::request::Parts>()
@@ -4342,7 +4676,10 @@ fn sanitize_node(node: &mut serde_json::Value, defs: &serde_json::Value, depth: 
                 map.insert("type".into(), t);
             }
             // 2. Neutralize enum combinators strict providers can't parse.
-            if ["oneOf", "anyOf", "allOf"].iter().any(|k| map.contains_key(*k)) {
+            if ["oneOf", "anyOf", "allOf"]
+                .iter()
+                .any(|k| map.contains_key(*k))
+            {
                 map.remove("oneOf");
                 map.remove("anyOf");
                 map.remove("allOf");
@@ -4447,16 +4784,18 @@ impl ServerHandler for KernelMcpRouter {
         // collides with a first-party prefix/exact name must stay gated as `mcp`
         // (SC3), mirroring `dispatch_tool`'s downstream-first routing.
         tools.retain(|t| intent.allows_tool_with_downstream(t.name.as_ref(), &downstream_ids));
-        // Capped-brain curation: the embedded brain (hermes) truncates a long
-        // listing to ~25 tools by list order, which silently dropped the entire
-        // feature-pack creation suite (it sorts late in declaration order).
-        // Project the brain to a curated, ordered allowlist so the creation +
-        // research suite is present and FIRST — never truncated away. Only the
-        // brain is capped; the PWA keeps the full first-party set (see
-        // visibility::BRAIN_TOOLSET).
+        // Capped-brain curation keeps the canonical Resource surface plus exact
+        // FCT-authorized tools. Exact grants have already passed the same Intent
+        // predicate used by invocation and therefore do not widen to `mcp`.
+        // (ADR-002 substrate §15.4 v84)
         if visibility::is_capped_brain(&caller) {
-            tools.retain(|t| visibility::brain_tool_rank(t.name.as_ref()).is_some());
-            tools.sort_by_key(|t| visibility::brain_tool_rank(t.name.as_ref()).unwrap_or(usize::MAX));
+            tools.retain(|tool| {
+                visibility::brain_tool_rank(tool.name.as_ref()).is_some()
+                    || intent.allows_exact_tool(tool.name.as_ref())
+            });
+            tools.sort_by_key(|tool| {
+                visibility::brain_tool_rank(tool.name.as_ref()).unwrap_or(usize::MAX)
+            });
         }
         // Down-level each tool schema to the subset strict providers accept
         // (Doubao rejects union `type`, `$ref`, and combinators). Runs for EVERY
@@ -4519,14 +4858,20 @@ impl ServerHandler for KernelMcpRouter {
             .into_iter()
             .map(|d| d.id)
             .collect();
-        let denied = !intent.allows_tool_with_downstream(&tool_name, &downstream_ids);
+        let denied = !intent.allows_tool_with_downstream(&tool_name, &downstream_ids)
+            // §17.5 narrowing, enforced in the one place that already decides
+            // visibility rather than in each connector verb: the generic verbs are
+            // reachable under the `source` domain, but the ADDRESSED connector must
+            // be named as `source:<id>`. Without this, a grant for one connector is
+            // a grant for every installed connector.
+            // (ADR-002 substrate §17.5 v85)
+            || !source_call_authorized(&intent, &tool_name, request.arguments.as_ref());
 
         // SC1 compile-time trust boundary: capture the cross-domain call as a
         // `GateRequest` here at the gate, before `request` is consumed. Only the
         // gate can build one — internal traffic has no constructor, so the type
         // system (not convention) keeps kernel self-calls off the ledger.
-        let gate_req =
-            audit::GateRequest::at_gate(caller, &tool_name, request.arguments.as_ref());
+        let gate_req = audit::GateRequest::at_gate(caller, &tool_name, request.arguments.as_ref());
 
         // Review gate (ADR-002 §264 + ADR-006 §4): high-blast-radius calls
         // (write/delete/command/network-write) need explicit human approval
@@ -4541,6 +4886,10 @@ impl ServerHandler for KernelMcpRouter {
         // hermes is an injectable LLM, so the moat covers it too, not just the
         // external C3 threat).
         let needs_review = !denied
+            // Canonical produce validates/binds its descriptor first and owns
+            // ReviewGate inside the tool method, preserving one snapshot.
+            // (ADR-002 substrate §15 v83)
+            && tool_name != "produce"
             && review_gate::ReviewGate::enforcing()
             && !visibility::is_user_surface(gate_req.caller())
             && review_gate::requires_review(&tool_name);
@@ -4551,9 +4900,9 @@ impl ServerHandler for KernelMcpRouter {
                 .review_gate
                 .request(gate_req.caller(), &tool_name, summary);
             match tokio::time::timeout(review_gate::REVIEW_TIMEOUT, rx).await {
-                Ok(Ok(true)) => false,            // approved
-                Ok(Ok(false)) => true,           // denied by human
-                Ok(Err(_)) | Err(_) => true,     // dropped or timed out → deny
+                Ok(Ok(true)) => false,       // approved
+                Ok(Ok(false)) => true,       // denied by human
+                Ok(Err(_)) | Err(_) => true, // dropped or timed out → deny
             }
         } else {
             false
@@ -4577,7 +4926,11 @@ impl ServerHandler for KernelMcpRouter {
                     .and_then(|m| m.get("url"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let method = if tool_name == "http_post" { "POST" } else { "GET" };
+                let method = if tool_name == "http_post" {
+                    "POST"
+                } else {
+                    "GET"
+                };
                 let cap = crate::kernel::capability_resolver::resolve_for_mcp(gate_req.caller());
                 !crate::kernel::capability_resolver::network_authorizes(&cap, url, method)
             };
@@ -4640,8 +4993,7 @@ impl ServerHandler for KernelMcpRouter {
         // Both `Implementation` and `InitializeResult` are #[non_exhaustive]
         // in rmcp 1.7 — use the typed constructors + field mutation rather
         // than struct literals so future field additions don't break us.
-        let mut implementation =
-            Implementation::new("ctrl-kernel", env!("CARGO_PKG_VERSION"));
+        let mut implementation = Implementation::new("ctrl-kernel", env!("CARGO_PKG_VERSION"));
         implementation.title = Some("CTRL Kernel".to_string());
         implementation.website_url = Some("https://github.com/soodooi/CTRL".to_string());
 
@@ -4727,23 +5079,31 @@ pub async fn serve(
     // "desktop-only" gap in autonomous verification.
     let runtime_dbg = runtime.clone();
 
-    let router_factory =
-        move || Ok(KernelMcpRouter::new(runtime.clone(), local_storage.clone(), bridge.clone()));
+    let router_factory = move || {
+        Ok(KernelMcpRouter::new(
+            runtime.clone(),
+            local_storage.clone(),
+            bridge.clone(),
+        ))
+    };
     let service = StreamableHttpService::new(
         router_factory,
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default(),
     );
 
-    let auth_layer = middleware::from_fn(move |headers: HeaderMap, req: Request<Body>, next: Next| {
-        let expected = token_for_mw.clone();
-        async move {
-            match extract_bearer(&headers) {
-                Some(t) if t == expected.as_str() => Ok::<Response, StatusCode>(next.run(req).await),
-                _ => Err(StatusCode::UNAUTHORIZED),
+    let auth_layer =
+        middleware::from_fn(move |headers: HeaderMap, req: Request<Body>, next: Next| {
+            let expected = token_for_mw.clone();
+            async move {
+                match extract_bearer(&headers) {
+                    Some(t) if t == expected.as_str() => {
+                        Ok::<Response, StatusCode>(next.run(req).await)
+                    }
+                    _ => Err(StatusCode::UNAUTHORIZED),
+                }
             }
-        }
-    });
+        });
 
     let mut app = axum::Router::new().nest_service(MCP_PATH, service);
     // Dev-only debug endpoints for autonomous E2E of the review gate. On in debug
@@ -4767,7 +5127,10 @@ pub async fn serve(
                     let rt = rt_resolve.clone();
                     async move {
                         let id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let approved = body.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let approved = body
+                            .get("approved")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         let ok = rt.review_gate.resolve(id, approved);
                         axum::Json(serde_json::json!({ "resolved": ok }))
                     }
@@ -4780,7 +5143,11 @@ pub async fn serve(
                 axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| {
                     let rt = rt_turn.clone();
                     async move {
-                        let msg = body.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let msg = body
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
                         match run_debug_irisy_turn(&rt, msg).await {
                             Ok(j) => axum::Json(j),
                             Err(e) => axum::Json(serde_json::json!({ "error": e })),
@@ -4797,17 +5164,21 @@ pub async fn serve(
                 // release build unless CTRL_DEBUG=1 (same gate as the sibling
                 // /debug routes — `debug_assertions` is off in release).
                 "/debug/secret/set",
-                axum::routing::post(move |axum::Json(body): axum::Json<serde_json::Value>| async move {
-                    let account = body.get("account").and_then(|v| v.as_str()).unwrap_or("");
-                    let value = body.get("value").and_then(|v| v.as_str()).unwrap_or("");
-                    if account.is_empty() {
-                        return axum::Json(serde_json::json!({ "ok": false, "error": "account required" }));
-                    }
-                    match crate::shell::credential_vault::set(account, value) {
-                        Ok(()) => axum::Json(serde_json::json!({ "ok": true })),
-                        Err(e) => axum::Json(serde_json::json!({ "ok": false, "error": e })),
-                    }
-                }),
+                axum::routing::post(
+                    move |axum::Json(body): axum::Json<serde_json::Value>| async move {
+                        let account = body.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                        let value = body.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                        if account.is_empty() {
+                            return axum::Json(
+                                serde_json::json!({ "ok": false, "error": "account required" }),
+                            );
+                        }
+                        match crate::shell::credential_vault::set(account, value) {
+                            Ok(()) => axum::Json(serde_json::json!({ "ok": true })),
+                            Err(e) => axum::Json(serde_json::json!({ "ok": false, "error": e })),
+                        }
+                    },
+                ),
             );
         info!("kernel::mcp_server DEBUG endpoints enabled (/debug/review/*, /debug/irisy/turn, /debug/secret/set)");
     }
@@ -4838,6 +5209,107 @@ fn extract_bearer(headers: &HeaderMap) -> Option<String> {
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
+/// Bind the MCP string argument to the canonical resource identity grammar.
+/// (ADR-002 substrate §15 v83)
+fn parse_resource_ref(value: &str) -> Result<resource::ResourceRef, McpError> {
+    value
+        .parse()
+        .map_err(|error: resource::ResourceRefParseError| {
+            McpError::invalid_params(error.to_string(), None)
+        })
+}
+
+/// Carry the authenticated gate identity and effective intent into the selected
+/// owner; owner authorization remains authoritative for the actual object.
+/// (ADR-002 substrate §15 v83)
+/// The generic connector verbs, which all address one connector by `source_id`.
+const SOURCE_VERBS: [&str; 3] = ["source_describe", "source_query", "source_produce"];
+
+/// Whether a connector call names a source this intent was granted.
+///
+/// Tools that are not connector verbs are unaffected. A connector verb with no
+/// readable `source_id` is refused rather than allowed: an unaddressed call
+/// cannot be narrowed, so permitting it would reopen the whole-domain hole.
+/// (ADR-002 substrate §17.5 v85)
+fn source_call_authorized(
+    intent: &Intent,
+    tool_name: &str,
+    arguments: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> bool {
+    if !SOURCE_VERBS.contains(&tool_name) {
+        return true;
+    }
+    let Some(source_id) = arguments
+        .and_then(|args| args.get("source_id"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    else {
+        return false;
+    };
+    intent.allows_source(source_id)
+}
+
+fn canonical_resource_context(
+    request_context: &RequestContext<RoleServer>,
+) -> resource::ResourceAccessContext {
+    let caller = audit::normalize_caller(request_header(request_context, audit::CALLER_HEADER));
+    let declared = Intent::parse(request_header(request_context, visibility::INTENT_HEADER));
+    let intent = if declared.is_scoped() {
+        declared
+    } else {
+        Intent::default_for_caller(&caller)
+    };
+    resource::ResourceAccessContext {
+        caller,
+        capability_scope: intent.resource_scope(),
+    }
+}
+
+fn json_tool_result(value: &impl serde::Serialize) -> Result<CallToolResult, McpError> {
+    let body = serde_json::to_string(value).map_err(map_serde_err)?;
+    Ok(CallToolResult::success(vec![Content::text(body)]))
+}
+
+/// Preserve typed Resource failures across the MCP boundary without exposing
+/// filesystem paths or owner internals. Unsupported read-only-note produce is
+/// therefore a normal structured tool failure, not a transport failure.
+/// (ADR-002 substrate §15 v83)
+fn resource_error_result(
+    error: resource::ResourceError,
+    resource_ref: &resource::ResourceRef,
+) -> Result<CallToolResult, McpError> {
+    let (code, retryable, reason) = match &error {
+        resource::ResourceError::InvalidRef(_) => ("invalid_resource_ref", false, None),
+        resource::ResourceError::OwnerNotFound => ("resource_owner_not_found", false, None),
+        resource::ResourceError::Denied => ("resource_access_denied", false, None),
+        resource::ResourceError::Unavailable { reason, retryable } => (
+            "resource_unavailable",
+            *retryable,
+            serde_json::to_value(reason).ok(),
+        ),
+        resource::ResourceError::InvalidPayload { .. } => ("invalid_resource_payload", false, None),
+        resource::ResourceError::UnsupportedOperation => ("unsupported_operation", false, None),
+        resource::ResourceError::OwnerCollision { .. }
+        | resource::ResourceError::LocalAuthorityReserved
+        | resource::ResourceError::DescriptorIdentityMismatch => {
+            ("resource_contract_violation", false, None)
+        }
+        resource::ResourceError::DescriptorChanged => ("resource_descriptor_changed", true, None),
+    };
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": error.to_string(),
+            "resource": resource_ref,
+            "retryable": retryable,
+            "reason": reason
+        }
+    });
+    let text = serde_json::to_string(&body).map_err(map_serde_err)?;
+    Ok(CallToolResult::error(vec![Content::text(text)]))
+}
+
 fn vault_root() -> Result<std::path::PathBuf, McpError> {
     vault::default_vault_root()
         .ok_or_else(|| McpError::internal_error("vault root unresolved (HOME unset)", None))
@@ -4854,7 +5326,9 @@ fn snippet_around(content: &str, needle_lower: &str, radius: usize) -> Option<St
     // so clamp to the nearest char boundary in the source.
     let start = at.saturating_sub(radius);
     let end = (at + needle_lower.len() + radius).min(content.len());
-    let start = (0..=start.min(content.len())).rev().find(|&i| content.is_char_boundary(i))?;
+    let start = (0..=start.min(content.len()))
+        .rev()
+        .find(|&i| content.is_char_boundary(i))?;
     let end = (end..=content.len()).find(|&i| content.is_char_boundary(i))?;
     let mut s = content[start..end].trim().to_string();
     if start > 0 {
@@ -4926,11 +5400,14 @@ fn patch_schema_in_place(
             }
         }
         query::ProduceOp::DeleteField { .. } => {
-            arr.retain(|it| {
-                vault_smart_table::schema_item_key(it).as_deref() != Some(target_key)
-            });
+            arr.retain(|it| vault_smart_table::schema_item_key(it).as_deref() != Some(target_key));
         }
-        query::ProduceOp::UpdateField { key, label, cell_type, options } => {
+        query::ProduceOp::UpdateField {
+            key,
+            label,
+            cell_type,
+            options,
+        } => {
             let pos = arr.iter().position(|it| {
                 vault_smart_table::schema_item_key(it).as_deref() == Some(key.as_str())
             });
@@ -4942,7 +5419,10 @@ fn patch_schema_in_place(
                         item.insert("label".into(), serde_json::json!(l));
                     }
                     if let Some(t) = cell_type {
-                        item.insert("type".into(), serde_json::to_value(t).unwrap_or(serde_json::Value::Null));
+                        item.insert(
+                            "type".into(),
+                            serde_json::to_value(t).unwrap_or(serde_json::Value::Null),
+                        );
                     }
                     if let Some(o) = options {
                         item.insert("options".into(), serde_json::json!(o));
@@ -5034,7 +5514,10 @@ fn scaffold_base_files(
                     item.insert("display".into(), serde_json::Value::String(disp));
                 } else {
                     let ct = query::CellType::parse(&f.cell_type);
-                    item.insert("type".into(), serde_json::to_value(ct).unwrap_or(serde_json::Value::Null));
+                    item.insert(
+                        "type".into(),
+                        serde_json::to_value(ct).unwrap_or(serde_json::Value::Null),
+                    );
                     if let Some(opts) = &f.options {
                         item.insert("options".into(), serde_json::json!(opts));
                     }
@@ -5043,7 +5526,12 @@ fn scaffold_base_files(
             })
             .collect();
         let frontmatter = serde_json::json!({ "title": t.name, "schema": schema });
-        let header = t.fields.iter().map(|f| f.label.as_str()).collect::<Vec<_>>().join(" | ");
+        let header = t
+            .fields
+            .iter()
+            .map(|f| f.label.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
         let sep = t.fields.iter().map(|_| "---").collect::<Vec<_>>().join("|");
         let body = format!("| {header} |\n|{sep}|\n");
         files.push((format!("tables/{base_slug}/{slug}.md"), frontmatter, body));
@@ -5055,7 +5543,9 @@ fn scaffold_base_files(
 /// A free base-folder slug under tables/ (avoids an existing folder OR a flat
 /// table of the same name). Returns the slug (not a path).
 fn unique_base_folder(root: &std::path::Path, slug: &str) -> String {
-    let taken = |s: &str| root.join(format!("tables/{s}")).exists() || root.join(format!("tables/{s}.md")).exists();
+    let taken = |s: &str| {
+        root.join(format!("tables/{s}")).exists() || root.join(format!("tables/{s}.md")).exists()
+    };
     if !taken(slug) {
         return slug.to_string();
     }
@@ -5080,7 +5570,6 @@ fn unique_table_path(root: &std::path::Path, slug: &str) -> String {
     }
     format!("tables/{slug}-{}.md", std::process::id())
 }
-
 
 /// Read an installed connector's manifest from disk (`~/.ctrl/mcps/<id>/`).
 fn read_installed_manifest(source_id: &str) -> Result<serde_json::Value, McpError> {
@@ -5190,7 +5679,11 @@ fn augment_relations(
     // reference field key → whether its edges are ready to compute against.
     let mut ready_via: std::collections::HashSet<String> = std::collections::HashSet::new();
     for rel in &table.relations {
-        if let RelationKind::Reference { target_table, display } = &rel.kind {
+        if let RelationKind::Reference {
+            target_table,
+            display,
+        } = &rel.kind
+        {
             if let Ok(entry) = vault::read(root, target_table) {
                 let tgt = vault_smart_table::SmartTable::parse(&entry.frontmatter, &entry.content);
                 tgt.reindex_into(idx, target_table);
@@ -5297,7 +5790,7 @@ async fn run_debug_irisy_turn(
     // Debug Hermes launch reads and projects one verified provider generation.
     // (ADR-002 substrate § provider v71)
     let env = runtime.provider_registry.agent_env_injection().await;
-    let mut client = AcpClient::start("hermes", &env).await.map_err(|e| e.to_string())?;
+    let mut client = AcpClient::start(&env).await.map_err(|e| e.to_string())?;
     let mut text = String::new();
     let mut thoughts = String::new();
     let mut tools: Vec<serde_json::Value> = Vec::new();
@@ -5387,11 +5880,7 @@ fn strip_html(s: &str) -> String {
 
 /// web.search backend — Tavily (BYOK). POSTs only the fixed Tavily search
 /// endpoint; the API key never leaves the kernel. Returns [{title,url,snippet}].
-async fn tavily_search(
-    key: &str,
-    query: &str,
-    n: u32,
-) -> Result<Vec<serde_json::Value>, McpError> {
+async fn tavily_search(key: &str, query: &str, n: u32) -> Result<Vec<serde_json::Value>, McpError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
@@ -5443,8 +5932,8 @@ async fn first_keyed_web_search(
 ) -> Option<(Vec<serde_json::Value>, &'static str)> {
     const PROVIDERS: &[&str] = &["tavily", "brave", "serper", "exa"];
     for &slug in PROVIDERS {
-        let Some(key) = crate::kernel::provider::registry::read_credential(slug)
-            .filter(|k| !k.is_empty())
+        let Some(key) =
+            crate::kernel::provider::registry::read_credential(slug).filter(|k| !k.is_empty())
         else {
             continue;
         };
@@ -5741,7 +6230,10 @@ fn ddg_real_url(href: &str) -> Option<String> {
     let start = href.find(key)? + key.len();
     let rest = &href[start..];
     // Value ends at the next param separator (`&amp;` in raw HTML, or a bare `&`).
-    let end = rest.find("&amp;").or_else(|| rest.find('&')).unwrap_or(rest.len());
+    let end = rest
+        .find("&amp;")
+        .or_else(|| rest.find('&'))
+        .unwrap_or(rest.len());
     let decoded = percent_decode(&rest[..end]);
     (decoded.starts_with("http://") || decoded.starts_with("https://")).then_some(decoded)
 }
@@ -6017,11 +6509,25 @@ mod tests {
             .iter()
             .filter_map(|tool| tool["name"].as_str())
             .collect();
-        for required in ["diagnostics_status", "diagnostics_smoke", "diagnostics_trace"] {
-            assert!(names.contains(&required), "missing read-only diagnostics tool {required}");
+        for required in [
+            "diagnostics_status",
+            "diagnostics_smoke",
+            "diagnostics_trace",
+        ] {
+            assert!(
+                names.contains(&required),
+                "missing read-only diagnostics tool {required}"
+            );
         }
-        for forbidden in ["diagnostics_capture_start", "diagnostics_capture_stop", "diagnostics_export_preview"] {
-            assert!(!names.contains(&forbidden), "Tauri-only control leaked into Gate: {forbidden}");
+        for forbidden in [
+            "diagnostics_capture_start",
+            "diagnostics_capture_stop",
+            "diagnostics_export_preview",
+        ] {
+            assert!(
+                !names.contains(&forbidden),
+                "Tauri-only control leaked into Gate: {forbidden}"
+            );
         }
     }
 
@@ -6060,7 +6566,10 @@ mod tests {
         sanitize_tool_schema(&mut schema);
         // 1. Union types flattened.
         assert_eq!(schema["properties"]["limit"]["type"], "integer");
-        assert_eq!(schema["properties"]["nested"]["properties"]["tags"]["type"], "array");
+        assert_eq!(
+            schema["properties"]["nested"]["properties"]["tags"]["type"],
+            "array"
+        );
         // 2. $ref inlined (the Op body replaced the ref) + its oneOf neutralized.
         assert_eq!(schema["properties"]["op"]["type"], "object");
         assert!(schema["properties"]["op"].get("$ref").is_none());
@@ -6071,9 +6580,13 @@ mod tests {
         fn clean(v: &serde_json::Value) -> bool {
             match v {
                 serde_json::Value::Object(m) => {
-                    if matches!(m.get("type"), Some(serde_json::Value::Array(_))) { return false; }
+                    if matches!(m.get("type"), Some(serde_json::Value::Array(_))) {
+                        return false;
+                    }
                     for k in ["$ref", "oneOf", "anyOf", "allOf", "$defs", "definitions"] {
-                        if m.contains_key(k) { return false; }
+                        if m.contains_key(k) {
+                            return false;
+                        }
                     }
                     m.values().all(clean)
                 }
@@ -6113,7 +6626,10 @@ mod tests {
             "vault: invalid frontmatter",
             "args must be an object",
         ] {
-            assert!(setup_hint(e).is_none(), "should NOT swallow real error: {e}");
+            assert!(
+                setup_hint(e).is_none(),
+                "should NOT swallow real error: {e}"
+            );
         }
     }
 
@@ -6132,7 +6648,10 @@ mod tests {
         })
     }
 
-    fn schema_item<'a>(fm: &'a serde_json::Value, key: &str) -> &'a serde_json::Map<String, serde_json::Value> {
+    fn schema_item<'a>(
+        fm: &'a serde_json::Value,
+        key: &str,
+    ) -> &'a serde_json::Map<String, serde_json::Value> {
         fm["schema"]
             .as_array()
             .unwrap()
@@ -6195,7 +6714,10 @@ mod tests {
         assert_eq!(name["type"], "text");
         // Manifest carries the display name + sheet order.
         assert_eq!(manifest["name"], "CRM");
-        assert_eq!(manifest["sheet_order"], serde_json::json!(["deals", "contacts"]));
+        assert_eq!(
+            manifest["sheet_order"],
+            serde_json::json!(["deals", "contacts"])
+        );
     }
 
     #[test]
@@ -6247,7 +6769,9 @@ mod tests {
     fn produce_delete_field_keeps_other_items_verbatim() {
         let mut fm = rich_frontmatter();
         let mut table = vault_smart_table::SmartTable::parse(&fm, "");
-        let op = query::ProduceOp::DeleteField { key: "stage".into() };
+        let op = query::ProduceOp::DeleteField {
+            key: "stage".into(),
+        };
         table.produce(op.clone()).unwrap();
         patch_schema_in_place(&mut fm, &op, &table).unwrap();
         let arr = fm["schema"].as_array().unwrap();
@@ -6262,18 +6786,33 @@ mod tests {
         let mut fm = rich_frontmatter();
         let before = fm["schema"].clone();
         let table = vault_smart_table::SmartTable::parse(&fm, "");
-        let op = query::ProduceOp::SetCell { row: 0, field: "amount".into(), value: "5".into() };
+        let op = query::ProduceOp::SetCell {
+            row: 0,
+            field: "amount".into(),
+            value: "5".into(),
+        };
         patch_schema_in_place(&mut fm, &op, &table).unwrap();
-        assert_eq!(fm["schema"], before, "row-only op must not touch the schema");
+        assert_eq!(
+            fm["schema"], before,
+            "row-only op must not touch the schema"
+        );
     }
 
     #[test]
     fn snippet_around_clamps_and_marks_ellipses() {
         let content = "aaaa needle bbbb";
         // Full string within radius: no ellipses.
-        assert_eq!(snippet_around(content, "needle", 100).unwrap(), "aaaa needle bbbb");
+        assert_eq!(
+            snippet_around(content, "needle", 100).unwrap(),
+            "aaaa needle bbbb"
+        );
         // Tight radius: both ellipses.
-        let s = snippet_around(&format!("{}needle{}", "x".repeat(300), "y".repeat(300)), "needle", 10).unwrap();
+        let s = snippet_around(
+            &format!("{}needle{}", "x".repeat(300), "y".repeat(300)),
+            "needle",
+            10,
+        )
+        .unwrap();
         assert!(s.starts_with('…') && s.ends_with('…') && s.contains("needle"));
         // Case-insensitive (needle passed pre-lowered).
         assert!(snippet_around("Has NEEDLE here", "needle", 50).is_some());
@@ -6303,7 +6842,9 @@ mod tests {
         assert_eq!(out[0]["title"], "Ghostfolio on GitHub");
         assert_eq!(out[1]["url"], "https://ghostfol.io/");
         // The y.js ad slot (no real uddg target) is dropped.
-        assert!(out.iter().all(|r| !r["url"].as_str().unwrap().contains("y.js")));
+        assert!(out
+            .iter()
+            .all(|r| !r["url"].as_str().unwrap().contains("y.js")));
         // The cap is honored.
         assert!(parse_ddg_lite(html, 1).len() == 1);
     }
@@ -6393,12 +6934,18 @@ mod tests {
         let idx = smart_table_index::SmartTableIndex::open(&idxdir.path().join("st.db")).unwrap();
         augment_relations(&idx, root, "deals.md", &table, &mut rows);
 
-        let d1 = rows.iter().find(|r| r.get("title").map(String::as_str) == Some("D1")).unwrap();
+        let d1 = rows
+            .iter()
+            .find(|r| r.get("title").map(String::as_str) == Some("D1"))
+            .unwrap();
         assert_eq!(d1.get("c_email").map(String::as_str), Some("a@acme.co"));
         assert_eq!(d1.get("c_total").map(String::as_str), Some("300"));
         // Formula references the just-injected rollup: 300 / 2 = 150.
         assert_eq!(d1.get("half").map(String::as_str), Some("150"));
-        let d2 = rows.iter().find(|r| r.get("title").map(String::as_str) == Some("D2")).unwrap();
+        let d2 = rows
+            .iter()
+            .find(|r| r.get("title").map(String::as_str) == Some("D2"))
+            .unwrap();
         assert_eq!(d2.get("c_email").map(String::as_str), Some("b@beta.co"));
         assert_eq!(d2.get("c_total").map(String::as_str), Some("120"));
         assert_eq!(d2.get("half").map(String::as_str), Some("60"));
@@ -6439,7 +6986,9 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-401");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0")
+            .await
+            .expect("serve");
         let url = handle.url();
 
         let resp = reqwest::Client::new()
@@ -6461,7 +7010,9 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-ok");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0")
+            .await
+            .expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
 
@@ -6497,6 +7048,286 @@ mod tests {
         serde_json::from_str(body).unwrap_or(serde_json::Value::Null)
     }
 
+    /// Isolated MCP wire server with a test-owned Resource registry. This keeps
+    /// real user HOME/vault state untouched while exercising the production
+    /// Streamable HTTP, auth, visibility, dispatch, and audit path.
+    /// (ADR-002 substrate §15 v83)
+    async fn serve_test_resource_registry(
+        runtime: Arc<KernelRuntime>,
+        registry: Arc<resource::ResourceRegistry>,
+    ) -> McpServerHandle {
+        let token = Arc::new(Uuid::new_v4().to_string());
+        let token_for_mw = token.clone();
+        let router_factory = move || {
+            let mut router = KernelMcpRouter::new(runtime.clone(), None, None);
+            router.resource_registry = registry.clone();
+            Ok(router)
+        };
+        let service = StreamableHttpService::new(
+            router_factory,
+            LocalSessionManager::default().into(),
+            StreamableHttpServerConfig::default(),
+        );
+        let auth_layer =
+            middleware::from_fn(move |headers: HeaderMap, req: Request<Body>, next: Next| {
+                let expected = token_for_mw.clone();
+                async move {
+                    match extract_bearer(&headers) {
+                        Some(value) if value == expected.as_str() => {
+                            Ok::<Response, StatusCode>(next.run(req).await)
+                        }
+                        _ => Err(StatusCode::UNAUTHORIZED),
+                    }
+                }
+            });
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test gate");
+        let listen_addr = listener
+            .local_addr()
+            .expect("test gate address")
+            .to_string();
+        let app = axum::Router::new()
+            .nest_service(MCP_PATH, service)
+            .layer(auth_layer);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve test gate");
+        });
+        McpServerHandle {
+            auth_token: token,
+            listen_addr,
+        }
+    }
+
+    async fn resource_wire_call(
+        client: &reqwest::Client,
+        handle: &McpServerHandle,
+        session_id: &str,
+        id: u32,
+        caller: &str,
+        intent: &str,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> serde_json::Value {
+        let response = client
+            .post(handle.url())
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header(
+                "Authorization",
+                format!("Bearer {}", handle.auth_token.as_ref()),
+            )
+            .header("mcp-session-id", session_id)
+            .header(audit::CALLER_HEADER, caller)
+            .header(visibility::INTENT_HEADER, intent)
+            .body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": "tools/call",
+                    "params": { "name": name, "arguments": arguments }
+                })
+                .to_string(),
+            )
+            .send()
+            .await
+            .expect("resource tools/call");
+        extract_jsonrpc(&response.text().await.expect("resource call body"))
+    }
+
+    /// The first real canonical vertical over the actual :17873 protocol:
+    /// exact tools, stable-handle Markdown read, schema rejection, structured
+    /// unsupported produce, and dynamic note intent denial.
+    /// (ADR-002 substrate §15 v83)
+    #[tokio::test]
+    async fn canonical_markdown_resource_tools_work_over_the_wire() {
+        let vault = tempfile::tempdir().expect("temporary vault");
+        std::fs::create_dir(vault.path().join("daily")).expect("create daily folder");
+        std::fs::write(vault.path().join("daily/today.md"), "# Today\n").expect("write note");
+        let registry = Arc::new(resource::ResourceRegistry::default());
+        registry
+            .register(resource::OwnerRegistration {
+                authority: resource::ResourceAuthority::Local,
+                kind: "note".to_owned(),
+                origin: resource::RegistrationOrigin::Kernel,
+                owner_label: "test-markdown-note".to_owned(),
+                owner: Arc::new(note_resource::MarkdownNoteOwner::new(
+                    vault.path().to_path_buf(),
+                )),
+            })
+            .expect("register test note owner");
+        let data_dir = vault.path().join("kernel");
+        let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
+        let handle = serve_test_resource_registry(runtime.clone(), registry).await;
+        let client = reqwest::Client::new();
+
+        let init = client
+            .post(handle.url())
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header(
+                "Authorization",
+                format!("Bearer {}", handle.auth_token.as_ref()),
+            )
+            .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"resource-smoke","version":"0.0.1"}}}"#)
+            .send()
+            .await
+            .expect("initialize resource gate");
+        let session_id = init
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|value| value.to_str().ok())
+            .expect("resource session id")
+            .to_owned();
+
+        let listed = client
+            .post(handle.url())
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header(
+                "Authorization",
+                format!("Bearer {}", handle.auth_token.as_ref()),
+            )
+            .header("mcp-session-id", &session_id)
+            .header(audit::CALLER_HEADER, "pwa")
+            .header(visibility::INTENT_HEADER, "notes")
+            .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .expect("list resource tools");
+        let listed = extract_jsonrpc(&listed.text().await.expect("tools/list body"));
+        let names: Vec<&str> = listed["result"]["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool["name"].as_str())
+            .collect();
+        for canonical in ["describe", "query", "produce"] {
+            assert_eq!(
+                names.iter().filter(|name| **name == canonical).count(),
+                1,
+                "{canonical} must be listed exactly once"
+            );
+        }
+
+        let resource_ref = "ctrl://local/note/daily/today.md";
+        let described = resource_wire_call(
+            &client,
+            &handle,
+            &session_id,
+            3,
+            "pwa",
+            "notes",
+            "describe",
+            serde_json::json!({ "ref": resource_ref }),
+        )
+        .await;
+        let descriptor_text = described["result"]["content"][0]["text"]
+            .as_str()
+            .expect("descriptor text");
+        let descriptor: serde_json::Value =
+            serde_json::from_str(descriptor_text).expect("descriptor JSON");
+        assert_eq!(descriptor["resource"], resource_ref);
+        assert_eq!(descriptor["content_type"], "text/markdown");
+        // One bounded, review-required write is advertised; v83's read-only
+        // assertion is superseded. (ADR-002 substrate §15.2 v87)
+        assert_eq!(descriptor["produce"][0]["kind"], "replace_content");
+        assert_eq!(descriptor["produce"][0]["review_required"], true);
+        assert_eq!(
+            descriptor["produce"].as_array().map(Vec::len),
+            Some(1),
+            "exactly one write operation is in scope"
+        );
+
+        let queried = resource_wire_call(
+            &client,
+            &handle,
+            &session_id,
+            4,
+            "pwa",
+            "notes",
+            "query",
+            serde_json::json!({ "ref": resource_ref, "request": {} }),
+        )
+        .await;
+        let query_text = queried["result"]["content"][0]["text"]
+            .as_str()
+            .expect("query text");
+        let query: serde_json::Value = serde_json::from_str(query_text).expect("query JSON");
+        assert_eq!(query["content"], "# Today\n");
+        assert!(runtime.review_gate.list_pending().is_empty());
+
+        let invalid = resource_wire_call(
+            &client,
+            &handle,
+            &session_id,
+            5,
+            "pwa",
+            "notes",
+            "query",
+            serde_json::json!({
+                "ref": resource_ref,
+                "request": { "unexpected": true }
+            }),
+        )
+        .await;
+        assert_eq!(invalid["result"]["isError"], true);
+        let invalid_body: serde_json::Value = serde_json::from_str(
+            invalid["result"]["content"][0]["text"]
+                .as_str()
+                .expect("invalid payload text"),
+        )
+        .expect("invalid payload JSON");
+        assert_eq!(invalid_body["error"]["code"], "invalid_resource_payload");
+
+        let unsupported = resource_wire_call(
+            &client,
+            &handle,
+            &session_id,
+            6,
+            "hermes",
+            "notes",
+            "produce",
+            serde_json::json!({
+                "ref": resource_ref,
+                "operation": { "kind": "replace_section", "heading": "x", "content": "y" }
+            }),
+        )
+        .await;
+        assert_eq!(unsupported["result"]["isError"], true);
+        let unsupported_body: serde_json::Value = serde_json::from_str(
+            unsupported["result"]["content"][0]["text"]
+                .as_str()
+                .expect("unsupported text"),
+        )
+        .expect("unsupported JSON");
+        assert_eq!(unsupported_body["error"]["code"], "unsupported_operation");
+        assert!(
+            runtime.review_gate.list_pending().is_empty(),
+            "unsupported produce must fail before ReviewGate"
+        );
+
+        let denied = resource_wire_call(
+            &client,
+            &handle,
+            &session_id,
+            7,
+            "external",
+            "memory",
+            "query",
+            serde_json::json!({ "ref": resource_ref, "request": {} }),
+        )
+        .await;
+        assert_eq!(denied["result"]["isError"], true);
+        let denied_body: serde_json::Value = serde_json::from_str(
+            denied["result"]["content"][0]["text"]
+                .as_str()
+                .expect("denied text"),
+        )
+        .expect("denied JSON");
+        assert_eq!(denied_body["error"]["code"], "resource_access_denied");
+    }
+
     /// End-to-end proof that `X-Ctrl-Intent` is read off the HTTP request and
     /// projects `tools/list` to the declared capability domains (SC3). Drives a
     /// real MCP initialize -> tools/list over the wire, so it also guards the
@@ -6506,7 +7337,9 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-intent");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0")
+            .await
+            .expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
         let client = reqwest::Client::new();
@@ -6530,13 +7363,15 @@ mod tests {
             .map(|s| s.to_string())
             .expect("server returns a session id");
 
-        // tools/list with an intent scoped to `vault` only.
+        // tools/list with an intent scoped to `vault` only. The same effective
+        // intent drives listing and invocation.
+        // (ADR-002 substrate §15.4 v84)
         let resp = client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
             .header("Authorization", format!("Bearer {token}"))
-            .header("mcp-session-id", session_id)
+            .header("mcp-session-id", session_id.clone())
             .header(visibility::INTENT_HEADER, "vault")
             .body(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#)
             .send()
@@ -6563,6 +7398,50 @@ mod tests {
             !tools.iter().any(|t| t["name"] == "http_post"),
             "http_post must be hidden under the vault intent"
         );
+
+        // Exact FCT scope exposes only the named tool (plus always-on system)
+        // and the invocation path rejects a sibling in the same domain. This is
+        // the list/call parity required for executable FCT selection.
+        // (ADR-002 substrate §15.4 v84)
+        let exact_list = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id.clone())
+            .header(visibility::INTENT_HEADER, "tool:vault_read")
+            .body(r#"{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}"#)
+            .send()
+            .await
+            .expect("exact tools/list");
+        let exact_json = extract_jsonrpc(&exact_list.text().await.expect("exact list body"));
+        let exact_tools = exact_json["result"]["tools"]
+            .as_array()
+            .expect("exact tools");
+        assert!(exact_tools.iter().any(|tool| tool["name"] == "vault_read"));
+        assert!(!exact_tools
+            .iter()
+            .any(|tool| tool["name"] == "vault_search"));
+
+        let denied_call = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id)
+            .header(visibility::INTENT_HEADER, "tool:vault_read")
+            .body(r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"vault_search","arguments":{"query":"x"}}}"#)
+            .send()
+            .await
+            .expect("denied exact sibling call");
+        let denied_json = extract_jsonrpc(&denied_call.text().await.expect("denied call body"));
+        assert!(
+            denied_json["error"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("out of scope"),
+            "direct invocation must enforce the exact same scope: {denied_json}"
+        );
     }
 
     /// End-to-end proof that the LifeOS task tools are reachable THROUGH the gate
@@ -6576,7 +7455,9 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-tasks");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0")
+            .await
+            .expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
         let client = reqwest::Client::new();
@@ -6621,7 +7502,9 @@ mod tests {
         };
 
         // task_describe over the wire → a Record source advertising `status`.
-        let resp = call(2, "task_describe", serde_json::json!({})).await.expect("task_describe");
+        let resp = call(2, "task_describe", serde_json::json!({}))
+            .await
+            .expect("task_describe");
         let text = extract_jsonrpc(&resp.text().await.expect("body"))["result"]["content"][0]
             ["text"]
             .as_str()
@@ -6630,7 +7513,11 @@ mod tests {
         let describe: serde_json::Value = serde_json::from_str(&text).expect("describe json");
         assert_eq!(describe["source_kind"], "record");
         assert!(
-            describe["fields"].as_array().unwrap().iter().any(|f| f["key"] == "status"),
+            describe["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f["key"] == "status"),
             "task_describe must advertise a status field"
         );
 
@@ -6653,8 +7540,14 @@ mod tests {
             .expect("query content text")
             .to_string();
         let result: serde_json::Value = serde_json::from_str(&text).expect("query json");
-        assert!(result["rows"].is_array(), "query result must carry a rows array");
-        assert!(result["match_count"].is_number(), "query result must carry match_count");
+        assert!(
+            result["rows"].is_array(),
+            "query result must carry a rows array"
+        );
+        assert!(
+            result["match_count"].is_number(),
+            "query result must carry match_count"
+        );
     }
 
     /// End-to-end proof that the GENERIC §14 connector tools (source_describe /
@@ -6668,7 +7561,9 @@ mod tests {
         let data_dir = std::env::temp_dir().join("ctrl-test-mcp-source");
         let _ = std::fs::remove_dir_all(&data_dir);
         let runtime = Arc::new(KernelRuntime::boot(data_dir).expect("kernel boot"));
-        let handle = serve(runtime, None, None, "127.0.0.1:0").await.expect("serve");
+        let handle = serve(runtime, None, None, "127.0.0.1:0")
+            .await
+            .expect("serve");
         let url = handle.url();
         let token = handle.auth_token.as_ref().clone();
         let client = reqwest::Client::new();
@@ -6711,19 +7606,32 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap_or("").to_string())
             .collect();
-        assert!(names.iter().any(|n| n == "source_describe"), "source_describe reachable");
-        assert!(names.iter().any(|n| n == "source_query"), "source_query reachable");
-        assert!(names.iter().any(|n| n == "source_produce"), "source_produce reachable");
-        assert!(!names.iter().any(|n| n == "http_post"), "out-of-scope tool hidden by intent trim");
+        assert!(
+            names.iter().any(|n| n == "source_describe"),
+            "source_describe reachable"
+        );
+        assert!(
+            names.iter().any(|n| n == "source_query"),
+            "source_query reachable"
+        );
+        assert!(
+            names.iter().any(|n| n == "source_produce"),
+            "source_produce reachable"
+        );
+        assert!(
+            !names.iter().any(|n| n == "http_post"),
+            "out-of-scope tool hidden by intent trim"
+        );
 
-        // source_describe with a bogus id → the tool runs and reaches the manifest
-        // loader (proves wiring, not just registration).
+        // The bare `source` domain makes the verbs VISIBLE but authorizes no
+        // connector: one grant must not reach every installed connector.
+        // (ADR-002 substrate §17.5 v85)
         let resp = client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
             .header("Authorization", format!("Bearer {token}"))
-            .header("mcp-session-id", session_id)
+            .header("mcp-session-id", session_id.clone())
             .header(visibility::INTENT_HEADER, "source")
             .body(r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"source_describe","arguments":{"source_id":"no-such-pack"}}}"#)
             .send()
@@ -6732,8 +7640,49 @@ mod tests {
         let out = extract_jsonrpc(&resp.text().await.expect("body"));
         let msg = serde_json::to_string(&out).unwrap_or_default();
         assert!(
+            !msg.contains("no installed manifest"),
+            "a bare `source` grant must not reach any connector, got: {msg}"
+        );
+
+        // Naming the connector authorizes it, and the call then reaches the
+        // manifest loader — proving wiring, not just registration.
+        // (ADR-002 substrate §17.5 v89)
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id.clone())
+            .header(visibility::INTENT_HEADER, "source,source:no-such-pack")
+            .body(r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"source_describe","arguments":{"source_id":"no-such-pack"}}}"#)
+            .send()
+            .await
+            .expect("source_describe named");
+        let out = extract_jsonrpc(&resp.text().await.expect("body"));
+        let msg = serde_json::to_string(&out).unwrap_or_default();
+        assert!(
             msg.contains("no installed manifest"),
-            "source_describe must reach the manifest loader for an unknown id, got: {msg}"
+            "a named connector grant must reach the manifest loader, got: {msg}"
+        );
+
+        // Naming one connector never authorizes a sibling.
+        // (ADR-002 substrate §17.5 v89)
+        let resp = client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("mcp-session-id", session_id)
+            .header(visibility::INTENT_HEADER, "source,source:no-such-pack")
+            .body(r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"source_describe","arguments":{"source_id":"other-pack"}}}"#)
+            .send()
+            .await
+            .expect("source_describe sibling");
+        let out = extract_jsonrpc(&resp.text().await.expect("body"));
+        let msg = serde_json::to_string(&out).unwrap_or_default();
+        assert!(
+            !msg.contains("no installed manifest"),
+            "a grant for one connector must not authorize a sibling, got: {msg}"
         );
     }
 }

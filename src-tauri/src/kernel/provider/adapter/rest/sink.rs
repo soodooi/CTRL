@@ -48,9 +48,7 @@ pub(super) struct CtrlChannelSink {
 }
 
 impl CtrlChannelSink {
-    pub(super) fn new(
-        sender: mpsc::Sender<Result<ChatChunk, ProviderError>>,
-    ) -> Self {
+    pub(super) fn new(sender: mpsc::Sender<Result<ChatChunk, ProviderError>>) -> Self {
         Self { sender }
     }
 }

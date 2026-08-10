@@ -2,7 +2,7 @@
 // flow, ADR-002 substrate § composition v21 §7.3). Irisy/the LLM drafts a pack
 // manifest from one sentence; the user reviews and installs. No JSON by hand.
 
-import { irisyChatTransport, type LLMMessage } from './llm-transport';
+import { defaultTransport, type LLMMessage } from './llm-transport';
 
 export interface DraftSecret {
   /** Lowercase + underscore key — the keychain field + the env-var source. */
@@ -38,9 +38,13 @@ Rules:
 
 /** Stream the LLM, extract the JSON object, validate the shape. */
 export async function generatePack(desc: string): Promise<DraftPack> {
-  const messages: LLMMessage[] = [{ role: 'user', content: genPrompt(desc) }];
+  const task = genPrompt(desc);
+  const messages: LLMMessage[] = [{ role: 'user', content: task }];
   let acc = '';
-  for await (const chunk of irisyChatTransport().stream(messages)) {
+  // Drafting is stateless staged output; install remains the governed write.
+  // It cannot prime the canonical Irisy transcript owner.
+  // (ADR-002 substrate §7.4 v83; ADR-005 irisy §11 v40)
+  for await (const chunk of defaultTransport().stream(messages)) {
     acc += typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
   }
   const start = acc.indexOf('{');

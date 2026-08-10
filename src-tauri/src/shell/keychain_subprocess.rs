@@ -73,7 +73,9 @@ pub fn get_for_service(service: &str, account: &str) -> Result<Option<String>, S
         .output()
         .map_err(|e| format!("security find-generic-password spawn: {e}"))?;
     if output.status.success() {
-        let value = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
+        let value = String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_string();
         if value.is_empty() {
             Ok(None)
         } else {
@@ -113,7 +115,9 @@ pub fn get(account: &str) -> Result<Option<String>, String> {
         .output()
         .map_err(|e| format!("security find-generic-password spawn: {e}"))?;
     if output.status.success() {
-        let value = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
+        let value = String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_string();
         if value.is_empty() {
             Ok(None)
         } else {
@@ -142,21 +146,14 @@ pub fn delete(account: &str) -> Result<(), String> {
         return Err("keychain delete: account is empty".into());
     }
     let output = Command::new("/usr/bin/security")
-        .args([
-            "delete-generic-password",
-            "-s",
-            SERVICE,
-            "-a",
-            account,
-        ])
+        .args(["delete-generic-password", "-s", SERVICE, "-a", account])
         .output()
         .map_err(|e| format!("security delete-generic-password spawn: {e}"))?;
     if output.status.success() {
         return Ok(());
     }
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("could not be found")
-        || stderr.contains("specified item could not be found")
+    if stderr.contains("could not be found") || stderr.contains("specified item could not be found")
     {
         // Idempotent: not-present is success for delete semantics.
         Ok(())

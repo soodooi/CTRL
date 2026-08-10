@@ -20,6 +20,9 @@ describe('gateInvoke', () => {
     invokeMock.mockResolvedValue({ ok: true });
     const out = await gateInvoke('vault_read', { path: 'note.md' });
     expect(invokeMock).toHaveBeenCalledWith('gate_invoke', {
+      // A call that addresses no connector declares no narrowing.
+      // (ADR-002 substrate §17.5 v85)
+      intent: null,
       tool: 'vault_read',
       args: { path: 'note.md' },
     });
@@ -30,6 +33,9 @@ describe('gateInvoke', () => {
     invokeMock.mockResolvedValue(null);
     await gateInvoke('kernel_status');
     expect(invokeMock).toHaveBeenCalledWith('gate_invoke', {
+      // A call that addresses no connector declares no narrowing.
+      // (ADR-002 substrate §17.5 v85)
+      intent: null,
       tool: 'kernel_status',
       args: {},
     });
@@ -40,6 +46,9 @@ describe('gateInvoke', () => {
     await describeSmartTable('tables/leads.md');
     // The capability now rides gate_invoke — NOT invoke('smart_table_describe').
     expect(invokeMock).toHaveBeenCalledWith('gate_invoke', {
+      // A call that addresses no connector declares no narrowing.
+      // (ADR-002 substrate §17.5 v85)
+      intent: null,
       tool: 'smart_table_describe',
       args: { path: 'tables/leads.md' },
     });
@@ -52,6 +61,9 @@ describe('gateInvoke', () => {
     invokeMock.mockResolvedValue('wrote tables/x.md');
     await vaultWrite({ path: 'tables/x.md', content: '# hi', frontmatter: { schema: [] } });
     expect(invokeMock).toHaveBeenCalledWith('gate_invoke', {
+      // A call that addresses no connector declares no narrowing.
+      // (ADR-002 substrate §17.5 v85)
+      intent: null,
       tool: 'vault_write',
       args: { path: 'tables/x.md', body: '# hi', frontmatter: { schema: [] } },
     });

@@ -22,10 +22,9 @@ import { useTheme } from '@/hooks/useTheme';
 import { useKernelStatus } from '@/hooks/useKernelStatus';
 import type { ThemePreference } from '@/lib/theme';
 import { APP_VERSION, useUpdateStatus } from '@/lib/app-meta';
-import { useWorkspaceStore } from '@/lib/workspace-store';
 import { ProviderHub } from '@/components/ambient/ProviderHub';
 import { VaultSetup } from '@/components/VaultSetup';
-import { useByoDrivers } from '@/lib/active-agent';
+import { DiagnosticsPanel } from '@/components/diagnostics/DiagnosticsPanel';
 import {
   listEnvEntries,
   setEnvVar,
@@ -95,15 +94,9 @@ const SettingsHeaderStatus = (): ReactElement => {
 };
 
 const SettingsShell = ({ activeTab, children }: SettingsShellProps): ReactElement => {
-  // bao 2026-06-04: Settings is opened as a `kind: 'route'` workspace
-  // tab (PrimaryRail.handleSettingsClick) and the workspace shell
-  // renders the component pulled from `tab.path` in the zustand store.
-  // A plain TanStack `<Link>` only updates the URL — the workspace
-  // store keeps the old `tab.path` and re-renders the old component,
-  // so clicking "Providers" appeared to do nothing. Dispatch
-  // `openSystemTab` with the new path so the store + workspace
-  // re-render alongside the router navigation. Keep the Link href for
-  // a11y / right-click "open in new tab" / accessibility tree.
+  // The code-defined TanStack route is the sole Settings tab authority; the
+  // routed content is projected into AmbientHome's left workspace.
+  // (ADR-003 frontend §8.5 v40)
   return (
     <div className={styles.layout}>
       <header className={styles.header}>
@@ -120,14 +113,6 @@ const SettingsShell = ({ activeTab, children }: SettingsShellProps): ReactElemen
               aria-selected={activeTab === t.id}
               data-active={activeTab === t.id}
               className={styles.tab}
-              onClick={() => {
-                useWorkspaceStore.getState().openSystemTab({
-                  id: 'settings',
-                  kind: 'route',
-                  path: t.to,
-                  title: 'Settings',
-                });
-              }}
             >
               {t.label}
             </Link>
@@ -320,49 +305,8 @@ export const SettingsProvidersPage = (): ReactElement => (
   </SettingsShell>
 );
 
-// Settings -> Irisy : embed hermes's own dashboard web UI (config / agent
-// settings / sessions). hermes serves the full front+back at a loopback port;
-// CTRL just frames it so the user configures the agent without leaving CTRL.
-// Agent-backend selector — the env home for Irisy's AGENT axis (ADR-005 irisy
-// §8). Primary place to pick the engine; the in-chat chip mirrors it. Honest
-// detection: a BYO-CLI driver appears selectable only when the user has it.
-// Industry note (2026-06-28 research): consumer AI apps hide the engine behind
-// the persona, so this lives in Settings, not co-equal with the persona chip.
-const AgentBackendSelector = (): ReactElement => {
-  const { drivers, active, setActive, loaded } = useByoDrivers();
-  return (
-    <Section
-      title="Engine"
-      description="Pick the engine behind Irisy — Hermes, Codex, or Claude. Hermes is the built-in default; Codex and Claude install in one click and reuse the API key you set in Providers."
-    >
-      <div className={styles.segmented} role="radiogroup" aria-label="Agent backend">
-        {drivers.map((d) => {
-          const isActive = d.id === active.id;
-          return (
-            <button
-              key={d.id}
-              type="button"
-              role="radio"
-              aria-checked={isActive}
-              data-active={isActive}
-              className={styles.segment}
-              onClick={() => setActive(d.id)}
-              title={d.detail}
-            >
-              <span className={styles.segmentLabel}>{d.label}</span>
-              <span className={styles.segmentHint}>{d.detail}</span>
-            </button>
-          );
-        })}
-      </div>
-      {!loaded && <p className={styles.sectionDesc}>Detecting drivers…</p>}
-    </Section>
-  );
-};
-
 export const SettingsAgentPage = (): ReactElement => (
   <SettingsShell activeTab="agent">
-    <AgentBackendSelector />
     <iframe
       title="Irisy agent settings"
       src={HERMES_DASHBOARD_URL}
@@ -749,6 +693,10 @@ export const SettingsLogsPage = (): ReactElement => {
   const disabled = update.checking || update.updating;
   return (
     <SettingsShell activeTab="logs">
+      {/* The accepted diagnostics client, previously unmounted: the kernel
+          composed status/smoke/trace/export-preview and nothing consumed them.
+          (ADR-003 frontend § diagnostics-surface v26; ADR-005 irisy §12 v42 U21) */}
+      <DiagnosticsPanel />
       <div className={styles.versionBadge}>
         <span className={styles.versionBadgeLabel}>Installed</span>
         <span className={styles.versionBadgeValue}>v{APP_VERSION}</span>

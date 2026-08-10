@@ -175,15 +175,9 @@ impl Provider for RestAnthropicProvider {
         let max_tokens = prompt.max_tokens.map(u64::from);
         tokio::spawn(async move {
             let sink = CtrlChannelSink::new(tx);
-            if let Err(e) = run_rest_anthropic(
-                &sink,
-                &endpoint,
-                &api_key,
-                &model,
-                &prompt_text,
-                max_tokens,
-            )
-            .await
+            if let Err(e) =
+                run_rest_anthropic(&sink, &endpoint, &api_key, &model, &prompt_text, max_tokens)
+                    .await
             {
                 sink.error(&format!("Anthropic transport failure: {e}"));
             }

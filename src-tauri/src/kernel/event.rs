@@ -51,12 +51,12 @@ pub enum CellKind {
     // v0.7 coding-env CellKinds. These ship as plain CBOR-framed event
     // payloads over the kernel->PWA WS (the event-stream protocol abstraction is
     // retired, ADR-010 § transports v5/v8 SC6).
-    TerminalOutput,  // payload = { actor, pid, data_b64, len }
-    TerminalExit,    // payload = { actor, pid, code: Option<i32>, signal?: i32 }
-    LspState,        // payload = { file, function?, cursor_line?, selection? }
-    AgentThinking,   // payload = { text, agent_id, ts_ms }
-    AgentAction,     // payload = { action_kind, target, args, agent_id }
-    EnvStatus,       // payload = { state: "spawning"|"running"|"exited"|"error", detail? }
+    TerminalOutput, // payload = { actor, pid, data_b64, len }
+    TerminalExit,   // payload = { actor, pid, code: Option<i32>, signal?: i32 }
+    LspState,       // payload = { file, function?, cursor_line?, selection? }
+    AgentThinking,  // payload = { text, agent_id, ts_ms }
+    AgentAction,    // payload = { action_kind, target, args, agent_id }
+    EnvStatus,      // payload = { state: "spawning"|"running"|"exited"|"error", detail? }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -95,19 +95,19 @@ pub enum OpKind {
     // NOT for direct WS emission; the subprocess_channel_adapter translates
     // these into v0.7 CellKind / OpKind values before broadcast).
     // Inbound (PWA → kernel → actor):
-    SubprocessStdin,    // payload = { data_b64: String }
-    SubprocessResize,   // payload = { cols: u16, rows: u16 }
-    SubprocessSignal,   // payload = { signal: "SIGINT"|"SIGTERM"|"SIGKILL" }
+    SubprocessStdin,  // payload = { data_b64: String }
+    SubprocessResize, // payload = { cols: u16, rows: u16 }
+    SubprocessSignal, // payload = { signal: "SIGINT"|"SIGTERM"|"SIGKILL" }
     // Outbound (actor → kernel → adapter → event-stream bridge):
-    SubprocessStdout,   // payload = { actor, pid, data_b64, len }
-    SubprocessExit,     // payload = { actor, pid, code: Option<i32>, signal?: i32 }
-    SubprocessSpawned,  // payload = { actor, pid, command, mem_cap_bytes }
+    SubprocessStdout,  // payload = { actor, pid, data_b64, len }
+    SubprocessExit,    // payload = { actor, pid, code: Option<i32>, signal?: i32 }
+    SubprocessSpawned, // payload = { actor, pid, command, mem_cap_bytes }
     // v0.7 coding-env ops — mirrors lane-C kind.ts. Inbound from PWA via
     // event-stream wire; the adapter translates these to SubprocessStdin / etc.
-    AgentPrompt,        // payload = { text, agent_id?, request_id? }
-    AgentInterrupt,     // payload = { agent_id?, reason? }
-    EnvSignal,          // payload = { signal: "SIGINT"|"SIGTERM"|"SIGKILL" }
-    FileRequest,        // payload = { uri, range? } — LSP-style document/range query
+    AgentPrompt,    // payload = { text, agent_id?, request_id? }
+    AgentInterrupt, // payload = { agent_id?, reason? }
+    EnvSignal,      // payload = { signal: "SIGINT"|"SIGTERM"|"SIGKILL" }
+    FileRequest,    // payload = { uri, range? } — LSP-style document/range query
 }
 
 /// Filter for subscribing to a subset of events on the bus.
@@ -209,9 +209,15 @@ mod tests {
         // separation is enforced at the type level, verified here at runtime.
         let bus = EventBus::new();
         let mut rx = bus.subscribe();
-        let reached = bus.publish(InternalMsg::from_actor(ActorId::from_str("actor-a"), sample_op()));
+        let reached = bus.publish(InternalMsg::from_actor(
+            ActorId::from_str("actor-a"),
+            sample_op(),
+        ));
         assert_eq!(reached, 1, "the one live subscriber receives the event");
-        match rx.try_recv().expect("subscriber receives the published event") {
+        match rx
+            .try_recv()
+            .expect("subscriber receives the published event")
+        {
             Event::Op(op) => assert_eq!(op.kind, OpKind::ActorSpawned),
             other => panic!("unexpected event {other:?}"),
         }
@@ -220,7 +226,10 @@ mod tests {
     #[test]
     fn publish_with_no_subscribers_is_zero_not_an_error() {
         let bus = EventBus::new();
-        let reached = bus.publish(InternalMsg::from_actor(ActorId::from_str("actor-a"), sample_op()));
+        let reached = bus.publish(InternalMsg::from_actor(
+            ActorId::from_str("actor-a"),
+            sample_op(),
+        ));
         assert_eq!(reached, 0, "no subscribers => zero reached, never an error");
     }
 }

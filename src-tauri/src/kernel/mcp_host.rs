@@ -185,14 +185,24 @@ pub fn manifest_allows_only_loopback(manifest: &serde_json::Value) -> bool {
 /// return to the gate after a restart without a reinstall. Best-effort:
 /// a pack whose server fails to spawn logs and is skipped.
 pub async fn reconnect_installed_pack_servers(host: &McpHost) {
-    let Some(home) = std::env::var_os("HOME") else { return };
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
     let dir = std::path::PathBuf::from(home).join(".ctrl").join("mcps");
-    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let manifest_path = entry.path().join("manifest.json");
-        let Ok(raw) = std::fs::read_to_string(&manifest_path) else { continue };
-        let Ok(m) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
-        let Some(server) = m.get("server").and_then(|v| v.as_object()) else { continue };
+        let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let Ok(m) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let Some(server) = m.get("server").and_then(|v| v.as_object()) else {
+            continue;
+        };
         let command = server.get("command").and_then(|v| v.as_str()).unwrap_or("");
         if command.is_empty() {
             continue;
@@ -209,12 +219,24 @@ pub async fn reconnect_installed_pack_servers(host: &McpHost) {
         let args: Vec<String> = server
             .get("args")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default();
         let desc = McpServerDescriptor {
             id: id.clone(),
-            name: m.get("name").and_then(|v| v.as_str()).unwrap_or(&id).to_string(),
-            version: m.get("version").and_then(|v| v.as_str()).unwrap_or("0.0.0").to_string(),
+            name: m
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&id)
+                .to_string(),
+            version: m
+                .get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0.0.0")
+                .to_string(),
             description: String::new(),
             tools: Vec::new(),
             // Reconnect resolves the same isolated child descriptor used at install.
@@ -277,12 +299,10 @@ impl McpServerSource {
                         "trusted LibreOffice adapter is missing its sandbox root".to_string()
                     })?;
                     if !crate::kernel::libreoffice_bridge::is_trusted_adapter(
-                        pack_dir,
-                        command,
-                        args,
+                        pack_dir, command, args,
                     ) {
                         return Err(
-                            "trusted LibreOffice adapter identity changed before spawn".into(),
+                            "trusted LibreOffice adapter identity changed before spawn".into()
                         );
                     }
                     Some(crate::kernel::libreoffice_bridge::embedded_adapter_args())
@@ -428,8 +448,7 @@ impl McpHost {
                     .build()
                     .map_err(|e| McpHostError::SpawnFailed(e.to_string()))?;
                 let transport = StreamableHttpClientTransport::with_client(client, cfg);
-                ()
-                    .serve(transport)
+                ().serve(transport)
                     .await
                     .map_err(|e| McpHostError::HandshakeFailed(e.to_string()))?
             }
@@ -445,8 +464,7 @@ impl McpHost {
                     })?;
                 let transport = TokioChildProcess::new(cmd)
                     .map_err(|e| McpHostError::SpawnFailed(e.to_string()))?;
-                ()
-                    .serve(transport)
+                ().serve(transport)
                     .await
                     .map_err(|e| McpHostError::HandshakeFailed(e.to_string()))?
             }
@@ -780,10 +798,7 @@ mod tests {
         let server_id = "source:ctrl-libreoffice";
         assert_eq!(
             installed_pack_actor_ids("ctrl-libreoffice"),
-            [
-                server_id.to_string(),
-                "libreoffice".to_string(),
-            ]
+            [server_id.to_string(), "libreoffice".to_string(),]
         );
         host.register_private(McpServerDescriptor {
             id: server_id.into(),
@@ -791,13 +806,7 @@ mod tests {
             version: "0.1.0".into(),
             description: String::new(),
             tools: Vec::new(),
-            source: resolve_local_source(
-                "node",
-                &args,
-                &pack_dir,
-                true,
-                true,
-            ),
+            source: resolve_local_source("node", &args, &pack_dir, true, true),
         })
         .await;
 
@@ -816,14 +825,13 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name.as_ref(), "read_selected_context");
         let result = host
-            .invoke(
-                server_id,
-                "read_selected_context",
-                serde_json::json!({}),
-            )
+            .invoke(server_id, "read_selected_context", serde_json::json!({}))
             .await
             .unwrap();
-        assert_eq!(result.get("isError").and_then(serde_json::Value::as_bool), Some(true));
+        assert_eq!(
+            result.get("isError").and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
         assert_eq!(result["content"].as_array().map(Vec::len), Some(1));
 
         host.shutdown_all().await.unwrap();

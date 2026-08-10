@@ -88,9 +88,7 @@ fn detect_first_run_state() -> FirstRunState {
 }
 
 #[tauri::command]
-pub async fn kernel_status(
-    kernel: State<'_, KernelHandle>,
-) -> Result<KernelStatus, String> {
+pub async fn kernel_status(kernel: State<'_, KernelHandle>) -> Result<KernelStatus, String> {
     let runtime = &kernel.runtime;
     let uptime_ms = runtime.booted_at.elapsed().as_millis() as u64;
 
@@ -130,7 +128,11 @@ pub async fn kernel_status(
             "no LLM adapter registered — edit ~/.ctrl/config.toml or run setup_llm_key".into(),
         );
     }
-    let overall = if warnings.is_empty() { "ok" } else { "degraded" };
+    let overall = if warnings.is_empty() {
+        "ok"
+    } else {
+        "degraded"
+    };
 
     // Pi is the agent runtime; what the InfraBar ENGINE chip actually
     // wants to surface is the provider behind Pi's text-chat calls, so
@@ -481,4 +483,103 @@ pub fn install_container_runtime(
         let _ = app_for_cb.emit("runtime-install-progress", status);
     })?;
     Ok(crate::shell::runtime_install::current_status())
+}
+
+/// Show an installed capability's own files in the OS file manager.
+///
+/// Deliberately a Tauri command and not a gate tool: this is an OS/UI action on
+/// the user's own machine, not a capability an agent should hold. It also takes a
+/// capability REF rather than a path, so path authority stays in the kernel and
+/// the frontend can never ask to reveal an arbitrary location.
+/// (ADR-002 substrate §15.4.1 v88; ADR-005 irisy §12 v42 U18)
+#[tauri::command]
+pub fn reveal_capability(capability_ref: String) -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|_| "no home directory is known".to_string())?;
+    let root = PathBuf::from(home).join(".ctrl");
+
+    let (parent, segment) = if let Some(id) = capability_ref.strip_prefix("pack:") {
+        (root.join("mcps"), id)
+    } else if let Some(name) = capability_ref.strip_prefix("skill:") {
+        (root.join("skills"), name)
+    } else {
+        return Err("only installed packages and local Skills have files".to_string());
+    };
+
+    // One path segment, nothing that could climb out of the capability root.
+    if segment.is_empty()
+        || segment.contains('/')
+        || segment.contains('\\')
+        || segment == ".."
+        || segment == "."
+    {
+        return Err("that capability ref does not name a single directory".to_string());
+    }
+
+    let target = parent.join(segment);
+    let resolved = target
+        .canonicalize()
+        .map_err(|_| "that capability has no files on disk".to_string())?;
+    let allowed = parent
+        .canonicalize()
+        .map_err(|_| "that capability has no files on disk".to_string())?;
+    if !resolved.starts_with(&allowed) {
+        return Err("that capability resolves outside its install root".to_string());
+    }
+
+    reveal_in_file_manager(&resolved)?;
+    Ok(resolved.to_string_lossy().to_string())
+}
+
+fn reveal_in_file_manager(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("open");
+        command.arg("-R").arg(path);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new("explorer");
+        command.arg(path);
+        command
+    };
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(path);
+        command
+    };
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("could not open the file manager: {error}"))
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use super::*;
+
+    #[test]
+    fn a_ref_without_files_is_refused() {
+        assert!(reveal_capability("builtin:whatever".to_owned()).is_err());
+        assert!(reveal_capability(String::new()).is_err());
+    }
+
+    #[test]
+    fn a_traversing_ref_is_refused_before_any_filesystem_use() {
+        for candidate in [
+            "pack:..",
+            "pack:../../etc",
+            "skill:..",
+            "skill:nested/name",
+            "pack:",
+        ] {
+            let error = reveal_capability(candidate.to_owned()).expect_err("must refuse");
+            assert!(
+                error.contains("single directory") || error.contains("no files on disk"),
+                "unexpected error for {candidate}: {error}"
+            );
+        }
+    }
 }

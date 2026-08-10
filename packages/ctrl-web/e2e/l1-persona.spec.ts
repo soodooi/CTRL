@@ -1,61 +1,99 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-// Functional verification for the 2026-06-26 L1/composer changes:
-//   1. The row above the composer IS the persona switcher (not inline ops).
-//   2. Switching a persona flips the active state.
-//   3. L1 is one unified list — built-in faces render as pack entries.
-//
-// Tauri invoke() no-ops in browser dev mode, so installed packs (dev-box /
-// ghostfolio) don't load here; built-in faces + the persona row need no
-// invoke, so they are the functional surface this spec asserts.
+function installShellMock(page: Page): Promise<void> {
+  return page.addInitScript(() => {
+    window.localStorage.clear();
+    const harness = window as unknown as {
+      __ctrlInvokeMock: (command: string, args?: Record<string, unknown>) => unknown;
+    };
+    harness.__ctrlInvokeMock = (command, args) => {
+      if (command === 'gate_invoke') {
+        const call = args as {
+          tool?: string;
+          args?: { ref?: string; request?: { operation?: string } };
+        };
+        if (
+          call.tool === 'query'
+          && call.args?.ref === 'ctrl://local/system/catalog'
+          && call.args.request?.operation === 'list'
+        ) {
+          return [{
+            ref: 'skill:office',
+            name: 'Office',
+            summary: 'Use office documents',
+            source_kind: 'skill',
+            install_state: 'available',
+            selection_kind: 'selectable',
+          }];
+        }
+        return null;
+      }
+      if (command === 'list_mcps') return [];
+      if (command === 'fetch_pack_registry') return JSON.stringify({ servers: [] });
+      if (command === 'get_version') return 'e2e';
+      return null;
+    };
+  });
+}
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    try {
-      window.localStorage.clear();
-    } catch {
-      // private mode — irrelevant for chromium
-    }
-  });
+  await installShellMock(page);
 });
 
-test('persona row above the composer = the 3 personas, no inline-op chips', async ({
-  page,
-}) => {
+test('production shell exposes only canonical L1 and the compact FCT composer', async ({ page }) => {
   await page.goto('/');
-  const group = page.getByRole('group', { name: 'Irisy persona' });
-  await expect(group).toBeVisible();
 
-  await expect(group.getByRole('button', { name: 'Knowledge Base' })).toBeVisible();
-  await expect(group.getByRole('button', { name: 'Code Companion' })).toBeVisible();
-  await expect(group.getByRole('button', { name: 'Tool Maker' })).toBeVisible();
+  // Use is session-owned and only the normalized FCT projection is user-facing.
+  // (ADR-003 frontend §8.5 v41)
+  const navigation = page.getByRole('complementary', { name: 'Primary navigation' });
+  await expect(navigation.getByRole('button')).toHaveCount(3);
+  await expect(navigation.getByRole('button', { name: 'Work' })).toHaveAttribute('aria-current', 'page');
+  await expect(navigation.getByRole('button', { name: 'Library' })).toBeVisible();
+  await expect(navigation.getByRole('button', { name: 'Settings' })).toBeVisible();
 
-  // Translate / Polish / Summarize are inline Irisy ops, not personas — they
-  // must NOT occupy this slot (philosophy #5).
-  await expect(group.getByRole('button', { name: 'Translate' })).toHaveCount(0);
-  await expect(group.getByRole('button', { name: 'Polish' })).toHaveCount(0);
-  await expect(group.getByRole('button', { name: 'Summarize' })).toHaveCount(0);
+  const dialog = page.getByLabel('Persistent agent dialog');
+  const controls = dialog.getByRole('group', { name: 'FCT and turn action' });
+  // Auto-first override: the resting control states what the next turn uses and
+  // does NOT enumerate the catalogue. (ADR-003 frontend §8.5 v42; U17)
+  const selector = controls.getByRole('button', { name: 'FCT' });
+  await expect(selector).toHaveText('FCT · Auto');
+  await expect(dialog.locator('[data-decision-kind="choice"]')).toHaveCount(0);
+  await selector.click();
+  const choice = dialog.locator('[data-decision-kind="choice"]');
+  await expect(choice.getByRole('button', { name: 'Office' })).toBeVisible();
+  await choice.getByRole('button', { name: 'Keep current' }).click();
+  await expect(selector).toHaveText('FCT · Auto');
+  await expect(controls.getByRole('button', { name: 'Send' })).toBeVisible();
+  await expect(controls.getByRole('button', { name: 'Stop generating' })).toHaveCount(0);
+
+  await expect(dialog.getByRole('combobox', { name: 'Irisy identity' })).toHaveCount(0);
+  await expect(dialog.getByRole('combobox', { name: 'Resource' })).toHaveCount(0);
+  await expect(dialog.getByRole('combobox', { name: 'Skill' })).toHaveCount(0);
+  await expect(dialog.getByText('Ready', { exact: true })).toHaveCount(0);
+  expect(await page.getByText('Irisy', { exact: true }).count()).toBeLessThanOrEqual(1);
 });
 
-test('clicking a persona switches the active persona', async ({ page }) => {
+test('Library separates Find, Installed, and Create from session use', async ({ page }) => {
   await page.goto('/');
-  const group = page.getByRole('group', { name: 'Irisy persona' });
-  const code = group.getByRole('button', { name: 'Code Companion' });
+  await page.getByRole('button', { name: 'Library' }).click();
 
-  // Exactly one persona is active at a time.
-  await expect(group.getByRole('button', { pressed: true })).toHaveCount(1);
+  // Availability and authoring stay in Library; activation stays in Work.
+  // (ADR-003 frontend §8.5 v41)
+  const modes = page.getByRole('tablist', { name: 'FCT Library mode' });
+  await expect(modes.getByRole('tab')).toHaveText(['Find FCTs', 'Installed FCTs', 'Create FCT']);
+  await expect(modes.getByRole('tab', { name: 'Find FCTs' })).toHaveAttribute('aria-selected', 'true');
 
-  await code.click();
-  await expect(code).toHaveAttribute('aria-pressed', 'true');
-  await expect(group.getByRole('button', { pressed: true })).toHaveCount(1);
-});
+  await modes.getByRole('tab', { name: 'Installed FCTs' }).click();
+  await expect(page.getByText('Office', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Use FCT' })).toBeVisible();
 
-test('L1 is one list — built-in faces render as entries', async ({ page }) => {
-  await page.goto('/');
-  // The L1 rail lives in AmbientHome's <aside>; icon-only buttons carry a
-  // title (= accessible name). Built-in faces render with no invoke.
-  await expect(page.getByRole('button', { name: 'Notes' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Tables' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Coding' }).first()).toBeVisible();
-  await page.screenshot({ path: 'test-results/l1-persona-home.png', fullPage: false });
+  await modes.getByRole('tab', { name: 'Create FCT' }).click();
+  await expect(page.getByText('✦ Create FCT', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
+  await expect(page.getByText('Find FCTs', { exact: true })).toHaveCount(1);
+  await expect(
+    page.getByLabel('Persistent agent dialog').getByRole('button', { name: 'FCT' }),
+  ).toHaveText('FCT · Auto');
+
+  await page.screenshot({ path: 'test-results/fct-library-create.png', fullPage: false });
 });

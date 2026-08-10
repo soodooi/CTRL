@@ -136,8 +136,14 @@ fn note_to_row(path: &str, frontmatter: &Value) -> Row {
     row.insert("title".into(), title_of(path, frontmatter));
     // Types-as-lenses keys (type / "Is A" / is_a; Status / status) — the same
     // frontmatter conventions the notes UI reads (ADR-002 §1.9 v47).
-    row.insert("type".into(), fm_first(frontmatter, &["type", "Is A", "is_a"]));
-    row.insert("status".into(), fm_first(frontmatter, &["Status", "status"]));
+    row.insert(
+        "type".into(),
+        fm_first(frontmatter, &["type", "Is A", "is_a"]),
+    );
+    row.insert(
+        "status".into(),
+        fm_first(frontmatter, &["Status", "status"]),
+    );
     row.insert("tags".into(), tags_of(frontmatter));
     row.insert("created".into(), fm_str(frontmatter, "created"));
     row.insert("modified".into(), fm_str(frontmatter, "modified"));
@@ -211,7 +217,13 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let root = dir.path();
         // substring_search_scan (test mode) matches file CONTENT, case-insensitive.
-        vault::write(root, "acme.md", "Acme Corporation deal", &serde_json::json!({})).unwrap();
+        vault::write(
+            root,
+            "acme.md",
+            "Acme Corporation deal",
+            &serde_json::json!({}),
+        )
+        .unwrap();
         vault::write(root, "beta.md", "unrelated note", &serde_json::json!({})).unwrap();
         let req = QueryRequest {
             filters: vec![Filter {
@@ -223,8 +235,14 @@ mod tests {
         };
         let res = text::query(root, &req).unwrap();
         assert_eq!(res.match_count, res.rows.len());
-        assert!(res.rows.iter().any(|r| r.get("path").is_some_and(|p| p.contains("acme"))));
-        assert!(!res.rows.iter().any(|r| r.get("path").is_some_and(|p| p.contains("beta"))));
+        assert!(res
+            .rows
+            .iter()
+            .any(|r| r.get("path").is_some_and(|p| p.contains("acme"))));
+        assert!(!res
+            .rows
+            .iter()
+            .any(|r| r.get("path").is_some_and(|p| p.contains("beta"))));
         // No Contains filter / empty needle → empty result (deterministic).
         let empty = text::query(root, &QueryRequest::default()).unwrap();
         assert_eq!(empty.match_count, 0);
@@ -260,8 +278,16 @@ mod tests {
         let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
         let req = QueryRequest {
             filters: vec![
-                Filter { field: "tags".into(), op: Operator::HasTag, value: "crm".into() },
-                Filter { field: "modified".into(), op: Operator::Within, value: "this_month".into() },
+                Filter {
+                    field: "tags".into(),
+                    op: Operator::HasTag,
+                    value: "crm".into(),
+                },
+                Filter {
+                    field: "modified".into(),
+                    op: Operator::Within,
+                    value: "this_month".into(),
+                },
             ],
             ..Default::default()
         };
@@ -274,7 +300,11 @@ mod tests {
     fn unknown_field_rejected() {
         let now = NaiveDate::from_ymd_opt(2026, 6, 19).unwrap();
         let req = QueryRequest {
-            filters: vec![Filter { field: "bogus".into(), op: Operator::Eq, value: "x".into() }],
+            filters: vec![Filter {
+                field: "bogus".into(),
+                op: Operator::Eq,
+                value: "x".into(),
+            }],
             ..Default::default()
         };
         assert!(run_query(&NotesSource::fields(), &rows(), &req, now).is_err());

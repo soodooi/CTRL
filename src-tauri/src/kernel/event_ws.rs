@@ -285,8 +285,14 @@ mod tests {
 
     #[test]
     fn extract_query_param_basic() {
-        assert_eq!(extract_query_param("/socket?token=abc", "token"), Some("abc"));
-        assert_eq!(extract_query_param("/socket?x=1&token=abc&y=2", "token"), Some("abc"));
+        assert_eq!(
+            extract_query_param("/socket?token=abc", "token"),
+            Some("abc")
+        );
+        assert_eq!(
+            extract_query_param("/socket?x=1&token=abc&y=2", "token"),
+            Some("abc")
+        );
         assert_eq!(extract_query_param("/socket?token=", "token"), Some(""));
         assert_eq!(extract_query_param("/socket", "token"), None);
         assert_eq!(extract_query_param("/socket?other=1", "token"), None);

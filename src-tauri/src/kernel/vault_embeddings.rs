@@ -121,9 +121,10 @@ impl VaultEmbeddings {
         let normalised = l2_normalise(vector);
         let blob = vector_to_blob(&normalised);
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let conn = self.conn.lock().map_err(|_| {
-            EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string())
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string()))?;
         conn.execute(
             "INSERT INTO vault_embeddings(path, mtime_ms, content_hash, vector, embedded_at)
              VALUES(?1, ?2, ?3, ?4, ?5)
@@ -139,19 +140,24 @@ impl VaultEmbeddings {
 
     /// Drop the row for a path (called on `vault.delete`).
     pub fn delete(&self, path: &str) -> Result<(), EmbeddingError> {
-        let conn = self.conn.lock().map_err(|_| {
-            EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string())
-        })?;
-        conn.execute("DELETE FROM vault_embeddings WHERE path = ?1", params![path])?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string()))?;
+        conn.execute(
+            "DELETE FROM vault_embeddings WHERE path = ?1",
+            params![path],
+        )?;
         Ok(())
     }
 
     /// Look up cached `(mtime_ms, content_hash)` for a path. Caller uses
     /// this to decide whether to re-embed.
     pub fn cached_meta(&self, path: &str) -> Result<Option<(i64, String)>, EmbeddingError> {
-        let conn = self.conn.lock().map_err(|_| {
-            EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string())
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string()))?;
         let row = conn
             .query_row(
                 "SELECT mtime_ms, content_hash FROM vault_embeddings WHERE path = ?1",
@@ -178,9 +184,10 @@ impl VaultEmbeddings {
             )));
         }
         let q = l2_normalise(query_vector);
-        let conn = self.conn.lock().map_err(|_| {
-            EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string())
-        })?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string()))?;
         let mut stmt = conn.prepare("SELECT path, vector FROM vault_embeddings")?;
         let rows = stmt.query_map(params![], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
@@ -219,19 +226,19 @@ impl VaultEmbeddings {
         total_notes: usize,
         provider_status: &str,
     ) -> Result<EmbeddingStatus, EmbeddingError> {
-        let conn = self.conn.lock().map_err(|_| {
-            EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string())
-        })?;
-        let embedded: usize = conn
-            .query_row("SELECT COUNT(*) FROM vault_embeddings", params![], |r| {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| EmbeddingError::Sqlite("vault_embeddings mutex poisoned".to_string()))?;
+        let embedded: usize =
+            conn.query_row("SELECT COUNT(*) FROM vault_embeddings", params![], |r| {
                 r.get::<_, i64>(0).map(|n| n as usize)
             })?;
-        let last_run_at_ms: Option<i64> = conn
-            .query_row(
-                "SELECT MAX(embedded_at) FROM vault_embeddings",
-                params![],
-                |r| r.get::<_, Option<i64>>(0),
-            )?;
+        let last_run_at_ms: Option<i64> = conn.query_row(
+            "SELECT MAX(embedded_at) FROM vault_embeddings",
+            params![],
+            |r| r.get::<_, Option<i64>>(0),
+        )?;
         let stale = if total_notes >= embedded {
             total_notes - embedded
         } else {
@@ -302,9 +309,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("embed.db");
         let emb = VaultEmbeddings::open(&path, "nomic-embed-text").unwrap();
-        emb.upsert("notes/a.md", 1, "hash-a", &fake_vec(1.0)).unwrap();
-        emb.upsert("notes/b.md", 2, "hash-b", &fake_vec(2.0)).unwrap();
-        emb.upsert("notes/c.md", 3, "hash-c", &fake_vec(-1.0)).unwrap();
+        emb.upsert("notes/a.md", 1, "hash-a", &fake_vec(1.0))
+            .unwrap();
+        emb.upsert("notes/b.md", 2, "hash-b", &fake_vec(2.0))
+            .unwrap();
+        emb.upsert("notes/c.md", 3, "hash-c", &fake_vec(-1.0))
+            .unwrap();
 
         let hits = emb.search(&fake_vec(1.5), 2, None).unwrap();
         assert_eq!(hits.len(), 2);

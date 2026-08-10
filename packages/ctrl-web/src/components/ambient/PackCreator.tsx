@@ -149,13 +149,13 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.head}>
-          <span className={styles.title}>✦ Create a feature pack</span>
+          <span className={styles.title}>✦ Create FCT</span>
           <button type="button" className={styles.close} onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>
         <p className={styles.sub}>
-          Describe a tool — Irisy drafts it, the gate checks it, you review and install.
+          Describe an FCT — Irisy drafts it, the gate checks it, and you review before adding it.
         </p>
         <textarea
           className={styles.input}
@@ -268,7 +268,7 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
                     setError(null);
                   }}
                   disabled={installing}
-                  title={editMode ? 'Back to the review card' : 'Edit the pack JSON by hand'}
+                  title={editMode ? 'Back to the review card' : 'Edit the advanced FCT definition'}
                 >
                   {editMode ? 'Done editing' : 'Edit JSON'}
                 </button>
@@ -294,7 +294,7 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
                   }
                 }}
                 disabled={installing}
-                title="Copy the pack JSON to share with someone"
+                title="Copy the FCT definition to share"
               >
                 Copy
               </button>
@@ -313,9 +313,9 @@ export function PackCreator({ onClose, onInstalled }: Props): ReactElement {
                 className={styles.primary}
                 onClick={() => void install()}
                 disabled={installing || blocked}
-                title={blocked ? 'Fix the errors above before installing' : 'Install this pack'}
+                title={blocked ? 'Fix the errors above before adding this FCT' : 'Add this FCT'}
               >
-                {installing ? 'Installing…' : blocked ? 'Fix errors to install' : 'Install'}
+                {installing ? 'Adding…' : blocked ? 'Fix errors to add' : 'Add FCT'}
               </button>
             </div>
           </div>

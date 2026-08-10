@@ -69,8 +69,7 @@ pub fn run_provision(mcp_id: &str, manifest: &serde_json::Value) -> Result<Provi
             }
 
             // … else fall back to the system package manager.
-            install_via_pkg_mgr(tool, id)
-                .with_context(|| format!("pkg-mgr install of '{id}'"))?;
+            install_via_pkg_mgr(tool, id).with_context(|| format!("pkg-mgr install of '{id}'"))?;
         }
     }
 
@@ -137,7 +136,10 @@ fn install_via_pkg_mgr(tool: &serde_json::Value, id: &str) -> Result<()> {
         .get("pkg")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("tool '{id}' install hint missing 'pkg'"))?;
-    let global = spec.get("global").and_then(|v| v.as_bool()).unwrap_or(false);
+    let global = spec
+        .get("global")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let mut cmd = match via {
         "npm" => {

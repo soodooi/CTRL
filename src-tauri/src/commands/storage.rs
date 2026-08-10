@@ -33,9 +33,7 @@ static GLOBAL_CACHE: OnceLock<Option<Cache>> = OnceLock::new();
 
 fn try_local_storage() -> Result<&'static LocalStorage, String> {
     GLOBAL_LOCAL_STORAGE
-        .get_or_init(|| {
-            local_storage::default_db_path().and_then(|p| LocalStorage::open(&p).ok())
-        })
+        .get_or_init(|| local_storage::default_db_path().and_then(|p| LocalStorage::open(&p).ok()))
         .as_ref()
         .ok_or_else(|| "localstorage unavailable (HOME unset?)".to_string())
 }

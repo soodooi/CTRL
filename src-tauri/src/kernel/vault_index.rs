@@ -109,7 +109,8 @@ impl VaultIndex {
             params![path, mtime_ms, now_ms],
         )
         .map_err(|e| IndexError::Db(format!("upsert meta: {e}")))?;
-        tx.commit().map_err(|e| IndexError::Db(format!("commit: {e}")))?;
+        tx.commit()
+            .map_err(|e| IndexError::Db(format!("commit: {e}")))?;
         Ok(())
     }
 

@@ -109,8 +109,13 @@ fn save(map: &BTreeMap<String, String>) -> Result<(), String> {
     let tmp_path = path.with_extension("dat.tmp");
     std::fs::write(&tmp_path, &ciphertext)
         .map_err(|e| format!("vault tmp write {}: {e}", tmp_path.display()))?;
-    std::fs::rename(&tmp_path, &path)
-        .map_err(|e| format!("vault rename {} -> {}: {e}", tmp_path.display(), path.display()))?;
+    std::fs::rename(&tmp_path, &path).map_err(|e| {
+        format!(
+            "vault rename {} -> {}: {e}",
+            tmp_path.display(),
+            path.display()
+        )
+    })?;
     *CACHE.lock().unwrap() = Some(map.clone());
     Ok(())
 }

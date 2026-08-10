@@ -141,8 +141,8 @@ impl SmartTableIndex {
         content_hash: &str,
     ) -> Result<String, StIndexError> {
         let table_id = table_id_for(path);
-        let schema_json =
-            serde_json::to_string(fields).map_err(|e| StIndexError::Db(format!("schema json: {e}")))?;
+        let schema_json = serde_json::to_string(fields)
+            .map_err(|e| StIndexError::Db(format!("schema json: {e}")))?;
         let now_ms = now_ms_signed();
 
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
@@ -152,23 +152,39 @@ impl SmartTableIndex {
 
         tx.execute("DELETE FROM st_rows WHERE table_id = ?1", params![table_id])
             .map_err(|e| StIndexError::Db(format!("del rows: {e}")))?;
-        tx.execute("DELETE FROM st_cells WHERE table_id = ?1", params![table_id])
-            .map_err(|e| StIndexError::Db(format!("del cells: {e}")))?;
+        tx.execute(
+            "DELETE FROM st_cells WHERE table_id = ?1",
+            params![table_id],
+        )
+        .map_err(|e| StIndexError::Db(format!("del cells: {e}")))?;
         // Outgoing reference edges are derived from this table's cells, so the
         // row change invalidates them — drop and let `index_references` rebuild.
-        tx.execute("DELETE FROM st_refs WHERE src_table_id = ?1", params![table_id])
-            .map_err(|e| StIndexError::Db(format!("del refs: {e}")))?;
+        tx.execute(
+            "DELETE FROM st_refs WHERE src_table_id = ?1",
+            params![table_id],
+        )
+        .map_err(|e| StIndexError::Db(format!("del refs: {e}")))?;
         tx.execute(
             "INSERT OR REPLACE INTO st_tables
                 (table_id, path, title, schema_json, mtime_ms, content_hash, indexed_at_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![table_id, path, title, schema_json, mtime_ms, content_hash, now_ms],
+            params![
+                table_id,
+                path,
+                title,
+                schema_json,
+                mtime_ms,
+                content_hash,
+                now_ms
+            ],
         )
         .map_err(|e| StIndexError::Db(format!("upsert table: {e}")))?;
 
         // field key → cell type, for the derived value_num / value_date columns.
-        let types: HashMap<&str, CellType> =
-            fields.iter().map(|f| (f.key.as_str(), f.cell_type)).collect();
+        let types: HashMap<&str, CellType> = fields
+            .iter()
+            .map(|f| (f.key.as_str(), f.cell_type))
+            .collect();
 
         // Occurrence counter disambiguates duplicate-content rows so identical
         // rows get distinct, deterministic ids (design §A.3).
@@ -187,7 +203,10 @@ impl SmartTableIndex {
 
             for field in fields {
                 let value = row.get(&field.key).cloned().unwrap_or_default();
-                let ct = types.get(field.key.as_str()).copied().unwrap_or(CellType::Text);
+                let ct = types
+                    .get(field.key.as_str())
+                    .copied()
+                    .unwrap_or(CellType::Text);
                 let value_num = if ct == CellType::Number {
                     value.trim().parse::<f64>().ok().filter(|n| n.is_finite())
                 } else {
@@ -241,7 +260,12 @@ impl SmartTableIndex {
     /// True iff the index has this path at exactly `mtime_ms` + `content_hash`.
     /// Drift (or never-indexed) → false, so the read path reindexes or falls
     /// back to in-memory query. markdown always wins.
-    pub fn is_fresh(&self, path: &str, mtime_ms: i64, content_hash: &str) -> Result<bool, StIndexError> {
+    pub fn is_fresh(
+        &self,
+        path: &str,
+        mtime_ms: i64,
+        content_hash: &str,
+    ) -> Result<bool, StIndexError> {
         let table_id = table_id_for(path);
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
         let found: Option<(i64, String)> = conn
@@ -261,12 +285,19 @@ impl SmartTableIndex {
 
     /// Number of data rows indexed for a table.
     pub fn row_count(&self, table_id: &str) -> Result<usize, StIndexError> {
-        self.scalar_count("SELECT COUNT(*) FROM st_rows WHERE table_id = ?1", Some(table_id))
+        self.scalar_count(
+            "SELECT COUNT(*) FROM st_rows WHERE table_id = ?1",
+            Some(table_id),
+        )
     }
 
     /// Number of cells with a populated numeric projection for a field —
     /// diagnostics + the slice-1 typed-projection test.
-    pub fn numeric_cell_count(&self, table_id: &str, field_key: &str) -> Result<usize, StIndexError> {
+    pub fn numeric_cell_count(
+        &self,
+        table_id: &str,
+        field_key: &str,
+    ) -> Result<usize, StIndexError> {
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
         let n: i64 = conn
             .query_row(
@@ -330,11 +361,13 @@ impl SmartTableIndex {
     /// Row-ids matching ALL pushable predicates (AND intersection), via the
     /// typed-projection indexes. Each predicate is an `IN (subquery)` over
     /// st_cells so the composite indexes (st_cells_num / st_cells_date) serve it.
-    fn candidate_ids(&self, table_id: &str, conds: &[PushCond]) -> Result<Vec<String>, StIndexError> {
+    fn candidate_ids(
+        &self,
+        table_id: &str,
+        conds: &[PushCond],
+    ) -> Result<Vec<String>, StIndexError> {
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
-        let mut sql = String::from(
-            "SELECT r.row_id FROM st_rows r WHERE r.table_id = ?1",
-        );
+        let mut sql = String::from("SELECT r.row_id FROM st_rows r WHERE r.table_id = ?1");
         for (i, c) in conds.iter().enumerate() {
             // params: ?1 = table_id; then per cond field_key + value, indexed from ?2.
             let p_field = i * 2 + 2;
@@ -381,13 +414,20 @@ impl SmartTableIndex {
     /// cell row, so this matches the markdown-parsed shape exactly; for downstream
     /// consumers (run_query reads `row.get(f).unwrap_or("")`) a present-blank key
     /// and a missing key are value-equivalent, so the blank-fill is not a divergence.
-    fn reconstruct_rows(&self, table_id: &str, only: Option<&[String]>) -> Result<Vec<Row>, StIndexError> {
+    fn reconstruct_rows(
+        &self,
+        table_id: &str,
+        only: Option<&[String]>,
+    ) -> Result<Vec<Row>, StIndexError> {
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
         let base = "SELECT c.row_id, c.field_key, c.value_text \
              FROM st_cells c JOIN st_rows r ON r.table_id = c.table_id AND r.row_id = c.row_id \
              WHERE c.table_id = ?1";
         let (sql, ids): (String, Vec<String>) = match only {
-            None => (format!("{base} ORDER BY r.row_ord, c.field_key"), Vec::new()),
+            None => (
+                format!("{base} ORDER BY r.row_ord, c.field_key"),
+                Vec::new(),
+            ),
             Some(ids) => {
                 if ids.is_empty() {
                     return Ok(Vec::new());
@@ -494,7 +534,14 @@ impl SmartTableIndex {
                     "INSERT OR REPLACE INTO st_refs \
                        (src_table_id, src_row_id, src_field, dst_table_id, dst_row_id, dst_raw) \
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![src_table_id, src_row_id, src_field, dst_table_id, dst_row_id, token],
+                    params![
+                        src_table_id,
+                        src_row_id,
+                        src_field,
+                        dst_table_id,
+                        dst_row_id,
+                        token
+                    ],
                 )
                 .map_err(|e| StIndexError::Db(format!("ins ref: {e}")))?;
                 edges += 1;
@@ -600,7 +647,9 @@ impl SmartTableIndex {
     ) -> Result<HashMap<String, String>, StIndexError> {
         let conn = self.conn.lock().map_err(|_| StIndexError::Poisoned)?;
         let mut stmt = conn
-            .prepare("SELECT row_id, value_text FROM st_cells WHERE table_id = ?1 AND field_key = ?2")
+            .prepare(
+                "SELECT row_id, value_text FROM st_cells WHERE table_id = ?1 AND field_key = ?2",
+            )
             .map_err(|e| StIndexError::Db(format!("prepare src vals: {e}")))?;
         let it = stmt
             .query_map(params![table_id, field], |r| {
@@ -708,7 +757,10 @@ fn fmt_num(n: f64) -> String {
 /// First 16 hex chars of sha256 — short, stable, collision-safe enough for ids.
 fn short_hash(s: &str) -> String {
     let digest = Sha256::digest(s.as_bytes());
-    let hex = digest.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let hex = digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     hex[..16].to_string()
 }
 
@@ -757,7 +809,12 @@ fn pushable(f: &Filter, ct: CellType) -> Option<PushCond> {
     match ct {
         CellType::Number => match f.op {
             Operator::Gt | Operator::Lt | Operator::Gte | Operator::Lte => {
-                let v = f.value.trim().parse::<f64>().ok().filter(|n| n.is_finite())?;
+                let v = f
+                    .value
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|n| n.is_finite())?;
                 Some(PushCond::Num(f.field.clone(), f.op, v))
             }
             _ => None,
@@ -771,7 +828,11 @@ fn pushable(f: &Filter, ct: CellType) -> Option<PushCond> {
             | Operator::Lte
             | Operator::Gte => {
                 let d = NaiveDate::parse_from_str(f.value.trim(), "%Y-%m-%d").ok()?;
-                Some(PushCond::Date(f.field.clone(), f.op, d.format("%Y-%m-%d").to_string()))
+                Some(PushCond::Date(
+                    f.field.clone(),
+                    f.op,
+                    d.format("%Y-%m-%d").to_string(),
+                ))
             }
             _ => None,
         },
@@ -821,7 +882,10 @@ mod tests {
     }
 
     fn row(pairs: &[(&str, &str)]) -> Row {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     fn sample() -> (Vec<FieldSpec>, Vec<Row>) {
@@ -929,10 +993,34 @@ mod tests {
     /// shape, so the reconstructed rows equal the in-memory rows exactly.
     fn parity_rows() -> Vec<Row> {
         vec![
-            row(&[("name", "Acme"), ("amount", "100"), ("due", "2026-06-20"), ("done", "x"), ("tags", "crm, vip")]),
-            row(&[("name", "Beta"), ("amount", "50"), ("due", "2026-07-01"), ("done", ""), ("tags", "crm")]),
-            row(&[("name", "Cobalt"), ("amount", "250"), ("due", "2026-06-18"), ("done", ""), ("tags", "lead")]),
-            row(&[("name", "Delta"), ("amount", "n/a"), ("due", ""), ("done", "x"), ("tags", "")]),
+            row(&[
+                ("name", "Acme"),
+                ("amount", "100"),
+                ("due", "2026-06-20"),
+                ("done", "x"),
+                ("tags", "crm, vip"),
+            ]),
+            row(&[
+                ("name", "Beta"),
+                ("amount", "50"),
+                ("due", "2026-07-01"),
+                ("done", ""),
+                ("tags", "crm"),
+            ]),
+            row(&[
+                ("name", "Cobalt"),
+                ("amount", "250"),
+                ("due", "2026-06-18"),
+                ("done", ""),
+                ("tags", "lead"),
+            ]),
+            row(&[
+                ("name", "Delta"),
+                ("amount", "n/a"),
+                ("due", ""),
+                ("done", "x"),
+                ("tags", ""),
+            ]),
         ]
     }
 
@@ -960,40 +1048,76 @@ mod tests {
             // empty
             QueryRequest::default(),
             // number gt (pushed)
-            QueryRequest { filters: vec![f("amount", Operator::Gt, "80")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("amount", Operator::Gt, "80")],
+                ..Default::default()
+            },
             // number lte (pushed)
-            QueryRequest { filters: vec![f("amount", Operator::Lte, "100")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("amount", Operator::Lte, "100")],
+                ..Default::default()
+            },
             // number eq (NOT pushed — epsilon path)
-            QueryRequest { filters: vec![f("amount", Operator::Eq, "250")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("amount", Operator::Eq, "250")],
+                ..Default::default()
+            },
             // date before (pushed)
-            QueryRequest { filters: vec![f("due", Operator::Before, "2026-06-25")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("due", Operator::Before, "2026-06-25")],
+                ..Default::default()
+            },
             // date within (NOT pushed — relative)
-            QueryRequest { filters: vec![f("due", Operator::Within, "this_week")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("due", Operator::Within, "this_week")],
+                ..Default::default()
+            },
             // text contains (NOT pushed)
-            QueryRequest { filters: vec![f("name", Operator::Contains, " co")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("name", Operator::Contains, " co")],
+                ..Default::default()
+            },
             // checkbox is (NOT pushed)
-            QueryRequest { filters: vec![f("done", Operator::Is, "true")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("done", Operator::Is, "true")],
+                ..Default::default()
+            },
             // tags has_tag (NOT pushed)
-            QueryRequest { filters: vec![f("tags", Operator::HasTag, "crm")], ..Default::default() },
+            QueryRequest {
+                filters: vec![f("tags", Operator::HasTag, "crm")],
+                ..Default::default()
+            },
             // AND of pushed + non-pushed
             QueryRequest {
-                filters: vec![f("amount", Operator::Gt, "40"), f("tags", Operator::HasTag, "crm")],
+                filters: vec![
+                    f("amount", Operator::Gt, "40"),
+                    f("tags", Operator::HasTag, "crm"),
+                ],
                 ..Default::default()
             },
             // OR (not pruned — full scan)
             QueryRequest {
-                filters: vec![f("amount", Operator::Lt, "80"), f("tags", Operator::HasTag, "lead")],
+                filters: vec![
+                    f("amount", Operator::Lt, "80"),
+                    f("tags", Operator::HasTag, "lead"),
+                ],
                 conjunction: Conjunction::Or,
                 ..Default::default()
             },
             // sort desc + limit
             QueryRequest {
-                sort: vec![SortKey { field: "amount".into(), desc: true }],
+                sort: vec![SortKey {
+                    field: "amount".into(),
+                    desc: true,
+                }],
                 limit: Some(2),
                 ..Default::default()
             },
             // group
-            QueryRequest { group_by: vec!["done".into()], ..Default::default() },
+            QueryRequest {
+                group_by: vec!["done".into()],
+                ..Default::default()
+            },
         ];
 
         for (i, req) in cases.iter().enumerate() {
@@ -1021,10 +1145,20 @@ mod tests {
             row(&[("name", "Beta"), ("email", "b@beta.co"), ("spend", "120")]),
         ];
         let ctid = idx
-            .reindex_table("tables/contacts.md", None, &contact_fields, &contact_rows, 1, "hc")
+            .reindex_table(
+                "tables/contacts.md",
+                None,
+                &contact_fields,
+                &contact_rows,
+                1,
+                "hc",
+            )
             .unwrap();
 
-        let deal_fields = vec![field("title", CellType::Text), field("contact", CellType::Text)];
+        let deal_fields = vec![
+            field("title", CellType::Text),
+            field("contact", CellType::Text),
+        ];
         let deal_rows = vec![
             // multi-target reference (Obsidian-style + bare), and a dangling one.
             row(&[("title", "D1"), ("contact", "[[Acme]], Beta")]),
@@ -1035,7 +1169,8 @@ mod tests {
             .reindex_table("tables/deals.md", None, &deal_fields, &deal_rows, 1, "hd")
             .unwrap();
 
-        idx.index_references(&dtid, "contact", &ctid, "name").unwrap();
+        idx.index_references(&dtid, "contact", &ctid, "name")
+            .unwrap();
         (path, idx, dtid, ctid)
     }
 
@@ -1045,8 +1180,13 @@ mod tests {
         // D1 → Acme + Beta (resolved); D2 → Acme (resolved); D3 → Ghost (dangling).
         let lookup = idx.compute_lookup(&dtid, "contact", "email").unwrap();
         // D1 pulls both emails (order by dst_raw: Acme then Beta).
-        let d1 = lookup.values().find(|v| v.contains("a@acme.co") && v.contains("b@beta.co"));
-        assert!(d1.is_some(), "D1 should lookup both linked emails, got {lookup:?}");
+        let d1 = lookup
+            .values()
+            .find(|v| v.contains("a@acme.co") && v.contains("b@beta.co"));
+        assert!(
+            d1.is_some(),
+            "D1 should lookup both linked emails, got {lookup:?}"
+        );
         // Exactly two source rows have resolved lookups (D1, D2); D3 dangles → absent.
         assert_eq!(lookup.len(), 2);
         let _ = std::fs::remove_file(&path);
@@ -1055,8 +1195,12 @@ mod tests {
     #[test]
     fn rollup_sum_and_count_over_links() {
         let (path, idx, dtid, _ctid) = relational_fixture();
-        let sum = idx.compute_rollup(&dtid, "contact", "spend", "sum").unwrap();
-        let count = idx.compute_rollup(&dtid, "contact", "spend", "count").unwrap();
+        let sum = idx
+            .compute_rollup(&dtid, "contact", "spend", "sum")
+            .unwrap();
+        let count = idx
+            .compute_rollup(&dtid, "contact", "spend", "count")
+            .unwrap();
         // D1 links Acme(300)+Beta(120) = 420; D2 links Acme = 300.
         let sums: Vec<&String> = sum.values().collect();
         assert!(sums.contains(&&"420".to_string()), "sums={sum:?}");
@@ -1078,7 +1222,10 @@ mod tests {
         assert!(d1.contains("a@acme.co") && d1.contains("b@beta.co"));
         let rollup = idx.rollup_by_via(&dtid, "contact", "spend", "sum").unwrap();
         assert_eq!(rollup.get("Acme").map(String::as_str), Some("300"));
-        assert_eq!(rollup.get("[[Acme]], Beta").map(String::as_str), Some("420"));
+        assert_eq!(
+            rollup.get("[[Acme]], Beta").map(String::as_str),
+            Some("420")
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -1096,9 +1243,17 @@ mod tests {
             row(&[("name", "Beta"), ("email", "b@beta.co"), ("spend", "120")]),
             row(&[("name", "Ghost"), ("email", "g@ghost.co"), ("spend", "9")]),
         ];
-        idx.reindex_table("tables/contacts.md", None, &contact_fields, &contact_rows, 2, "hc2")
+        idx.reindex_table(
+            "tables/contacts.md",
+            None,
+            &contact_fields,
+            &contact_rows,
+            2,
+            "hc2",
+        )
+        .unwrap();
+        idx.index_references(&dtid, "contact", &ctid, "name")
             .unwrap();
-        idx.index_references(&dtid, "contact", &ctid, "name").unwrap();
         let lookup = idx.compute_lookup(&dtid, "contact", "email").unwrap();
         // Now D3 → Ghost resolves: three source rows have lookups.
         assert_eq!(lookup.len(), 3, "lookup={lookup:?}");
@@ -1115,7 +1270,11 @@ mod tests {
             .reindex_table("tables/p.md", None, &fields, &rows, 1, "h")
             .unwrap();
         let req = QueryRequest {
-            filters: vec![Filter { field: "nope".into(), op: Operator::Eq, value: "x".into() }],
+            filters: vec![Filter {
+                field: "nope".into(),
+                op: Operator::Eq,
+                value: "x".into(),
+            }],
             ..Default::default()
         };
         // Same structured error as the in-memory path (anti-hallucination).

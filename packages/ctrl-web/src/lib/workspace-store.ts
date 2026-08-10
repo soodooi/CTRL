@@ -70,7 +70,7 @@ interface WorkspaceStoreState {
   /** Open a tab in the singleton "system" instance (Settings / Pool /
    *  Vault / etc. — non-mcp routes invoked from L1). The system
    *  instance is created on first call with layout = `tabs` so the
-   *  TabBar shows even with a single tab. Idempotent on tab.id. */
+   *  the tab strip shows even with a single tab. Idempotent on tab.id. */
   openSystemTab: (tab: Tab) => void;
 }
 
@@ -322,7 +322,7 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
           // caller passes a NEW shape for the same id (e.g. clicking
           // the Providers tab in Settings updates `path` from
           // `/settings/ctrl` to `/settings/providers`), merge the
-          // incoming tab over the existing one so WorkspaceShell's
+          // incoming tab over the existing one so the consumer's
           // path-driven `resolveRouteComponent` switches. Idempotent
           // on the (id, path) pair instead of just id. bao 2026-06-04.
           const hasTab = existing.tabs.some((t) => t.id === tab.id);

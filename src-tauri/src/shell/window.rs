@@ -64,16 +64,16 @@ mod macos_window {
     }
 
     fn panel(window: &WebviewWindow) -> Option<LauncherPanelHandle> {
-        if let Ok(panel) = window
-            .app_handle()
-            .get_webview_panel(window.label())
-        {
+        if let Ok(panel) = window.app_handle().get_webview_panel(window.label()) {
             return Some(panel);
         }
         match window.to_panel::<CtrlLauncherPanel>() {
             Ok(panel) => Some(panel),
             Err(error) => {
-                tracing::error!(?error, "WindowController — failed to convert launcher to NSPanel");
+                tracing::error!(
+                    ?error,
+                    "WindowController — failed to convert launcher to NSPanel"
+                );
                 None
             }
         }
@@ -87,12 +87,7 @@ mod macos_window {
         panel.set_floating_panel(true);
         panel.set_level(PanelLevel::Status.value());
         panel.set_hides_on_deactivate(false);
-        panel.set_style_mask(
-            StyleMask::empty()
-                .resizable()
-                .nonactivating_panel()
-                .into(),
-        );
+        panel.set_style_mask(StyleMask::empty().resizable().nonactivating_panel().into());
         panel.set_collection_behavior(
             CollectionBehavior::new()
                 .can_join_all_spaces()
@@ -362,14 +357,13 @@ impl WindowController {
         }
         #[cfg(not(target_os = "windows"))]
         {
+            // Visibility is the toggle source of truth. Active-Space status is
+            // presentation telemetry only and must not create a second state
+            // machine for the same launcher.
+            // (ADR-003 frontend §1.1 v40)
             let visible = w.is_visible().unwrap_or(false);
-            #[cfg(target_os = "macos")]
-            let visible_on_active_space =
-                visible && macos_window::is_on_active_space(&w).unwrap_or(false);
-            #[cfg(not(target_os = "macos"))]
-            let visible_on_active_space = visible;
 
-            if visible_on_active_space {
+            if visible {
                 tracing::info!("WindowController::toggle — hide");
                 #[cfg(target_os = "macos")]
                 macos_window::hide(&w);
@@ -405,10 +399,9 @@ impl WindowController {
         Ok(())
     }
 
-    /// Build the main launcher window. Recovery path; normally the window
-    /// comes pre-built from tauri.conf.json `windows: [...]`. Keep this path
-    /// taskbar-visible so recovery preserves the Regular app contract.
-    /// (ADR-003 frontend §1.1 v25)
+    /// Build the main launcher window as a hidden recovery surface. Presentation
+    /// happens only after platform-specific cloak/panel configuration.
+    /// (ADR-003 frontend §1.1 v40)
     pub fn build_main(app: &AppHandle) -> Result<WebviewWindow> {
         let w = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("/".into()))
             .title("CTRL")
@@ -420,7 +413,8 @@ impl WindowController {
             .always_on_top(true)
             .visible_on_all_workspaces(true)
             .skip_taskbar(false)
-            .focused(true)
+            .visible(false)
+            .focused(false)
             .center()
             .resizable(true)
             .build()?;
@@ -579,7 +573,10 @@ pub(crate) fn install_close_intercept(w: &WebviewWindow, app: &AppHandle, label:
     let label_owned = label.to_string();
     w.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
-            tracing::info!("close requested on window={} — intercept routing", label_owned);
+            tracing::info!(
+                "close requested on window={} — intercept routing",
+                label_owned
+            );
             api.prevent_close();
             let app_for_closure = app_for_event.clone();
             let label_for_closure = label_owned.clone();

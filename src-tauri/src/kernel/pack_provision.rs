@@ -72,7 +72,10 @@ fn resolve_port_template(template: &str, port_app: u16) -> String {
 
 fn service_dir(pack_id: &str) -> Result<PathBuf, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME unset".to_string())?;
-    Ok(PathBuf::from(home).join(".ctrl").join("services").join(pack_id))
+    Ok(PathBuf::from(home)
+        .join(".ctrl")
+        .join("services")
+        .join(pack_id))
 }
 
 /// Probe whether `<prog> <args...>` runs successfully (exit 0), silently.
@@ -109,10 +112,11 @@ pub async fn detect_compose() -> Option<Vec<String>> {
 }
 
 async fn compose_command() -> Result<Vec<String>, String> {
-    detect_compose()
-        .await
-        .ok_or_else(|| "no container compose found — install Docker (with the compose plugin) \
-             or docker-compose / podman to run this pack".to_string())
+    detect_compose().await.ok_or_else(|| {
+        "no container compose found — install Docker (with the compose plugin) \
+             or docker-compose / podman to run this pack"
+            .to_string()
+    })
 }
 
 /// Error-message sentinel prefixing the JSON guidance payload returned when a
@@ -199,7 +203,11 @@ pub async fn provision_service(pack_id: &str, service: &Value) -> Result<String,
     let gen_keys: Vec<String> = service
         .get("generated_secrets")
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
 
     let secrets = ensure_generated_secrets(pack_id, &gen_keys)?;
@@ -234,7 +242,10 @@ pub async fn provision_service(pack_id: &str, service: &Value) -> Result<String,
             ready.get("url").and_then(Value::as_str).unwrap_or_default(),
             port_app,
         );
-        let timeout_s = ready.pointer("/timeout_s").and_then(Value::as_u64).unwrap_or(180);
+        let timeout_s = ready
+            .pointer("/timeout_s")
+            .and_then(Value::as_u64)
+            .unwrap_or(180);
         poll_ready(&url, timeout_s).await?;
     }
 
@@ -274,7 +285,10 @@ pub async fn install_pack(pack_id: &str, manifest: &Value) -> Result<String, Str
     // no runtime is installed, fail EARLY with structured guidance the frontend
     // renders as a friendly card — not a deep raw compose error.
     if manifest.pointer("/provision/service").is_some() && detect_compose().await.is_none() {
-        return Err(format!("{NEEDS_CONTAINER_RUNTIME} {}", container_runtime_guidance()));
+        return Err(format!(
+            "{NEEDS_CONTAINER_RUNTIME} {}",
+            container_runtime_guidance()
+        ));
     }
 
     let base_url = if let Some(service) = manifest.pointer("/provision/service") {
@@ -298,17 +312,27 @@ pub async fn install_pack(pack_id: &str, manifest: &Value) -> Result<String, Str
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
                 .map_err(|e| e.to_string())?;
-            let method = bootstrap.get("method").and_then(Value::as_str).unwrap_or("POST");
-            let path = bootstrap.get("path").and_then(Value::as_str).unwrap_or_default();
-            let body = bootstrap.get("body").cloned().unwrap_or(Value::Object(Default::default()));
+            let method = bootstrap
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or("POST");
+            let path = bootstrap
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let body = bootstrap
+                .get("body")
+                .cloned()
+                .unwrap_or(Value::Object(Default::default()));
             let pointer = bootstrap
                 .pointer("/capture/pointer")
                 .and_then(Value::as_str)
                 .unwrap_or("/accessToken");
-            let captured =
-                crate::kernel::pack_auth::run_bootstrap(&client, &base_url, method, path, &body, pointer)
-                    .await
-                    .map_err(|e| e.to_string())?;
+            let captured = crate::kernel::pack_auth::run_bootstrap(
+                &client, &base_url, method, path, &body, pointer,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
             credential_vault::set(&account, &captured)?;
             steps.push(format!("bootstrapped {into}"));
         } else {
@@ -333,9 +357,18 @@ pub async fn install_pack(pack_id: &str, manifest: &Value) -> Result<String, Str
                 .pointer("/auth/token_exchange")
                 .ok_or("auth.capture_context needs auth.token_exchange for a bearer")?;
             let te_path = te.get("path").and_then(Value::as_str).unwrap_or_default();
-            let send_field = te.get("as_body_field").and_then(Value::as_str).unwrap_or("accessToken");
-            let capture_bearer = te.get("capture_bearer").and_then(Value::as_str).unwrap_or("/authToken");
-            let send_secret = te.get("send_secret").and_then(Value::as_str).unwrap_or_default();
+            let send_field = te
+                .get("as_body_field")
+                .and_then(Value::as_str)
+                .unwrap_or("accessToken");
+            let capture_bearer = te
+                .get("capture_bearer")
+                .and_then(Value::as_str)
+                .unwrap_or("/authToken");
+            let send_secret = te
+                .get("send_secret")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let security_token =
                 credential_vault::get(&secret_account(pack_id, send_secret))?.unwrap_or_default();
             let client = reqwest::Client::builder()
@@ -343,12 +376,20 @@ pub async fn install_pack(pack_id: &str, manifest: &Value) -> Result<String, Str
                 .build()
                 .map_err(|e| e.to_string())?;
             let bearer = crate::kernel::pack_auth::mint_bearer(
-                &client, &base_url, te_path, send_field, &security_token, capture_bearer,
+                &client,
+                &base_url,
+                te_path,
+                send_field,
+                &security_token,
+                capture_bearer,
             )
             .await
             .map_err(|e| e.to_string())?;
             let path = ctx.get("path").and_then(Value::as_str).unwrap_or_default();
-            let pointer = ctx.get("pointer").and_then(Value::as_str).unwrap_or_default();
+            let pointer = ctx
+                .get("pointer")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let method = ctx.get("method").and_then(Value::as_str).unwrap_or("GET");
             let url = format!("{}{}", base_url.trim_end_matches('/'), path);
             // Honor the declared method (manifest=data): most context reads are
@@ -373,7 +414,9 @@ pub async fn install_pack(pack_id: &str, manifest: &Value) -> Result<String, Str
             let val = json
                 .pointer(pointer)
                 .and_then(Value::as_str)
-                .ok_or_else(|| format!("capture_context pointer {pointer} not found in response"))?;
+                .ok_or_else(|| {
+                    format!("capture_context pointer {pointer} not found in response")
+                })?;
             credential_vault::set(&account, val)?;
             steps.push(format!("captured {into}"));
         } else {
@@ -422,7 +465,10 @@ mod tests {
 
     #[test]
     fn secret_account_is_namespaced() {
-        assert_eq!(secret_account("ctrl-ghostfolio", "ghostfolio_token"), "mcp:ctrl-ghostfolio:ghostfolio_token");
+        assert_eq!(
+            secret_account("ctrl-ghostfolio", "ghostfolio_token"),
+            "mcp:ctrl-ghostfolio:ghostfolio_token"
+        );
     }
 
     #[test]
@@ -433,9 +479,13 @@ mod tests {
         assert!(g["steps"].as_array().is_some_and(|a| !a.is_empty()));
         let cmds = g["commands"].as_array().expect("commands array");
         assert!(!cmds.is_empty());
-        assert!(cmds.iter().all(|c| c.as_str().is_some_and(|s| !s.trim().is_empty())));
+        assert!(cmds
+            .iter()
+            .all(|c| c.as_str().is_some_and(|s| !s.trim().is_empty())));
         // A docs link the card can point at.
-        assert!(g["docs_url"].as_str().is_some_and(|u| u.starts_with("https://")));
+        assert!(g["docs_url"]
+            .as_str()
+            .is_some_and(|u| u.starts_with("https://")));
     }
 
     #[test]

@@ -25,8 +25,14 @@ fn to_rel(path: &Path) -> Result<(PathBuf, String), String> {
     // Canonicalize the ROOT (must exist); the note itself may not exist yet
     // (create path), so canonicalize its parent chain logically instead:
     // require the raw path to start with the root after normalization.
-    let root_canon = root.canonicalize().map_err(|e| format!("vault root: {e}"))?;
-    let p = if path.is_absolute() { path.to_path_buf() } else { root_canon.join(path) };
+    let root_canon = root
+        .canonicalize()
+        .map_err(|e| format!("vault root: {e}"))?;
+    let p = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root_canon.join(path)
+    };
     // Normalize `..` / `.` components without requiring existence.
     let mut norm = PathBuf::new();
     for c in p.components() {
@@ -189,7 +195,10 @@ pub async fn search_vault(
                 .map(|e| snippet_around(&e.content, &needle, 100))
                 .unwrap_or_default();
             // Upstream returns ABSOLUTE paths — translate back out.
-            SearchMatchItem { path: root.join(&rel).to_string_lossy().to_string(), snippet }
+            SearchMatchItem {
+                path: root.join(&rel).to_string_lossy().to_string(),
+                snippet,
+            }
         })
         .collect();
     Ok(SearchResponse { results, truncated })
@@ -206,7 +215,9 @@ fn snippet_around(content: &str, needle_lower: &str, radius: usize) -> String {
         .rev()
         .find(|&i| content.is_char_boundary(i))
         .unwrap_or(0);
-    let end = (end..=content.len()).find(|&i| content.is_char_boundary(i)).unwrap_or(content.len());
+    let end = (end..=content.len())
+        .find(|&i| content.is_char_boundary(i))
+        .unwrap_or(content.len());
     content[start..end].trim().to_string()
 }
 
@@ -220,7 +231,10 @@ async fn run_git_at_root(args: &[&str]) -> Result<(String, i32), String> {
         .output()
         .await
         .map_err(|e| format!("git spawn: {e}"))?;
-    Ok((String::from_utf8_lossy(&out.stdout).to_string(), out.status.code().unwrap_or(-1)))
+    Ok((
+        String::from_utf8_lossy(&out.stdout).to_string(),
+        out.status.code().unwrap_or(-1),
+    ))
 }
 
 #[tauri::command]
@@ -275,7 +289,10 @@ pub async fn git_author_identity(vault_path: Option<String>) -> Result<GitAuthor
             Some(t)
         }
     };
-    Ok(GitAuthorIdentity { name: clean(name), email: clean(email) })
+    Ok(GitAuthorIdentity {
+        name: clean(name),
+        email: clean(email),
+    })
 }
 
 // ── rename commands (upstream rename_cmds.rs shapes; CTRL-own impls) ────────
@@ -351,7 +368,10 @@ pub struct UpdateWikilinksArgs {
 }
 
 fn stem_of(p: &str) -> String {
-    Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+    Path::new(p)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default()
 }
 
 /// Delegates to the kernel's link-aware rewrite (single implementation —
@@ -379,7 +399,13 @@ pub fn auto_rename_untitled(args: AutoRenameArgs) -> Result<Option<RenameResult>
         .unwrap_or("");
     let clean: String = title
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { ' ' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
+                c
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -387,7 +413,10 @@ pub fn auto_rename_untitled(args: AutoRenameArgs) -> Result<Option<RenameResult>
     if clean.is_empty() {
         return Ok(None);
     }
-    let parent = Path::new(&rel).parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let parent = Path::new(&rel)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default();
     // Dedupe with ` 2`, ` 3`, … suffixes.
     let mut candidate = parent.join(format!("{clean}.md"));
     let mut n = 2;
@@ -441,7 +470,13 @@ pub fn save_image(
         .unwrap_or(0);
     let safe_name: String = filename
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let target = dir.join(format!("{ts}-{safe_name}"));
     std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
@@ -515,7 +550,10 @@ pub fn start_vault_watcher(app: tauri::AppHandle, path: PathBuf) -> Result<(), S
                 .collect();
             let _ = app.emit(
                 "vault-changed",
-                VaultChangedPayload { vault_path: root_str.clone(), paths },
+                VaultChangedPayload {
+                    vault_path: root_str.clone(),
+                    paths,
+                },
             );
         }
     });
@@ -743,8 +781,11 @@ pub fn get_settings() -> Result<serde_json::Value, String> {
 #[tauri::command]
 pub fn save_settings(settings: serde_json::Value) -> Result<(), String> {
     let path = ctrl_config_path("notes-ui-settings.json")?;
-    std::fs::write(&path, serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -779,8 +820,11 @@ pub fn load_vault_list() -> Result<serde_json::Value, String> {
 #[tauri::command]
 pub fn save_vault_list(list: serde_json::Value) -> Result<(), String> {
     let path = ctrl_config_path("notes-ui-vaults.json")?;
-    std::fs::write(&path, serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&list).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// CTRL's vault already exists — "create" commands resolve to it (the UI's
@@ -804,9 +848,13 @@ mod tests {
     #[test]
     fn to_rel_accepts_inside_and_rejects_outside() {
         // Uses the real default vault root when HOME is set; build paths off it.
-        let Some(root) = vault::default_vault_root() else { return };
+        let Some(root) = vault::default_vault_root() else {
+            return;
+        };
         std::fs::create_dir_all(&root).ok();
-        let Ok(canon) = root.canonicalize() else { return };
+        let Ok(canon) = root.canonicalize() else {
+            return;
+        };
         let inside = canon.join("notes/a.md");
         let (_, rel) = to_rel(&inside).unwrap();
         assert_eq!(rel, "notes/a.md");
@@ -839,12 +887,18 @@ mod tests {
         assert!(out.contains("[[new-note]]"));
         assert!(out.contains("[[new-note|alias]]"));
         assert!(out.contains("[[new-note#Heading]]"));
-        assert!(out.contains("[[old-note-longer]]"), "longer stem is NOT a boundary match");
+        assert!(
+            out.contains("[[old-note-longer]]"),
+            "longer stem is NOT a boundary match"
+        );
     }
 
     #[test]
     fn rewrite_wikilinks_noop_on_same_stem() {
         let dir = tempfile::TempDir::new().unwrap();
-        assert_eq!(rewrite_wikilinks(dir.path(), "x/a.md", "y/a.md").unwrap(), 0);
+        assert_eq!(
+            rewrite_wikilinks(dir.path(), "x/a.md", "y/a.md").unwrap(),
+            0
+        );
     }
 }

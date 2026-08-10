@@ -3,25 +3,30 @@
 //
 // A high-blast-radius call from an EXTERNAL caller (the BYO-CLI brain) parks
 // at the :17873 gate awaiting a human decision. The kernel fans the
-// gate-derived request out as a `review:pending` Tauri event; this host pops
-// a confirm and sends the decision back via the `review_resolve` command.
+// gate-derived request out as a `review:pending` Tauri event; this host adapts
+// it into an `approval` decision fact and sends the decision back via the
+// `review_resolve` command.
 //
-// C3 anti-injection: the modal shows ONLY the gate-parsed tool + structured
-// arg summary (built kernel-side), never any caller/LLM prose. The approval
-// travels the Tauri command surface the external brain cannot reach — it
-// physically cannot approve its own call.
+// The presentation goes through the one decision surface registry rather than a
+// hand-built dialog. The gate-derived caller, operation, and argument summary
+// remain VISIBLE — the current kernel request carries no target or staged
+// change, so demoting them would leave the user deciding on a frontend sentence.
+// Exact target plus staged before/after (ADR-005 §12 U10) requires a fact-owner
+// amendment and is tracked as open Design Acceptance, not claimed here.
+// (ADR-003 frontend § decision-registry v43)
+//
+// C3 anti-injection unchanged: the fact is built from the gate-parsed tool +
+// structured arg summary (kernel-side), never from caller/LLM prose. The
+// approval travels the Tauri command surface the external brain cannot reach —
+// it physically cannot approve its own call.
 
 import { useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '../lib/bridge';
-import { ConfirmDialog } from './primitives/ConfirmDialog';
+import { DecisionSurface } from './decisions/DecisionSurface';
+import { approvalFact, type KernelReviewRequest } from '../lib/decision-registry';
 
-interface ReviewRequest {
-  id: string;
-  caller: string;
-  tool: string;
-  arg_summary: string;
-}
+type ReviewRequest = KernelReviewRequest;
 
 export const ReviewGateHost = (): React.ReactElement | null => {
   const [queue, setQueue] = useState<ReviewRequest[]>([]);
@@ -64,46 +69,11 @@ export const ReviewGateHost = (): React.ReactElement | null => {
   };
 
   return (
-    <ConfirmDialog
-      open
-      title="Approve this action?"
-      destructive
+    <DecisionSurface
+      fact={approvalFact(head)}
       pending={pending}
-      confirmLabel="Approve"
-      cancelLabel="Deny"
-      body={
-        <div style={{ display: 'grid', gap: 8 }}>
-          <div style={{ fontSize: 13, opacity: 0.8 }}>
-            <strong>{head.caller}</strong> wants to run a high-impact action.
-          </div>
-          <div
-            style={{
-              fontFamily: 'var(--font-mono, monospace)',
-              fontSize: 13,
-              background: 'var(--surface-sunken, rgba(0,0,0,0.06))',
-              borderRadius: 6,
-              padding: '8px 10px',
-              wordBreak: 'break-word',
-            }}
-          >
-            <div>
-              <span style={{ opacity: 0.6 }}>tool </span>
-              {head.tool}
-            </div>
-            <div>
-              <span style={{ opacity: 0.6 }}>args </span>
-              {head.arg_summary}
-            </div>
-          </div>
-          {queue.length > 1 && (
-            <div style={{ fontSize: 12, opacity: 0.6 }}>
-              +{queue.length - 1} more waiting
-            </div>
-          )}
-        </div>
-      }
-      onConfirm={() => void resolve(true)}
-      onCancel={() => void resolve(false)}
+      queued={queue.length - 1}
+      onResolve={(optionId) => void resolve(optionId === 'approve')}
     />
   );
 };

@@ -28,7 +28,11 @@ impl std::fmt::Display for AuthError {
 }
 
 fn join(base_url: &str, path: &str) -> String {
-    format!("{}/{}", base_url.trim_end_matches('/'), path.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
 
 /// Extract a value at a JSON pointer as a string (numbers stringified). The
@@ -65,9 +69,15 @@ pub async fn run_bootstrap(
     if !resp.status().is_success() {
         return Err(AuthError::Status(resp.status().as_u16()));
     }
-    let v: Value = resp.json().await.map_err(|e| AuthError::Parse(e.to_string()))?;
-    pointer_str(&v, capture_pointer)
-        .ok_or_else(|| AuthError::Parse(format!("bootstrap response had no value at {capture_pointer}")))
+    let v: Value = resp
+        .json()
+        .await
+        .map_err(|e| AuthError::Parse(e.to_string()))?;
+    pointer_str(&v, capture_pointer).ok_or_else(|| {
+        AuthError::Parse(format!(
+            "bootstrap response had no value at {capture_pointer}"
+        ))
+    })
 }
 
 /// `auth.token_exchange` — exchange a stored long-lived secret for a short-lived
@@ -93,7 +103,10 @@ pub async fn mint_bearer(
     if !resp.status().is_success() {
         return Err(AuthError::Status(resp.status().as_u16()));
     }
-    let v: Value = resp.json().await.map_err(|e| AuthError::Parse(e.to_string()))?;
+    let v: Value = resp
+        .json()
+        .await
+        .map_err(|e| AuthError::Parse(e.to_string()))?;
     pointer_str(&v, capture_pointer)
         .ok_or_else(|| AuthError::Parse("exchange response had no bearer token".into()))
 }
@@ -122,7 +135,9 @@ mod tests {
         use axum::{routing::post, Json, Router};
         let app = Router::new().route(
             "/api/v1/user",
-            post(|| async { Json(serde_json::json!({ "accessToken": "sec-xyz", "role": "USER" })) }),
+            post(|| async {
+                Json(serde_json::json!({ "accessToken": "sec-xyz", "role": "USER" }))
+            }),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -178,8 +193,7 @@ mod tests {
     #[tokio::test]
     async fn bad_status_is_typed_error() {
         use axum::{http::StatusCode, routing::post, Router};
-        let app = Router::new()
-            .route("/api/v1/user", post(|| async { StatusCode::UNAUTHORIZED }));
+        let app = Router::new().route("/api/v1/user", post(|| async { StatusCode::UNAUTHORIZED }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {

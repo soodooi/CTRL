@@ -25,9 +25,27 @@
 import { isCtrlAssetUri } from './asset-uri';
 import { gateInvoke } from './kernel';
 
-export type UriKind = 'vault' | 'ctrl-asset' | 'data' | 'http' | 'file' | 'blob' | 'unknown';
+export type UriKind =
+  | 'resource'
+  | 'vault'
+  | 'ctrl-asset'
+  | 'data'
+  | 'http'
+  | 'file'
+  | 'blob'
+  | 'unknown';
+
+/** A canonical ResourceRef, read through the governed `query` verb rather than
+ *  a scheme-specific side channel. Without this branch every text viewer mounted
+ *  from a ResourceDescriptor failed to load, because `ctrl://` classified as an
+ *  unknown scheme and fell through to `fetch()`.
+ *  (ADR-002 substrate §15 v83) */
+export const isResourceRef = (uri: string): boolean => uri.startsWith('ctrl://');
 
 export const classifyUri = (uri: string): UriKind => {
+  // Checked before ctrl-asset:// so the canonical ref is never mistaken for the
+  // bundled-asset scheme.
+  if (isResourceRef(uri)) return 'resource';
   if (uri.startsWith('vault://')) return 'vault';
   if (isCtrlAssetUri(uri)) return 'ctrl-asset';
   if (uri.startsWith('data:')) return 'data';
@@ -93,6 +111,18 @@ export const writeVault = async (
  */
 export const fetchUriAsText = async (uri: string): Promise<string> => {
   const kind = classifyUri(uri);
+  if (kind === 'resource') {
+    const result = await gateInvoke<{ content?: unknown }>('query', {
+      ref: uri,
+      request: {},
+    });
+    if (typeof result.content !== 'string') {
+      // A Resource whose owner returns no text body has no text projection; say
+      // so rather than rendering an empty document as if it were the content.
+      throw new Error(`Resource ${uri} returned no text content`);
+    }
+    return result.content;
+  }
   if (kind === 'vault') {
     const entry = await readVault(vaultRelativePath(uri));
     return entry.content;

@@ -88,6 +88,16 @@ impl ShellLifecycle {
         // the OS hook on exit anyway via the Tauri shutdown path.
         std::mem::forget(_hotkey);
 
+        // An explicit application launch is a reveal request. Present only
+        // after hidden NSPanel conversion and hotkey installation so first
+        // launch and LaunchServices reopen use the same authority.
+        // (ADR-003 frontend §1.1 v40)
+        #[cfg(target_os = "macos")]
+        {
+            tracing::info!("ShellLifecycle::boot — revealing launcher after prewarm");
+            WindowController::reveal(app)?;
+        }
+
         tracing::info!("ShellLifecycle::boot — complete");
 
         // Refresh the API-key-representable provider/model catalogue from

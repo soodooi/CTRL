@@ -167,7 +167,10 @@ impl ManifestConnectorSource {
     /// (§14 convention, mirrors the hand-coded reader).
     pub fn from_json(spec: &RecordSourceSpec, body: &Value) -> ManifestConnectorSource {
         let items = array_at(body, &spec.query.array_at);
-        let rows = items.iter().map(|it| item_to_row(&spec.fields, it)).collect();
+        let rows = items
+            .iter()
+            .map(|it| item_to_row(&spec.fields, it))
+            .collect();
         ManifestConnectorSource {
             kind: spec.kind,
             fields: field_specs(&spec.fields),
@@ -305,7 +308,10 @@ pub async fn fetch(
     if !resp.status().is_success() {
         return Err(SourceError::Status(resp.status().as_u16()));
     }
-    let body: Value = resp.json().await.map_err(|e| SourceError::Parse(e.to_string()))?;
+    let body: Value = resp
+        .json()
+        .await
+        .map_err(|e| SourceError::Parse(e.to_string()))?;
     Ok(ManifestConnectorSource::from_json(spec, &body))
 }
 
@@ -395,7 +401,9 @@ pub async fn produce(
     if !resp.status().is_success() {
         return Err(SourceError::Status(resp.status().as_u16()));
     }
-    resp.json().await.map_err(|e| SourceError::Parse(e.to_string()))
+    resp.json()
+        .await
+        .map_err(|e| SourceError::Parse(e.to_string()))
 }
 
 /// Build a full `RecordSourceSpec` from an installed manifest: the `record_source`
@@ -403,7 +411,8 @@ pub async fn produce(
 /// record_source — the manifest's auth field names are mapped onto the spec's).
 /// Returns None if the manifest declares no `record_source`.
 pub fn spec_from_manifest(manifest: &Value) -> Option<RecordSourceSpec> {
-    let mut spec: RecordSourceSpec = serde_json::from_value(manifest.get("record_source")?.clone()).ok()?;
+    let mut spec: RecordSourceSpec =
+        serde_json::from_value(manifest.get("record_source")?.clone()).ok()?;
     // Reuse auth.token_exchange (manifest: path / as_body_field / capture_bearer)
     // → the generic source's token_exchange (path / as_body_field / capture_pointer).
     if let Some(tx) = manifest.pointer("/auth/token_exchange") {
@@ -434,7 +443,11 @@ pub fn send_secret_of(manifest: &Value) -> Option<String> {
 // ─── internals ────────────────────────────────────────────────────────────────
 
 fn join(base_url: &str, path: &str) -> String {
-    format!("{}/{}", base_url.trim_end_matches('/'), path.trim_start_matches('/'))
+    format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        path.trim_start_matches('/')
+    )
 }
 
 fn field_specs(fields: &[FieldMap]) -> Vec<FieldSpec> {
@@ -461,7 +474,11 @@ fn operators_for(spec: &RecordSourceSpec) -> Vec<Operator> {
 /// Extract the row array from the body at `array_at` (key or dotted path);
 /// `""` = the body is itself the array.
 fn array_at(body: &Value, at: &str) -> Vec<Value> {
-    let target = if at.is_empty() { Some(body) } else { dig(body, at) };
+    let target = if at.is_empty() {
+        Some(body)
+    } else {
+        dig(body, at)
+    };
     match target {
         Some(Value::Array(a)) => a.clone(),
         _ => Vec::new(),
@@ -649,7 +666,7 @@ mod tests {
         assert_eq!(src.rows()[0]["symbol"], "AAPL");
         assert_eq!(src.rows()[0]["value"], "1900.5");
         assert_eq!(src.rows()[0]["quantity"], "10"); // integer stays clean
-        // Nested SymbolProfile.symbol read when the flat key is absent.
+                                                     // Nested SymbolProfile.symbol read when the flat key is absent.
         assert_eq!(src.rows()[1]["symbol"], "VEU");
         assert_eq!(src.rows()[1]["value"], "500");
     }
@@ -663,27 +680,43 @@ mod tests {
         assert_eq!(src.rows().len(), 1);
         assert_eq!(src.rows()[0]["symbol"], "AAPL");
         assert_eq!(src.rows()[0]["name"], ""); // missing field → empty, not fatal
-        // Garbage body → empty source.
-        assert_eq!(ManifestConnectorSource::from_json(&spec, &serde_json::json!("no")).rows().len(), 0);
+                                               // Garbage body → empty source.
+        assert_eq!(
+            ManifestConnectorSource::from_json(&spec, &serde_json::json!("no"))
+                .rows()
+                .len(),
+            0
+        );
     }
 
     #[test]
     fn query_over_generic_source_reuses_shared_engine() {
         let src = ManifestConnectorSource::from_json(&ghostfolio_spec(), &sample());
         let req = QueryRequest {
-            filters: vec![Filter { field: "value".into(), op: Operator::Gt, value: "600".into() }],
+            filters: vec![Filter {
+                field: "value".into(),
+                op: Operator::Gt,
+                value: "600".into(),
+            }],
             ..Default::default()
         };
         let out = src.query(&req, now()).unwrap();
         assert_eq!(out.match_count, 2); // AAPL 1900.5 + BTC 650, not the 500 one
-        assert!(out.rows.iter().all(|r| r["symbol"] == "AAPL" || r["symbol"] == "BTC"));
+        assert!(out
+            .rows
+            .iter()
+            .all(|r| r["symbol"] == "AAPL" || r["symbol"] == "BTC"));
     }
 
     #[test]
     fn unknown_field_query_rejected() {
         let src = ManifestConnectorSource::from_json(&ghostfolio_spec(), &sample());
         let req = QueryRequest {
-            filters: vec![Filter { field: "bogus".into(), op: Operator::Eq, value: "x".into() }],
+            filters: vec![Filter {
+                field: "bogus".into(),
+                op: Operator::Eq,
+                value: "x".into(),
+            }],
             ..Default::default()
         };
         assert!(src.query(&req, now()).is_err());
@@ -710,7 +743,10 @@ mod tests {
     // is driven entirely by manifest data (no ghostfolio-specific code).
     #[tokio::test]
     async fn generic_fetch_over_http_maps_rows() {
-        use axum::{routing::{get, post}, Json, Router};
+        use axum::{
+            routing::{get, post},
+            Json, Router,
+        };
         let app = Router::new()
             .route(
                 "/api/v1/auth/anonymous",
@@ -734,13 +770,19 @@ mod tests {
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let src = fetch(&ghostfolio_spec(), &format!("http://{addr}"), "test-token").await.unwrap();
+        let src = fetch(&ghostfolio_spec(), &format!("http://{addr}"), "test-token")
+            .await
+            .unwrap();
         assert_eq!(src.rows().len(), 2);
         assert_eq!(src.rows()[0]["symbol"], "AAPL");
         assert_eq!(src.rows()[0]["value"], "1000");
 
         let req = QueryRequest {
-            filters: vec![Filter { field: "value".into(), op: Operator::Gt, value: "500".into() }],
+            filters: vec![Filter {
+                field: "value".into(),
+                op: Operator::Gt,
+                value: "500".into(),
+            }],
             ..Default::default()
         };
         let out = src.query(&req, now()).unwrap();
@@ -776,9 +818,15 @@ mod tests {
         input.insert("date".into(), serde_json::json!("2026-07-01"));
         input.insert("dataSource".into(), serde_json::json!("YAHOO"));
 
-        let created = produce(&ghostfolio_spec(), &format!("http://{addr}"), "test-token", &input, &|_| None)
-            .await
-            .unwrap();
+        let created = produce(
+            &ghostfolio_spec(),
+            &format!("http://{addr}"),
+            "test-token",
+            &input,
+            &|_| None,
+        )
+        .await
+        .unwrap();
         assert_eq!(created["symbol"], "AAPL");
         assert_eq!(created["type"], "BUY");
         assert_eq!(created["quantity"], 10.0);
@@ -801,15 +849,24 @@ mod tests {
 
         // Legacy HTTP manifests remain compatible with the transport union.
         // (ADR-002 substrate §14 v78)
-        assert_eq!(spec.query.endpoint.as_deref(), Some("/api/v1/portfolio/holdings"));
+        assert_eq!(
+            spec.query.endpoint.as_deref(),
+            Some("/api/v1/portfolio/holdings")
+        );
         assert_eq!(spec.query.array_at, "holdings");
         assert_eq!(spec.fields.len(), 6);
         // token_exchange reused from auth (manifest field names mapped over).
-        let tx = spec.token_exchange.clone().expect("token_exchange from auth");
+        let tx = spec
+            .token_exchange
+            .clone()
+            .expect("token_exchange from auth");
         assert_eq!(tx.path, "/api/v1/auth/anonymous");
         assert_eq!(tx.as_body_field, "accessToken");
         assert_eq!(tx.capture_pointer, "/authToken");
-        assert_eq!(send_secret_of(&manifest).as_deref(), Some("ghostfolio_token"));
+        assert_eq!(
+            send_secret_of(&manifest).as_deref(),
+            Some("ghostfolio_token")
+        );
         assert!(spec.produce.is_some(), "produce (record a trade) declared");
 
         // The generic source over the REAL manifest spec reproduces holdings rows,
@@ -827,15 +884,19 @@ mod tests {
     #[tokio::test]
     async fn fetch_bad_auth_is_typed_error() {
         use axum::{http::StatusCode, routing::post, Router};
-        let app = Router::new()
-            .route("/api/v1/auth/anonymous", post(|| async { StatusCode::UNAUTHORIZED }));
+        let app = Router::new().route(
+            "/api/v1/auth/anonymous",
+            post(|| async { StatusCode::UNAUTHORIZED }),
+        );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let err = fetch(&ghostfolio_spec(), &format!("http://{addr}"), "bad").await.unwrap_err();
+        let err = fetch(&ghostfolio_spec(), &format!("http://{addr}"), "bad")
+            .await
+            .unwrap_err();
         assert!(matches!(err, SourceError::Status(401)));
     }
 

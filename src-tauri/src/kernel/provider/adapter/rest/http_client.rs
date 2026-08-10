@@ -108,11 +108,7 @@ mod tests {
 
         assert!(result.is_err(), "request must error when server hangs");
         let err = result.unwrap_err();
-        assert!(
-            err.is_timeout(),
-            "expected timeout error, got: {}",
-            err
-        );
+        assert!(err.is_timeout(), "expected timeout error, got: {}", err);
         // Generous wall-clock budget keeps the test non-flaky on slow CI.
         assert!(
             elapsed < Duration::from_millis(2_000),

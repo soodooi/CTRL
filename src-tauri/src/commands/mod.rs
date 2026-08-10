@@ -36,26 +36,20 @@ pub mod notes_ui_scan;
 // ADR-002 substrate § capability-faces v19 §13.4 (2026-06-09): image
 // generation surface. Currently fal.ai-only; multi-provider routing for
 // image.generate lands when the second image provider is wired.
-pub mod code_space;
 pub mod image;
 pub mod screenshot;
 // Human-triggered external Coding Launcher Effect. OpenCode remains a
 // user-owned BYO-CLI process; CTRL only opens the projected workspace.
 // (ADR-001 spine §4 v13; ADR-003 frontend §8.5 v27;
 // ADR-005 irisy §8.7 v27)
-pub mod coding_attachment_picker;
-pub mod coding_chat;
 pub mod coding_launcher;
 pub mod config;
 pub mod diagnostics;
-pub mod draft;
-pub mod draft_run;
 pub mod gate;
 // ADR-002 substrate § vault v1 §8.6 v5 (2026-06-01) — vault-side git via git CLI
 // (cheaper than libgit2/isomorphic-git). Powers the Notes app Git
 // panel: status / init / commit_all / push / log.
 pub mod git;
-pub mod hermes_acp;
 pub mod irisy;
 pub mod irisy_chat;
 pub mod kernel;
@@ -84,9 +78,6 @@ pub mod updater;
 pub mod vault;
 // (commands/vault_embeddings.rs retired 2026-06-24 — moved to the :17873 gate,
 //  PWA calls via gate_invoke; kernel logic stays in kernel/vault_embeddings.rs.)
-// Irisy synthesize — Layer 4 product surface (brainstorm §5.3/§5.5/§5.10)
-pub mod irisy_synth;
-pub mod workshop;
 
 /// Returns the `invoke_handler!` tuple for `tauri::Builder::invoke_handler`.
 /// Call sites use this to keep the handler list in one place.
@@ -109,6 +100,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::run_action,
             $crate::commands::kernel::uninstall_mcp,
             $crate::commands::kernel::read_mcp_manifest,
+            // Bundled local-app connectors: listed always, connected only on an
+            // explicit user action. (ADR-004 cap §1 v13; ADR-005 irisy §12 v42 U19)
+            $crate::commands::kernel::list_local_app_connectors,
+            $crate::commands::kernel::connect_local_app,
+            // Conversation history read from the transcript directory, which is
+            // the list. (ADR-005 irisy §11.2 v44)
+            $crate::commands::kernel::list_session_transcripts,
             $crate::commands::kernel::set_mcp_config,
             // Discover registry data source (ADR-002 § composition §7.4)
             $crate::commands::pack_registry::fetch_pack_registry,
@@ -116,35 +114,13 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::chat::chat_stream,
             // Shared local source reader for Irisy's Markdown import.
             $crate::commands::chat_attachment::read_import_sources,
-            // One macOS picker for Coding files (ACP attachments) and folders
-            // (explicit OpenCode references). (ADR-003 frontend §8.5 v37)
-            $crate::commands::coding_attachment_picker::pick_coding_attachments,
             // Irisy chat stream and engine reset (ADR-005 irisy §8.7 v32).
             $crate::commands::irisy_chat::irisy_chat_stream,
             $crate::commands::irisy_chat::irisy_reset_engine,
-            // Irisy conversation history (reads hermes session store) — vault 0013
-            $crate::commands::hermes_acp::irisy_session_list,
-            $crate::commands::hermes_acp::irisy_session_get,
-            // agents — 3-agent aggregator (ADR-002 §1 v19): install / launch /
-            // stop / status. PWA owns retry; kernel does not supervise.
-            $crate::commands::agents::install_agent,
-            $crate::commands::agents::launch_agent,
-            $crate::commands::agents::stop_agent,
-            $crate::commands::agents::agent_status,
-            $crate::commands::agents::list_agents,
-            // list_byo_drivers — agents Irisy can be backed by (embedded hermes
-            // + detected BYO-CLI drivers Codex / Claude Code). Drives the env +
-            // in-chat agent selector (ADR-005 irisy §8).
-            $crate::commands::agents::list_byo_drivers,
-            // install_byo_agent — one-click managed install of a right-region BYO
-            // engine (Codex / Claude Code) into ~/.ctrl/agents (ADR-005 §8.8).
-            $crate::commands::agents::install_byo_agent,
-            // connect_agent_mcp — hermes (mcp-stdio) onto the kernel MCP bus
-            // (ADR-002 §1.3 v19); PWA chats via mcp_call afterwards.
-            $crate::commands::agents::connect_agent_mcp,
-            // assistant_oneshot — hermes -z bridge until the ACP
-            // streaming client lands (ADR-002 §1.1 v20, 2026-06-10).
-            $crate::commands::agents::assistant_oneshot,
+            // Irisy transcript recovery is owned exclusively by the canonical
+            // frontend session store. Runtime engines expose no history surface.
+            // Hermes is provisioned by the kernel and exposed only through
+            // Irisy's fixed managed runtime. No generic agent lifecycle API.
             // image — fal.ai BYOK image generation (ADR-002 §13.4 v19)
             $crate::commands::image::image_generate,
             $crate::commands::screenshot::capture_screen_and_ocr,
@@ -163,6 +139,10 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::irisy::irisy_init,
             // system — kernel health (PWA status bar Phase 1F)
             $crate::commands::system::kernel_status,
+            // Reveal an installed capability's own files. OS/UI action, ref-addressed
+            // so path authority stays in the kernel.
+            // (ADR-002 substrate §15.4.1 v88; ADR-005 irisy §12 v42 U18)
+            $crate::commands::system::reveal_capability,
             // review gate — human approval for high-blast calls (ADR-002
             // §264 + ADR-006 §4). PWA-only surface: the external brain can't
             // resolve its own pending review (C3 trust boundary).
@@ -222,8 +202,12 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::kernel::mcp_call,
             $crate::commands::kernel::list_mcp_servers,
             $crate::commands::kernel::open_workspace,
-            // skills — kernel-local skill discovery (ADR-007 workbench § discovery v1 Phase 1)
+            // Legacy direct Skill-search compatibility surface. Discovery and
+            // install authority live in the canonical local registry.
+            // (ADR-002 substrate §16 v81; ADR-006 cross-cutting §7 v13)
+            // ctrl-inventory: semantic-dual=discover_skills
             $crate::commands::skills::search_skills,
+            // ctrl-inventory: semantic-dual=skill_list
             $crate::commands::skills::list_local_skills,
             // event_stream
             // The kernel->PWA event stream is a plain CBOR-over-WS (the event-stream
@@ -244,39 +228,12 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::config::config_set_provider_key,
             $crate::commands::config::config_test_provider,
             $crate::commands::config::config_delete_provider,
-            // draft — workshop authoring state under ~/.ctrl/mcps/.drafts/
-            $crate::commands::draft::draft_list,
-            $crate::commands::draft::draft_read,
-            $crate::commands::draft::draft_save,
-            $crate::commands::draft::draft_delete,
-            $crate::commands::draft::draft_record_run,
-            $crate::commands::draft::draft_list_runs,
-            // draft_run — sandbox execution + per-step trace for canvas preview
-            $crate::commands::draft_run::run_mcp_draft,
-            // workshop — composite canvas operations (read-modify-save in one call)
-            $crate::commands::workshop::workshop_add_step,
-            $crate::commands::workshop::workshop_update_step,
-            $crate::commands::workshop::workshop_remove_step,
-            $crate::commands::workshop::workshop_move_step,
-            // code_space — coding remote desktop (event-stream spec v0.7 wire)
-            $crate::commands::code_space::cs_spawn,
-            $crate::commands::code_space::cs_stdin,
-            $crate::commands::code_space::cs_signal,
-            $crate::commands::code_space::cs_resize,
-            $crate::commands::code_space::cs_kill,
-            $crate::commands::code_space::cs_list,
-            // External-first Coding Launcher (secondary path, ADR-003 §8.5
-            // v32). This is an explicit PWA→shell Effect, not an OpenCode
-            // supervisor or a second projection path.
+            // External Coding launcher: explicit user-triggered shell Effect.
+            // OpenCode remains a user-owned BYO-CLI loop outside Irisy.
+            // (ADR-001 spine §4 v22; ADR-005 irisy §11 v40)
             $crate::commands::coding_launcher::coding_launcher_status,
+            $crate::commands::coding_launcher::register_project_resource,
             $crate::commands::coding_launcher::launch_coding_workspace,
-            // Coding scene's primary surface: opencode driven over ACP
-            // (ADR-001 spine §4 v16), the same AcpClient machinery Irisy's
-            // engine uses, in a separate singleton rooted at the selected
-            // workspace.
-            $crate::commands::coding_chat::coding_chat_stream,
-            $crate::commands::coding_chat::coding_cancel_stream,
-            $crate::commands::coding_chat::coding_reset_engine,
             // Unified first-party diagnostics controls. Capture/export preview
             // remain Tauri-only; Gate exposes the read-only subset.
             // (ADR-003 frontend §9 v26)
@@ -354,10 +311,6 @@ macro_rules! pwa_invoke_handler {
             $crate::commands::vault::vault_set_auto_sync,
             // SOUL.md (Irisy persistent memory) retired to the gate's memory-domain
             // tools irisy_soul_get/set (SC5 convergence); PWA reaches them via gate_invoke.
-            // Irisy synthesize — Layer 4 (question vault / cross-note / daily)
-            $crate::commands::irisy_synth::irisy_question_vault,
-            $crate::commands::irisy_synth::irisy_synthesize_notes,
-            $crate::commands::irisy_synth::irisy_daily_summarize,
             // git — vault-side CLI shim (§8.6 v5)
             $crate::commands::git::git_status,
             $crate::commands::git::git_init,

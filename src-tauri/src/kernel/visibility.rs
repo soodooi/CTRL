@@ -55,6 +55,10 @@ const FIRST_PARTY_DOMAINS: &[&str] = &[
     // operate connectors; per-source authorization (does the caller's intent
     // include THIS source's domain) is a follow-up — v1 gates at tool level.
     "source",
+    // Explicit Project Resources are selected by the Work surface and remain
+    // opaque; first-party callers may describe/query only that registered ref.
+    // (ADR-002 substrate §15 v83; ADR-005 irisy §11 v40)
+    "project",
     "notes",
     "providers",
     "registry",
@@ -126,80 +130,8 @@ pub fn is_user_surface(caller: &str) -> bool {
 /// is governance config (which kernel tools the brain sees), not hardcoded pack
 /// content. The PWA (`pwa`) is NOT capped — it renders tools in its own UI with
 /// no model limit — so it keeps the full first-party set.
-pub const BRAIN_TOOLSET: &[&str] = &[
-    // Always-on system introspection.
-    "kernel_status",
-    // Tool-discovery escape hatch — the curated list below is only a SUBSET of
-    // the ~100 registered tools (the model cap forces curation). These two keep
-    // the WHOLE surface reachable on demand: gate_tool_search finds any tool,
-    // gate_tool_call invokes it (bao 2026-07-04 — Irisy could only see 40 of 100,
-    // hiding note editing / AI columns / connectors / pack scaffold-validate-
-    // publish). FIRST so they can never be truncated.
-    "gate_tool_search",
-    "gate_tool_call",
-    // Feature-pack creation + take-stock research — Irisy's killer capability.
-    // FIRST so the brain's tool cap can never truncate it away.
-    "discover_packs",
-    "discover_skills",
-    "web_search",
-    "skill_list",
-    "skill_read",
-    "mcp_pack_list",
-    "mcp_pack_install",
-    "mcp_pack_run",
-    "mcp_pack_uninstall",
-    "mcp_pack_write_file",
-    "mcp_list_servers",
-    // Structured data — BUILD + edit smart-tables and multi-sheet bases. These
-    // are creation tools (peers of the pack suite): without them the brain can
-    // only READ tables and hallucinates a hand-write-the-frontmatter workaround
-    // (bao 2026-07-04: Irisy hand-wrote a CRM + hit "frontmatter must be a JSON
-    // object" because base_scaffold/create/produce were not in its toolset — the
-    // exact 2026-06-28 failure mode this list exists to prevent). High in the
-    // list so the model cap can never truncate the build capability.
-    "smart_table_base_scaffold",
-    "smart_table_create",
-    "smart_table_produce",
-    "smart_table_append_row",
-    "smart_table_batch_append_rows",
-    "smart_table_describe",
-    "smart_table_query",
-    // Core vault — Irisy as the notes / knowledge companion.
-    "vault_read",
-    "vault_write",
-    "vault_search",
-    "vault_list",
-    "vault_create_folder",
-    // Knowledge-base organization (bao 2026-06-29): these were implemented in the
-    // gate but never projected to the brain, so Irisy "couldn't organize a vault"
-    // — it only saw read/write/search. Backlinks, the tag index, orphan notes,
-    // broken links, and embedding-based related-note suggestions are the core
-    // organize toolkit; without them Irisy can read a note but not tidy a library.
-    "vault_backlinks",
-    "vault_tags",
-    "vault_orphans",
-    "vault_broken_links",
-    "vault_suggest_links",
-    // Persistent memory — SOUL.md (ADR-005 irisy §8.8 fix 2026-06-29). The
-    // capability brief promises Irisy long-term memory via these tools; without
-    // them in the curated set the brain never saw them (dropped by the tool cap),
-    // so the promise was a lie. In the core group so the cap can't truncate them.
-    "irisy_soul_get",
-    "irisy_soul_set",
-    // LifeOS tasks (Phase 1) — Irisy as the life/task companion. Create + query
-    // + complete so it can actually manage a task list, not just read one.
-    "task_describe",
-    "task_query",
-    "task_create",
-    "task_update",
-    // Watchlist / market data.
-    "market_quote",
-    "market_screen",
-    // Setup + reasoning.
-    "providers_query",
-    "registry_query",
-    "llm_chat",
-];
+/// (ADR-002 substrate §15 v83)
+pub const BRAIN_TOOLSET: &[&str] = &["describe", "query", "produce"];
 
 /// Whether the curated `BRAIN_TOOLSET` should be applied for this caller. Only
 /// the embedded brain (hermes) has the model-side tool cap that makes an
@@ -227,7 +159,10 @@ pub fn tool_domain(tool: &str) -> &'static str {
     // Always-on introspection — must be checked before the `vault_` prefix so
     // `vault_root_path` lands in `system`, not `vault`.
     match tool {
-        "kernel_status" | "vault_root_path" => return ALWAYS_ON,
+        // The names are always discoverable; ResourceRef-domain authorization
+        // is enforced dynamically by the gate and then by the selected owner.
+        // (ADR-002 substrate §15 v83)
+        "describe" | "query" | "produce" | "kernel_status" | "vault_root_path" => return ALWAYS_ON,
         // Controlled web search — exact-match (not a `web_` prefix) so a future
         // raw `web_fetch` would NOT inherit the first-party `websearch` domain
         // (ADR-010 communication § trust-domains v9, SC3).
@@ -300,33 +235,64 @@ pub fn tool_domain_with_downstream(tool: &str, downstream_ids: &[String]) -> &'s
     tool_domain(tool)
 }
 
-/// The capability domains a caller's current intent is scoped to. `None` means
-/// unscoped — the gate exposes the full toolset (migration / no-header default).
+/// The capability domains and exact tools a caller's current intent is scoped
+/// to. `None` domains means unscoped; exact `tool:<name>` entries let an FCT
+/// authorize one namespaced downstream tool without granting the whole `mcp`
+/// domain. (ADR-002 substrate §15.4 v84)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Intent {
     domains: Option<HashSet<String>>,
+    exact_tools: HashSet<String>,
+    /// Explicit connector identities from `source:<id>` tokens. A bare `source`
+    /// domain grant authorizes NO connector: it would otherwise hand every
+    /// installed connector to any caller that wanted one of them.
+    /// (ADR-002 substrate §17.5 v85)
+    sources: HashSet<String>,
 }
 
 impl Intent {
-    /// Parse the `X-Ctrl-Intent` header value. Absent, empty, or all-blank =>
-    /// unscoped. Otherwise the comma-separated domain tokens (trimmed,
-    /// lowercased, blanks dropped). An explicit but fully-blank value is
-    /// treated as unscoped rather than "deny everything" to avoid a caller
-    /// accidentally locking itself out with a stray comma.
+    /// Parse the `X-Ctrl-Intent` header value. Domain tokens are normalized to
+    /// lowercase; `tool:<name>` tokens retain an exact, bounded tool identity.
+    /// Absent or all-blank remains the legacy unscoped value and is resolved by
+    /// the HTTP gate through `default_for_caller`.
+    /// (ADR-002 substrate §15.4 v84)
     pub fn parse(raw: Option<&str>) -> Self {
         let Some(raw) = raw else {
-            return Self { domains: None };
+            return Self::unscoped();
         };
-        let domains: HashSet<String> = raw
+        let mut domains = HashSet::new();
+        let mut exact_tools = HashSet::new();
+        let mut sources = HashSet::new();
+        for token in raw
             .split(',')
-            .map(|s| s.trim().to_ascii_lowercase())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if domains.is_empty() {
-            Self { domains: None }
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+        {
+            if let Some(tool) = token
+                .strip_prefix("tool:")
+                .map(str::trim)
+                .filter(|tool| !tool.is_empty())
+            {
+                exact_tools.insert(tool.to_owned());
+            } else if let Some(source) = token
+                .strip_prefix("source:")
+                .map(str::trim)
+                .filter(|source| !source.is_empty())
+            {
+                // Narrowing, not a domain: `source` alone stays unauthorizing.
+                // (ADR-002 substrate §17.5 v85)
+                sources.insert(source.to_owned());
+            } else {
+                domains.insert(token.to_ascii_lowercase());
+            }
+        }
+        if domains.is_empty() && exact_tools.is_empty() && sources.is_empty() {
+            Self::unscoped()
         } else {
             Self {
                 domains: Some(domains),
+                exact_tools,
+                sources,
             }
         }
     }
@@ -335,22 +301,33 @@ impl Intent {
     /// with no request context (no external caller to least-privilege). NOT used
     /// on the HTTP gate path — there, an absent header resolves through
     /// `default_for_caller`, never to unscoped-full.
+    /// (ADR-002 substrate §15.4 v84)
     pub fn unscoped() -> Self {
-        Self { domains: None }
+        Self {
+            domains: None,
+            exact_tools: HashSet::new(),
+            sources: HashSet::new(),
+        }
     }
 
     /// Scope to exactly these capability domains (plus always-on system).
+    /// (ADR-002 substrate §15.4 v84)
     pub fn scoped_to<I: IntoIterator<Item = String>>(domains: I) -> Self {
         Self {
             domains: Some(domains.into_iter().collect()),
+            exact_tools: HashSet::new(),
+            sources: HashSet::new(),
         }
     }
 
     /// The minimal scope: only always-on system tools. An external caller that
     /// declares no intent gets this — it must opt in to anything more.
+    /// (ADR-002 substrate §15.4 v84)
     pub fn minimal() -> Self {
         Self {
             domains: Some(HashSet::new()),
+            exact_tools: HashSet::new(),
+            sources: HashSet::new(),
         }
     }
 
@@ -384,23 +361,137 @@ impl Intent {
     }
 
     /// Whether a specific tool is visible/callable under this intent.
+    /// (ADR-002 substrate §15.4 v84)
     pub fn allows_tool(&self, tool: &str) -> bool {
-        self.allows_domain(tool_domain(tool))
+        self.exact_tools.contains(tool) || self.allows_domain(tool_domain(tool))
+    }
+
+    /// Whether this scope explicitly names one exact tool rather than its domain.
+    /// (ADR-002 substrate §15.4 v84)
+    pub fn allows_exact_tool(&self, tool: &str) -> bool {
+        self.exact_tools.contains(tool)
+    }
+
+    /// Whether this intent may operate the named connector.
+    ///
+    /// A scoped caller must name the connector as `source:<id>`. Holding the
+    /// `source` domain is deliberately NOT enough: that grant covers the generic
+    /// connector verbs, and treating it as authorization would mean one grant for
+    /// "read my spreadsheet selection" also authorized every other installed
+    /// connector, including credentialed ones. Naming one source never implies a
+    /// sibling, never implies `mcp`, and never widens to raw downstream tools.
+    /// (ADR-002 substrate §17.5 v85)
+    pub fn allows_source(&self, source_id: &str) -> bool {
+        match &self.domains {
+            // Unscoped is an in-process call with no external caller to narrow.
+            None => true,
+            Some(_) => self.sources.contains(source_id),
+        }
     }
 
     /// Like `allows_tool`, but source-aware: any tool matching an installed
     /// downstream server's `<id>_` namespace is gated as the `mcp` domain even
-    /// if its name collides with a first-party prefix/exact name (see
-    /// `tool_domain_with_downstream`). Use this on the gate path where the set
-    /// of installed downstream server ids is known.
+    /// if its name collides with a first-party prefix/exact name. An exact FCT
+    /// tool grant is checked first and does not imply any sibling tool.
+    /// (ADR-002 substrate §15.4 v84)
     pub fn allows_tool_with_downstream(&self, tool: &str, downstream_ids: &[String]) -> bool {
-        self.allows_domain(tool_domain_with_downstream(tool, downstream_ids))
+        self.exact_tools.contains(tool)
+            || self.allows_domain(tool_domain_with_downstream(tool, downstream_ids))
+    }
+
+    /// Capability facts passed to a ResourceOwner after gate authorization.
+    /// Exact tool grants remain visible to the selected owner as `tool:<name>`.
+    /// (ADR-002 substrate §15.4 v84)
+    pub fn resource_scope(&self) -> Vec<String> {
+        match &self.domains {
+            None => vec!["*".to_owned()],
+            Some(domains) => {
+                let mut values: Vec<String> = domains.iter().cloned().collect();
+                values.extend(self.exact_tools.iter().map(|tool| format!("tool:{tool}")));
+                // Owners see the narrowing too, so an owner that wants to check
+                // it does not need a second channel. (ADR-002 substrate §17.5 v85)
+                values.extend(self.sources.iter().map(|source| format!("source:{source}")));
+                values.sort();
+                values
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    /// §17.5: a whole-domain `source` grant authorizes every installed connector
+    /// at once, which is what these tests exist to prevent.
+    /// (ADR-002 substrate §17.5 v85)
+    #[test]
+    fn a_bare_source_domain_authorizes_no_connector() {
+        let intent = Intent::parse(Some("source"));
+        assert!(
+            intent.allows_tool("source_query"),
+            "the generic verb stays visible under the domain"
+        );
+        assert!(!intent.allows_source("ctrl-libreoffice"));
+        assert!(!intent.allows_source("ctrl-ghostfolio"));
+    }
+
+    #[test]
+    fn a_named_source_authorizes_only_itself() {
+        let intent = Intent::parse(Some("source,source:ctrl-libreoffice"));
+        assert!(intent.allows_source("ctrl-libreoffice"));
+        // Never a sibling.
+        assert!(!intent.allows_source("ctrl-ghostfolio"));
+        // Never a prefix or suffix relative.
+        assert!(!intent.allows_source("ctrl-libreoffice-extra"));
+        assert!(!intent.allows_source("libreoffice"));
+    }
+
+    #[test]
+    fn naming_a_source_does_not_imply_mcp_or_raw_downstream_tools() {
+        let intent = Intent::parse(Some("source:ctrl-libreoffice"));
+        assert!(intent.allows_source("ctrl-libreoffice"));
+        // The narrowing is not a domain grant: it must not open `mcp`.
+        assert!(!intent.allows_domain("mcp"));
+        assert!(!intent.allows_tool("mcp_pack_install"));
+    }
+
+    #[test]
+    fn an_unscoped_in_process_intent_still_reaches_connectors() {
+        // No external caller to narrow; this is the in-process path.
+        assert!(Intent::unscoped().allows_source("ctrl-libreoffice"));
+        // Minimal is scoped and therefore names nothing.
+        assert!(!Intent::minimal().allows_source("ctrl-libreoffice"));
+    }
+
+    #[test]
+    fn a_source_token_is_narrowing_not_a_domain() {
+        let intent = Intent::parse(Some("source:ctrl-libreoffice"));
+        // It must not be swallowed as a lowercase domain string.
+        assert!(!intent.allows_domain("source:ctrl-libreoffice"));
+        // Owners can still see the narrowing through the resource scope.
+        assert!(intent
+            .resource_scope()
+            .iter()
+            .any(|entry| entry == "source:ctrl-libreoffice"));
+    }
+
+    #[test]
+    fn a_blank_source_token_grants_nothing() {
+        let intent = Intent::parse(Some("source:  , source"));
+        assert!(!intent.allows_source(""));
+        assert!(!intent.allows_source("ctrl-libreoffice"));
+    }
+
+    #[test]
+    fn a_first_party_default_names_no_connector() {
+        // The PWA's default scope holds the `source` domain, which is exactly the
+        // coarse grant §17.5 refuses to treat as authorization.
+        let intent = Intent::default_for_caller("pwa");
+        assert!(intent.allows_tool("source_query"));
+        assert!(!intent.allows_source("ctrl-libreoffice"));
+    }
 
     #[test]
     fn user_surface_excludes_brains() {
@@ -523,6 +614,7 @@ mod tests {
         assert!(intent.allows_tool("smart_table_query"));
         assert!(intent.allows_tool("llm_chat"));
         assert!(intent.allows_tool("kernel_status"));
+        assert!(intent.resource_scope().contains(&"project".to_owned()));
         // net (raw http) is excluded from the first-party default.
         assert!(!intent.allows_tool("http_post"));
         // ...but the CONTROLLED market tools ARE first-party visible: they GET
@@ -532,8 +624,8 @@ mod tests {
         assert!(intent.allows_tool("market_screen"));
         assert!(intent.allows_tool("web_search"));
         assert!(intent.allows_tool("diagnostics_status")); // (ADR-010 communication § diagnostics v11)
-        // Assistant and Coding are first-party autonomous brains with separate
-        // runtime scopes; neither is a direct user-surface approval bypass.
+                                                           // Assistant and Coding are first-party autonomous brains with separate
+                                                           // runtime scopes; neither is a direct user-surface approval bypass.
         assert!(Intent::default_for_caller("irisy").allows_tool("vault_read"));
         assert!(Intent::default_for_caller("hermes").allows_tool("market_quote"));
         assert!(Intent::default_for_caller("hermes").allows_tool("web_search"));
@@ -597,53 +689,11 @@ mod tests {
         assert!(mcp_intent.allows_tool_with_downstream("web_search", &ids));
     }
 
+    // Hermes sees exactly the canonical Resource verbs.
+    // (ADR-002 substrate §15 v83)
     #[test]
-    fn brain_toolset_includes_creation_suite_and_fits_under_cap() {
-        // The whole point: the feature-pack creation + research suite must be in
-        // the curated brain set, or the brain's ~25 cap hides Irisy's killer
-        // capability (regression guard for the 2026-06-28 real-hardware failure).
-        for must in [
-            "discover_packs",
-            "discover_skills",
-            "web_search",
-            "skill_list",
-            "skill_read",
-            "mcp_pack_list",
-            "mcp_pack_install",
-            "mcp_pack_run",
-            "mcp_pack_uninstall",
-            "mcp_pack_write_file",
-            // Smart-table BUILD suite — the brain must be able to build tables +
-            // bases, not just read them (bao 2026-07-04 regression guard).
-            "smart_table_base_scaffold",
-            "smart_table_create",
-            "smart_table_produce",
-        ] {
-            assert!(
-                brain_tool_rank(must).is_some(),
-                "{must} missing from BRAIN_TOOLSET — brain can't create packs"
-            );
-        }
-        // Fits under the brain's tool cap. Ceiling rose to 40 as the smart-table
-        // BUILD suite (base_scaffold/create/produce/append/batch) joined the core
-        // set (bao 2026-07-04 — Irisy could only read tables and hand-wrote a CRM;
-        // building tables/bases is a peer of the pack-creation killer capability).
-        // Still far under the ~60 where listing truncates destructively, and the
-        // niche tools sit at the tail so any runtime cap trims those, never the
-        // creation/build core (which sits high and survives).
-        assert!(
-            BRAIN_TOOLSET.len() <= 42,
-            "BRAIN_TOOLSET is {} tools, over the brain cap",
-            BRAIN_TOOLSET.len()
-        );
-        // The tool-discovery escape hatch must be present — it is what keeps the
-        // full ~100-tool surface reachable under the model cap.
-        assert!(brain_tool_rank("gate_tool_search").is_some());
-        assert!(brain_tool_rank("gate_tool_call").is_some());
-        // Ordered creation-first: the creation suite outranks the niche tools, so
-        // truncation keeps it. discover_packs must come before llm_chat.
-        assert!(brain_tool_rank("discover_packs") < brain_tool_rank("llm_chat"));
-        // Only hermes is curated; the PWA keeps the full first-party set.
+    fn brain_toolset_is_exactly_the_canonical_resource_surface() {
+        assert_eq!(BRAIN_TOOLSET, ["describe", "query", "produce"]);
         assert!(is_capped_brain("hermes"));
         assert!(!is_capped_brain("pwa"));
         assert!(!is_capped_brain("irisy"));
@@ -655,5 +705,17 @@ mod tests {
         assert!(intent.allows_tool("vault_read"));
         assert!(intent.allows_tool("http_get"));
         assert!(!intent.allows_tool("smart_table_query"));
+    }
+
+    #[test]
+    fn exact_tool_scope_does_not_grant_sibling_downstream_tools() {
+        // One selected FCT cannot widen authorization to its package siblings.
+        // (ADR-002 substrate §15.4 v84)
+        let ids = vec!["portfolio".to_owned()];
+        let intent = Intent::parse(Some("tool:portfolio_quote"));
+        assert!(intent.allows_tool_with_downstream("portfolio_quote", &ids));
+        assert!(!intent.allows_tool_with_downstream("portfolio_trade", &ids));
+        assert!(!intent.allows_domain("mcp"));
+        assert_eq!(intent.resource_scope(), vec!["tool:portfolio_quote"]);
     }
 }

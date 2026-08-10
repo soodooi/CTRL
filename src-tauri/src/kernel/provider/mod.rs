@@ -55,9 +55,7 @@ pub mod ollama_embed;
 // ADR-002 substrate § provider v2 (2026-06-21, full-review): drop the
 // Capability re-export — unused after removing the retired-Pi http_endpoint.
 pub use r#trait::{Consumer, Provider};
-pub use registry::{
-    ProviderListEntry, ProviderRegistry, RecordedFailover,
-};
+pub use registry::{ProviderListEntry, ProviderRegistry, RecordedFailover};
 // ADR-002 substrate § provider v2 (2026-06-21, full-review): ChatChunk /
 // ChatPrompt re-exports dropped — consumers import provider::types::* directly.
 pub use types::{ChatOpts, LlmMessage, LlmPrompt, ProviderError};

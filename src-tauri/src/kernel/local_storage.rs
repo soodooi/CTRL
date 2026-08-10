@@ -69,11 +69,7 @@ impl LocalStorage {
         })
     }
 
-    pub fn get(
-        &self,
-        scope: &str,
-        key: &str,
-    ) -> Result<Option<serde_json::Value>, StorageError> {
+    pub fn get(&self, scope: &str, key: &str) -> Result<Option<serde_json::Value>, StorageError> {
         let conn = self.conn.lock().map_err(|_| StorageError::Poisoned)?;
         let result: rusqlite::Result<String> = conn.query_row(
             "SELECT value FROM localstorage WHERE scope = ?1 AND key = ?2",
@@ -122,7 +118,9 @@ impl LocalStorage {
     pub fn list(&self, scope: &str) -> Result<Vec<StorageEntry>, StorageError> {
         let conn = self.conn.lock().map_err(|_| StorageError::Poisoned)?;
         let mut stmt = conn
-            .prepare("SELECT key, value, updated_at_ms FROM localstorage WHERE scope = ?1 ORDER BY key")
+            .prepare(
+                "SELECT key, value, updated_at_ms FROM localstorage WHERE scope = ?1 ORDER BY key",
+            )
             .map_err(|e| StorageError::Db(format!("prepare: {e}")))?;
         let rows = stmt
             .query_map(params![scope], |row| {
@@ -136,8 +134,7 @@ impl LocalStorage {
         for r in rows {
             let (key, value_str, updated_at_ms) =
                 r.map_err(|e| StorageError::Db(format!("row: {e}")))?;
-            let value =
-                serde_json::from_str(&value_str).unwrap_or(serde_json::Value::Null);
+            let value = serde_json::from_str(&value_str).unwrap_or(serde_json::Value::Null);
             out.push(StorageEntry {
                 key,
                 value,
@@ -150,10 +147,7 @@ impl LocalStorage {
     pub fn clear(&self, scope: &str) -> Result<usize, StorageError> {
         let conn = self.conn.lock().map_err(|_| StorageError::Poisoned)?;
         let n = conn
-            .execute(
-                "DELETE FROM localstorage WHERE scope = ?1",
-                params![scope],
-            )
+            .execute("DELETE FROM localstorage WHERE scope = ?1", params![scope])
             .map_err(|e| StorageError::Db(format!("clear: {e}")))?;
         Ok(n)
     }

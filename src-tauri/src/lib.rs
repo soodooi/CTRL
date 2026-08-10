@@ -118,6 +118,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_nspanel::init())
         .setup(|app| {
+            // The launcher has one fixed Accessory identity before shell boot;
+            // runtime activation-policy switching is forbidden.
+            // (ADR-003 frontend §1.1 v40)
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             commands::updater::record_pending_update_process_start()
                 .map_err(std::io::Error::other)?;
             shell::ShellLifecycle::boot(app.handle())?;

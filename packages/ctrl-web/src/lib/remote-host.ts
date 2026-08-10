@@ -10,8 +10,9 @@
 //
 // Mirrors RemoteConnection's framing/crypto; the two are the two ends of a room.
 import { importKey, sealJson, openJson, fromB64url } from './remote-crypto';
-import { gateInvoke } from './kernel';
-import { engineTransport } from './llm-transport';
+import { gateInvoke, resetEngine } from './kernel';
+import { engineTransport, type LLMMessage } from './llm-transport';
+import { ensureActiveIrisySession, useIrisySessionsStore } from './irisy-sessions';
 import { surfaceToolFor } from './remote-surface';
 import type { RemoteAllowEntry, RemoteState } from './remote-connection';
 import type { Surface } from '@/components/remote/SurfaceRenderer';
@@ -162,15 +163,84 @@ export class RemoteHost {
   }
 
   private async streamChat(id: number, text: string): Promise<void> {
+    const task = text.trim();
+    if (!task) {
+      await this.send({ t: 'chat_done', id, error: 'Message is empty' });
+      return;
+    }
+    const sessionId = ensureActiveIrisySession();
+    const store = useIrisySessionsStore.getState();
+    const session = store.sessions.find((candidate) => candidate.id === sessionId);
+    if (!session) {
+      await this.send({ t: 'chat_done', id, error: 'Irisy session is unavailable' });
+      return;
+    }
+    const history: LLMMessage[] = session.messages.flatMap((message) =>
+      message.role === 'user' || message.role === 'assistant'
+        ? [{ role: message.role, content: message.content }]
+        : [],
+    );
+    history.push({ role: 'user', content: task });
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const userId = `remote-u-${suffix}`;
+    const assistantId = `remote-a-${suffix}`;
+    store.setMessages(sessionId, (messages) => [
+      ...messages,
+      { id: userId, role: 'user', content: task, streaming: false },
+      { id: assistantId, role: 'assistant', content: '', streaming: true },
+    ]);
     try {
-      const stream = engineTransport().stream([{ role: 'user', content: text }], {});
+      // Remote turns share the canonical transcript but never assume the
+      // current Hermes singleton belongs to this session. Reset first, then
+      // replay the complete visible history. (ADR-005 irisy §11 v40)
+      await resetEngine();
+      const stream = engineTransport().stream(
+        history,
+        {
+          context: {
+            session_id: sessionId,
+            resources: session.resources,
+            capability_scope: ['describe', 'query', 'produce'],
+            policy: 'review-gated-writes',
+            task,
+          },
+        },
+      );
       for await (const chunk of stream) {
-        const delta = typeof chunk === 'string' ? chunk : (chunk?.delta ?? '');
-        if (delta) await this.send({ t: 'chat_chunk', id, delta });
+        if (chunk.error) throw new Error(chunk.error);
+        const delta = chunk.delta ?? '';
+        if (delta) {
+          useIrisySessionsStore.getState().setMessages(sessionId, (messages) =>
+            messages.map((message) =>
+              message.id === assistantId && message.role === 'assistant'
+                ? { ...message, content: message.content + delta }
+                : message,
+            ),
+          );
+          await this.send({ t: 'chat_chunk', id, delta });
+        }
       }
+      useIrisySessionsStore.getState().setMessages(sessionId, (messages) =>
+        messages.map((message) =>
+          message.id === assistantId && message.role === 'assistant'
+            ? { ...message, streaming: false }
+            : message,
+        ),
+      );
       await this.send({ t: 'chat_done', id });
-    } catch (e) {
-      await this.send({ t: 'chat_done', id, error: e instanceof Error ? e.message : String(e) });
+    } catch (error) {
+      useIrisySessionsStore.getState().setMessages(sessionId, (messages) =>
+        messages.map((message) =>
+          message.id === assistantId && message.role === 'assistant'
+            ? { ...message, streaming: false }
+            : message,
+        ),
+      );
+      await this.send({
+        t: 'chat_done',
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

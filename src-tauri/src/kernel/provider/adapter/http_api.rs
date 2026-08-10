@@ -71,11 +71,7 @@ impl HttpApiProvider {
             })?
             .trim_end_matches('/')
             .to_string();
-        let default_model = manifest
-            .models
-            .first()
-            .cloned()
-            .unwrap_or_default();
+        let default_model = manifest.models.first().cloned().unwrap_or_default();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(DEFAULT_DEADLINE_MS))
             .pool_idle_timeout(Duration::from_secs(180))
@@ -280,7 +276,9 @@ fn spawn_sse_reader(
                         data_payload = Some(payload.trim().to_string());
                     }
                 }
-                let Some(payload) = data_payload else { continue };
+                let Some(payload) = data_payload else {
+                    continue;
+                };
                 match parse(&payload) {
                     ParseOutcome::Chunk(c) => {
                         if tx.send(Ok(c)).await.is_err() {
@@ -543,8 +541,14 @@ mod tests {
 
     #[test]
     fn split_fast_mode_strips_suffix_only_when_present() {
-        assert_eq!(split_fast_mode("claude-sonnet-4-6-fast"), ("claude-sonnet-4-6", true));
-        assert_eq!(split_fast_mode("claude-sonnet-4-6"), ("claude-sonnet-4-6", false));
+        assert_eq!(
+            split_fast_mode("claude-sonnet-4-6-fast"),
+            ("claude-sonnet-4-6", true)
+        );
+        assert_eq!(
+            split_fast_mode("claude-sonnet-4-6"),
+            ("claude-sonnet-4-6", false)
+        );
         assert_eq!(split_fast_mode("-fast"), ("", true));
     }
 
@@ -552,7 +556,10 @@ mod tests {
     fn openai_body_puts_system_first() {
         let prompt = ChatPrompt {
             system: Some("be terse".into()),
-            messages: vec![ChatMessage { role: "user".into(), content: "hi".into() }],
+            messages: vec![ChatMessage {
+                role: "user".into(),
+                content: "hi".into(),
+            }],
             temperature: Some(0.5),
             max_tokens: None,
         };
@@ -620,10 +627,7 @@ mod tests {
         let chat_opts = ChatOpts::default();
         let serialize = |endpoint: &str, opts: &ChatOpts| {
             serde_json::to_value(build_openai_body_for_endpoint(
-                "glm-5.2",
-                &prompt,
-                endpoint,
-                opts,
+                "glm-5.2", &prompt, endpoint, opts,
             ))
             .unwrap()
         };
@@ -647,8 +651,14 @@ mod tests {
         let prompt = ChatPrompt {
             system: Some("be terse".into()),
             messages: vec![
-                ChatMessage { role: "system".into(), content: "leaked".into() },
-                ChatMessage { role: "user".into(), content: "hi".into() },
+                ChatMessage {
+                    role: "system".into(),
+                    content: "leaked".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "hi".into(),
+                },
             ],
             temperature: None,
             max_tokens: None,
@@ -665,7 +675,10 @@ mod tests {
     fn anthropic_body_fast_mode_sets_speed_field() {
         let prompt = ChatPrompt {
             system: None,
-            messages: vec![ChatMessage { role: "user".into(), content: "hi".into() }],
+            messages: vec![ChatMessage {
+                role: "user".into(),
+                content: "hi".into(),
+            }],
             temperature: None,
             max_tokens: None,
         };

@@ -315,16 +315,28 @@ mod tests {
 
     #[test]
     fn fold_history_single_message_emits_content() {
-        let m = vec![ChatMessage { role: "user".into(), content: "hi".into() }];
+        let m = vec![ChatMessage {
+            role: "user".into(),
+            content: "hi".into(),
+        }];
         assert_eq!(fold_history(&m), "hi\n");
     }
 
     #[test]
     fn fold_history_multi_turn_includes_prior_and_current() {
         let m = vec![
-            ChatMessage { role: "user".into(), content: "hi".into() },
-            ChatMessage { role: "assistant".into(), content: "hey".into() },
-            ChatMessage { role: "user".into(), content: "more?".into() },
+            ChatMessage {
+                role: "user".into(),
+                content: "hi".into(),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "hey".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "more?".into(),
+            },
         ];
         let s = fold_history(&m);
         assert!(s.contains("[user] hi"));

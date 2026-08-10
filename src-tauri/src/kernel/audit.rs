@@ -100,9 +100,21 @@ impl GateRequest {
 /// content capture stays local + redacted, plan-agent-observability.md §red-line).
 fn is_secret_key(key: &str) -> bool {
     let k = key.to_ascii_lowercase();
-    ["token", "secret", "password", "passwd", "authorization", "bearer", "credential", "api_key", "apikey", "access_key", "private_key"]
-        .iter()
-        .any(|s| k.contains(s))
+    [
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "authorization",
+        "bearer",
+        "credential",
+        "api_key",
+        "apikey",
+        "access_key",
+        "private_key",
+    ]
+    .iter()
+    .any(|s| k.contains(s))
     // NB: "key" alone is too broad (a smart-table field is called `key`), so we
     // only match the compound secret-ish names above, not bare "key".
 }

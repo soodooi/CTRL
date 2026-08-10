@@ -83,9 +83,7 @@ pub struct VaultWriteImageReply {
 /// atomicity for two paths); on partial failure the caller can re-issue
 /// — both writes are idempotent on identical inputs.
 #[tauri::command]
-pub async fn vault_write_image(
-    args: VaultWriteImageArgs,
-) -> Result<VaultWriteImageReply, String> {
+pub async fn vault_write_image(args: VaultWriteImageArgs) -> Result<VaultWriteImageReply, String> {
     check_cap(
         args.mcp_id.as_deref(),
         &CapToken::VaultWrite {
@@ -93,8 +91,8 @@ pub async fn vault_write_image(
         },
     )?;
     let root = vault_root()?;
-    let image_full = vault::write_binary(&root, &args.image_path, &args.bytes)
-        .map_err(stringify_vault_error)?;
+    let image_full =
+        vault::write_binary(&root, &args.image_path, &args.bytes).map_err(stringify_vault_error)?;
     let sidecar_full = vault::write(
         &root,
         &args.sidecar_path,
@@ -170,7 +168,6 @@ pub async fn vault_watch_recent(
     }
     Ok(vault_watch::recent(args.prefix.as_deref(), args.since_ms))
 }
-
 
 // SOUL.md (Irisy persistent memory, vault/irisy/SOUL.md) retired to the gate's
 // memory-domain tools irisy_soul_get/set (SC5 convergence) — the PWA reaches

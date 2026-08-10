@@ -36,6 +36,12 @@ pub const REVIEW_TIMEOUT: Duration = Duration::from_secs(120);
 /// it can render an approve/deny modal. Everything here is gate-derived.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct ReviewRequest {
+    /// Gate-derived Outcome facts for a canonical `produce`: what will change,
+    /// where, and the precondition it depends on. Absent when the owner staged
+    /// nothing, which the surface must show as missing rather than fill in.
+    /// (ADR-002 substrate §15.5.3 v86; §15.2 v87)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<crate::kernel::resource::ReviewOutcomeFacts>,
     pub id: String,
     pub caller: String,
     pub tool: String,
@@ -104,7 +110,27 @@ impl ReviewGate {
     /// Pushes the request to PWA listeners. The id is opaque + unguessable-
     /// enough for a local single-user trust model (monotonic seq is fine —
     /// the surface is intra-machine and the resolve path is first-party).
-    pub fn request(&self, caller: &str, tool: &str, arg_summary: String) -> oneshot::Receiver<bool> {
+    pub fn request(
+        &self,
+        caller: &str,
+        tool: &str,
+        arg_summary: String,
+    ) -> oneshot::Receiver<bool> {
+        self.request_with_outcome(caller, tool, arg_summary, None)
+    }
+
+    /// Register a pending review carrying the prepared operation's Outcome facts.
+    /// Enriching what the human sees never changes who may decide: the request is
+    /// still gate-built and the decision still arrives on the first-party command
+    /// surface the requesting caller cannot reach.
+    /// (ADR-002 substrate §15.5.3 v86)
+    pub fn request_with_outcome(
+        &self,
+        caller: &str,
+        tool: &str,
+        arg_summary: String,
+        outcome: Option<crate::kernel::resource::ReviewOutcomeFacts>,
+    ) -> oneshot::Receiver<bool> {
         let id = {
             let mut s = self.seq.lock().unwrap();
             *s += 1;
@@ -116,6 +142,9 @@ impl ReviewGate {
             caller: caller.to_string(),
             tool: tool.to_string(),
             arg_summary,
+            // Staged Outcome facts when the owner produced them; never inferred.
+            // (ADR-002 substrate §15.5.3 v86)
+            outcome,
         };
         self.pending.lock().unwrap().insert(
             id,
@@ -154,9 +183,24 @@ pub fn requires_review(tool_name: &str) -> bool {
     // name so e.g. `stock-cn_run` is caught too.
     let n = tool_name.to_ascii_lowercase();
     const MUTATING: &[&str] = &[
-        "write", "delete", "remove", "rename", "append_row", "create",
-        "update", "put", "post", "run", "exec", "install", "uninstall",
-        "move", "drop", "send", "publish", "deploy",
+        "write",
+        "delete",
+        "remove",
+        "rename",
+        "append_row",
+        "create",
+        "update",
+        "put",
+        "post",
+        "run",
+        "exec",
+        "install",
+        "uninstall",
+        "move",
+        "drop",
+        "send",
+        "publish",
+        "deploy",
         // §14 write verb — the generic connector write `source_produce` (and any
         // `<x>_produce`) is a side-effecting write that must pass review, same as
         // vault.write (ADR-002 §14.9 produce = Write through the gate).
@@ -192,16 +236,16 @@ mod tests {
             "http_post",
             "stock-cn_run",
             "github_create_issue",
-            "source_produce", // §14 generic connector write
-            "smart_table_produce", // §14.13 unified smart-table write verb
-            "task_produce", // §14.13 unified task write verb
-            "calendar_produce", // §14.13 unified calendar write verb
-            "doc_produce", // §14.13 unified doc (block) write verb
-            "mcp_pack_publish", // registry publish (has `publish`)
-            "smart_table_delete_row", // record delete
-            "smart_table_add_field", // schema write (add column)
+            "source_produce",           // §14 generic connector write
+            "smart_table_produce",      // §14.13 unified smart-table write verb
+            "task_produce",             // §14.13 unified task write verb
+            "calendar_produce",         // §14.13 unified calendar write verb
+            "doc_produce",              // §14.13 unified doc (block) write verb
+            "mcp_pack_publish",         // registry publish (has `publish`)
+            "smart_table_delete_row",   // record delete
+            "smart_table_add_field",    // schema write (add column)
             "smart_table_delete_field", // schema write (drop column)
-            "smart_table_add_view", // structure write
+            "smart_table_add_view",     // structure write
         ] {
             assert!(requires_review(t), "{t} should require review");
         }
@@ -232,7 +276,10 @@ mod tests {
         let id = gate.list_pending()[0].id.clone();
         assert!(gate.resolve(&id, true));
         assert_eq!(rx.await.unwrap(), true);
-        assert!(gate.list_pending().is_empty(), "resolved request is removed");
+        assert!(
+            gate.list_pending().is_empty(),
+            "resolved request is removed"
+        );
     }
 
     #[tokio::test]

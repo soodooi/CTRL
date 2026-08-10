@@ -134,7 +134,9 @@ fn is_executable_file(path: &std::path::Path) -> bool {
 
 #[cfg(not(unix))]
 fn is_executable_file(path: &std::path::Path) -> bool {
-    std::fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+    std::fs::metadata(path)
+        .map(|m| m.is_file())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

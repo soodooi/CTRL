@@ -66,13 +66,20 @@ mod tests {
             r.insert("tools".into(), tools.into());
             r
         };
-        vec![mk("obsidian", "Obsidian", "16"), mk("clip", "Clipboard", "0")]
+        vec![
+            mk("obsidian", "Obsidian", "16"),
+            mk("clip", "Clipboard", "0"),
+        ]
     }
 
     #[test]
     fn query_mcps_with_tools_reuses_shared_engine() {
         let req = QueryRequest {
-            filters: vec![Filter { field: "tools".into(), op: Operator::Gt, value: "0".into() }],
+            filters: vec![Filter {
+                field: "tools".into(),
+                op: Operator::Gt,
+                value: "0".into(),
+            }],
             ..Default::default()
         };
         let out = run_query(&mcp_fields(), &mcp_rows(), &req, now()).unwrap();
@@ -107,9 +114,21 @@ mod tests {
             // Configuration and runtime status remain separate filters.
             // (ADR-002 substrate § provider v71)
             filters: vec![
-                Filter { field: "configured".into(), op: Operator::Is, value: "true".into() },
-                Filter { field: "runtime_status".into(), op: Operator::Eq, value: "available".into() },
-                Filter { field: "capabilities".into(), op: Operator::HasTag, value: "embed".into() },
+                Filter {
+                    field: "configured".into(),
+                    op: Operator::Is,
+                    value: "true".into(),
+                },
+                Filter {
+                    field: "runtime_status".into(),
+                    op: Operator::Eq,
+                    value: "available".into(),
+                },
+                Filter {
+                    field: "capabilities".into(),
+                    op: Operator::HasTag,
+                    value: "embed".into(),
+                },
             ],
             ..Default::default()
         };

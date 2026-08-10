@@ -1874,3 +1874,49 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* Governed save confirmation. States the kernel's own post-write verification
+   rather than a generic "saved", so the user can tell a proven write from a
+   hopeful one. (ADR-002 substrate §15.2 v87; ADR-005 irisy §12 v42 U6) */
+.savedNotice {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 4px var(--space-3);
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  color: var(--color-text-muted);
+}
+
+/* Content actions strip — rewrite / summarize / translate. A proposal is staged
+   and decided, never applied on click.
+   (ADR-003 frontend § decision-registry v43; ADR-005 irisy §12 v42 U2) */
+.rewriteBar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: var(--space-2);
+  padding: 4px var(--space-3);
+  border-bottom: 1px solid var(--color-border-soft);
+  background: var(--color-bg-l1);
+}
+.rewriteAction {
+  appearance: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-xs);
+  letter-spacing: 0.04em;
+  background: transparent;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.rewriteAction:not(:disabled):hover {
+  color: var(--color-text);
+  background: var(--color-bg-l2);
+}
+.rewriteAction:disabled {
+  color: var(--color-text-faint);
+  cursor: not-allowed;
+}

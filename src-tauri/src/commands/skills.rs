@@ -1,20 +1,15 @@
-// Skill discovery — kernel-local (Phase 1, ADR-007 workbench § discovery v2).
+// Legacy direct GitHub Skill-search adapter. An optional developer PAT stays
+// in the OS keychain; results must normalize into the one local registry, and
+// install remains anonymous and local. Cloud search is optional augmentation,
+// never a second registry or install owner.
+// (ADR-002 substrate §16 v81; ADR-006 cross-cutting §7 v13)
 //
-// Searches GitHub for `filename:SKILL.md` matches, using a PAT read from the
-// macOS Keychain (service `app.ctrl`, account `github`). This is the working
-// path; production moves SEARCH behind the shared `ctrl-skills` Worker because
-// most users have no GitHub token (ADR-007 workbench § discovery v2 Phase 2). INSTALL of a public skill
-// needs no token, so it stays kernel-local regardless.
-//
-// Consumed by Irisy's `search_skills` tool ([deleted ADR-021 brain switcher — superseded by ADR-002 substrate § brain v1 Pi singleton] §5) and the Pool/workbench
-// manual search surface. Returns the normalized CTRL shape, not raw GitHub JSON.
+// This command remains a compatibility surface until Library consumes the
+// normalized provider adapter directly. It returns CTRL's bounded result shape,
+// not raw GitHub JSON.
 
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-
-use crate::kernel::event::{Cell, CellKind};
-use crate::kernel::EventWsBridge;
 
 /// Keychain account holding the GitHub PAT (service is `app.ctrl`). See
 /// docs/development/setup-github-token.md for how to store it.
@@ -51,7 +46,8 @@ pub async fn search_skills(query: String) -> Result<SkillSearchReply, String> {
     let token = crate::shell::KeychainStore::get(GITHUB_PAT_ACCOUNT)
         .map_err(|e| format!("keychain read failed: {e}"))?
         .ok_or_else(|| {
-            // Setup guidance for the ADR-007 workbench § discovery v2 credential prerequisite.
+            // Optional developer PAT guidance for the direct local-search adapter.
+            // (ADR-002 substrate §16 v81)
             "No GitHub token in Keychain. Store a PAT under service 'app.ctrl' \
              account 'github' — see docs/development/setup-github-token.md."
                 .to_string()
@@ -80,17 +76,17 @@ pub async fn search_skills(query: String) -> Result<SkillSearchReply, String> {
         .await
         .map_err(|e| format!("github search parse failed: {e}"))?;
 
-    let total = json.get("total_count").and_then(|v| v.as_u64()).unwrap_or(0);
+    let total = json
+        .get("total_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let items = json
         .get("items")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
 
-    let results = items
-        .iter()
-        .filter_map(parse_item)
-        .collect::<Vec<_>>();
+    let results = items.iter().filter_map(parse_item).collect::<Vec<_>>();
 
     Ok(SkillSearchReply { results, total })
 }
@@ -130,337 +126,27 @@ fn parse_item(item: &serde_json::Value) -> Option<SkillResult> {
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
-    Some(SkillResult { repo, owner, name, description, stars, path, html_url })
-}
-
-// ── Skill executor (ADR-007 workbench § canvas v1 / ADR-007 workbench § discovery v2, cc-switch-native run model) ──────────
-// Runs a `skill`-variant mcp. The kernel does NOT orchestrate the skill —
-// the active brain CLI does (it already has the skill in its skills dir). The
-// kernel only: (1) hands the brain the mcp's working folder in the vault,
-// (2) routes the user input as a task that activates the named skill, (3)
-// reports back which artifact files the run produced. The brain (Claude Code)
-// writes the result with its own Write tool. See feedback_build_system_not_business.
-
-/// Max wall-clock for one skill run. Artifact-generating skills do several
-/// tool-use rounds (think → write → refine); generous so a real deck finishes.
-const SKILL_RUN_TIMEOUT_SECS: u64 = 240;
-/// Turn budget handed to the brain CLI for an artifact run. The chat adapter
-/// uses 1 (text reply); a file-writing skill needs room to write + refine.
-const SKILL_RUN_MAX_TURNS: &str = "24";
-
-/// Run a skill mcp: hand the named local skill + the user input to the
-/// active brain CLI, running inside the mcp's vault working folder, and
-/// return the vault-relative paths of whatever artifact(s) it wrote.
-pub async fn run_skill(
-    bridge: &EventWsBridge,
-    stream_id: &str,
-    mcp_id: &str,
-    skill: &str,
-    input: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    // Skill mcps need a CLI that can use tools + write files. Claude Code
-    // is the verified one — this is the BYO-CLI surface (the user's own
-    // installed CLI doing agentic work), NOT an LLM provider; the
-    // claude-oauth provider preset was removed (ADR-002 substrate
-    // § provider v61, 2026-07-11). Resolve the `claude` binary from
-    // PATH directly.
-    // Resolve `claude` binary path inline (no external crate dep). Splits
-    // $PATH and returns the first matching executable, or falls back to the
-    // bare name so std::process::Command's own PATH lookup still has a chance.
-    let binary = std::env::var_os("PATH")
-        .and_then(|paths| {
-            std::env::split_paths(&paths)
-                .map(|dir| dir.join("claude"))
-                .find(|p| p.is_file())
-        })
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "claude".to_string());
-
-    // Per-mcp working folder in the VAULT — plain, user-visible files (the
-    // user can open the generated deck in vim / Finder; local is truth).
-    let vault = crate::kernel::vault::default_vault_root()
-        .ok_or_else(|| "HOME not set; no vault root".to_string())?;
-    let workdir = vault.join("mcps").join(mcp_id);
-    std::fs::create_dir_all(&workdir)
-        .map_err(|e| format!("create workdir {}: {e}", workdir.display()))?;
-
-    tracing::info!(
-        mcp_id,
-        skill,
-        binary = %binary,
-        workdir = %workdir.display(),
-        "run_skill: start"
-    );
-
-    let before = snapshot_files(&workdir);
-
-    let input_text = input
-        .get("text")
-        .and_then(|v| v.as_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| input.to_string());
-    let prompt = format!(
-        "Use the {skill} skill. Task: {input_text}\n\n\
-         Write the complete, self-contained result as file(s) into the current \
-         working directory. Make reasonable design choices and do NOT ask \
-         questions — produce the artifact. When finished, state the main output \
-         filename on its own line."
-    );
-
-    run_brain_agentic(&binary, &workdir, &prompt, bridge, stream_id).await?;
-
-    // Diff the folder — return whatever the run created or changed.
-    let after = snapshot_files(&workdir);
-    let mut artifacts: Vec<String> = after
-        .iter()
-        .filter(|(name, meta)| before.get(*name).map_or(true, |b| b != *meta))
-        .map(|(name, _)| name.clone())
-        .collect();
-    artifacts.sort();
-    if artifacts.is_empty() {
-        tracing::error!(mcp_id, skill, "run_skill: produced no files");
-        return Err("the skill run produced no files".to_string());
-    }
-    tracing::info!(mcp_id, skill, ?artifacts, "run_skill: artifacts");
-    // Primary = first renderable artifact (html), else first file.
-    let primary = artifacts
-        .iter()
-        .find(|n| n.to_lowercase().ends_with(".html"))
-        .cloned()
-        .unwrap_or_else(|| artifacts[0].clone());
-    let rel = |name: &str| format!("mcps/{mcp_id}/{name}");
-
-    Ok(serde_json::json!({
-        "artifacts": artifacts.iter().map(|a| rel(a)).collect::<Vec<_>>(),
-        "primary": rel(&primary),
-        "content_type": content_type_for(&primary),
-    }))
-}
-
-/// Spawn the brain CLI in agentic mode inside `workdir`: streaming JSON
-/// mode, auto-accept file edits, a multi-turn budget. This is a
-/// CTRL-initiated headless spawn (product feature, not the user opening
-/// a terminal), so it MUST run on the user's BYOK Anthropic API key —
-/// Anthropic's usage policy forbids a product driving the CLI on Claude
-/// subscription OAuth (ADR-002 substrate § provider v61, 2026-07-11).
-/// We first strip any inherited ANTHROPIC_API_KEY, then inject the BYOK
-/// key from the credential vault; no key → refuse with a clear setup
-/// pointer instead of silently falling back to the CLI's own login.
-/// Each assistant chunk is published as a Cell on `stream_id` so the
-/// workspace shows the run live instead of a frozen minute. Kills the
-/// child if it overruns the deadline (`kill_on_drop`).
-async fn run_brain_agentic(
-    binary: &str,
-    workdir: &Path,
-    prompt: &str,
-    bridge: &EventWsBridge,
-    stream_id: &str,
-) -> Result<(), String> {
-    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-    use tokio::process::Command;
-
-    let mut cmd = Command::new(binary);
-    cmd.current_dir(workdir)
-        .arg("-p")
-        .arg(prompt)
-        .arg("--model")
-        .arg("sonnet")
-        .arg("--permission-mode")
-        .arg("acceptEdits")
-        .arg("--max-turns")
-        .arg(SKILL_RUN_MAX_TURNS)
-        .arg("--verbose")
-        .arg("--output-format")
-        .arg("stream-json")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    cmd.env_remove("ANTHROPIC_API_KEY");
-    // BYOK-only (ADR-002 substrate § provider v61, 2026-07-11): inject the
-    // user's own Anthropic API key; without one, refuse — never let the
-    // CLI fall back to subscription OAuth for a CTRL-initiated run.
-    let byok_key = crate::kernel::provider::registry::read_credential("anthropic")
-        .filter(|k| !k.trim().is_empty())
-        .ok_or_else(|| {
-            "skill run needs an Anthropic API key (Settings -> Providers); \
-             Claude subscription login cannot back CTRL features"
-                .to_string()
-        })?;
-    cmd.env("ANTHROPIC_API_KEY", byok_key);
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("claude spawn failed: {e}"))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "claude stdout not captured".to_string())?;
-    let mut stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "claude stderr not captured".to_string())?;
-
-    // Drain stderr concurrently so a full pipe can't deadlock the child.
-    let stderr_task = tokio::spawn(async move {
-        let mut buf = String::new();
-        let _ = stderr.read_to_string(&mut buf).await;
-        buf
-    });
-
-    publish_delta(bridge, stream_id, "Starting…\n");
-
-    let read_loop = async {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Some(line) = lines
-            .next_line()
-            .await
-            .map_err(|e| format!("read claude stdout: {e}"))?
-        {
-            if let Some(snippet) = snippet_from_line(&line) {
-                publish_delta(bridge, stream_id, &snippet);
-            }
-        }
-        Ok::<(), String>(())
-    };
-
-    tokio::time::timeout(
-        std::time::Duration::from_secs(SKILL_RUN_TIMEOUT_SECS),
-        read_loop,
-    )
-    .await
-    .map_err(|_| format!("skill run timed out after {SKILL_RUN_TIMEOUT_SECS}s"))??;
-
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("claude run error: {e}"))?;
-    let stderr_text = stderr_task.await.unwrap_or_default();
-
-    if !status.success() {
-        return Err(format!(
-            "claude exited {:?}: {}",
-            status.code(),
-            stderr_text.trim()
-        ));
-    }
-    Ok(())
-}
-
-/// Publish one assistant chunk on the mcp's output stream. The PWA's
-/// `useCellStream(mcp-<id>)` decodes these and renders them live.
-fn publish_delta(bridge: &EventWsBridge, stream_id: &str, delta: &str) {
-    let ts_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    bridge.publish_cell(Cell {
-        kind: CellKind::LlmResponse,
-        ts_ms,
-        stream_id: Some(stream_id.to_string()),
-        payload: serde_json::json!({ "delta": delta }),
-    });
-}
-
-/// Turn one line of claude `stream-json` NDJSON into a short human-readable
-/// progress snippet (assistant prose + a one-liner per tool use). Non-assistant
-/// lines (system/init/result) return None — they carry no user-facing text.
-fn snippet_from_line(line: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
-        return None;
-    }
-    let content = v.get("message")?.get("content")?.as_array()?;
-    let mut out = String::new();
-    for block in content {
-        match block.get("type").and_then(|t| t.as_str()) {
-            Some("text") => {
-                if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
-                    out.push_str(t);
-                }
-            }
-            Some("tool_use") => {
-                let name = block.get("name").and_then(|x| x.as_str()).unwrap_or("tool");
-                let input = block.get("input");
-                let target = input
-                    .and_then(|i| {
-                        i.get("file_path")
-                            .or_else(|| i.get("path"))
-                            .or_else(|| i.get("command"))
-                            .or_else(|| i.get("pattern"))
-                    })
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("");
-                out.push_str(&format!("\n→ {name} {target}\n"));
-            }
-            _ => {}
-        }
-    }
-    let trimmed = out.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
-}
-
-/// Top-level file snapshot (name → size+mtime) so a run's output can be
-/// detected by diffing before/after. Top-level only — sufficient for v1
-/// single-file artifacts (html deck, markdown doc).
-fn snapshot_files(dir: &Path) -> BTreeMap<String, (u64, i64)> {
-    let mut map = BTreeMap::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return map;
-    };
-    for e in entries.flatten() {
-        let Ok(ft) = e.file_type() else { continue };
-        if !ft.is_file() {
-            continue;
-        }
-        let name = e.file_name().to_string_lossy().to_string();
-        let meta = e.metadata().ok();
-        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-        let mtime = meta
-            .as_ref()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        map.insert(name, (size, mtime));
-    }
-    map
-}
-
-/// Map a filename to the content-type the PWA viewer registry understands, so
-/// the workspace picks the right viewer (html → HtmlViewer, md → Markdown…).
-fn content_type_for(name: &str) -> &'static str {
-    let lower = name.to_lowercase();
-    if lower.ends_with(".html") || lower.ends_with(".htm") {
-        "text/html"
-    } else if lower.ends_with(".md") {
-        "text/markdown"
-    } else if lower.ends_with(".svg") {
-        "image/svg+xml"
-    } else if lower.ends_with(".json") {
-        "application/json"
-    } else if lower.ends_with(".css") {
-        "text/css"
-    } else if lower.ends_with(".js") {
-        "application/javascript"
-    } else {
-        "text/plain"
-    }
+    Some(SkillResult {
+        repo,
+        owner,
+        name,
+        description,
+        stars,
+        path,
+        html_url,
+    })
 }
 
 // ── Local skill discovery ───────────────────────────────────────────────────
+// Skills are plain-text methods in the one local registry and never runtime or
+// session owners. (ADR-002 substrate §16 v81; ADR-005 irisy §11 v40)
 // Irisy needs to know which skills the active brain already has locally (user
 // skills + installed plugin skills) so it can compose a mcp manifest that
 // references one by name. This is the no-token path — distinct from
 // `search_skills` (GitHub, needs a PAT). System primitive only; Irisy decides
 // what to do with the list (feedback_build_system_not_business).
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LocalSkill {
     pub name: String,
     pub description: Option<String>,
@@ -471,14 +157,20 @@ pub struct LocalSkill {
 /// them all into the brain's context is slow + useless. Irisy passes a query
 /// to narrow; this bounds the worst case.
 const MAX_LOCAL_SKILLS: usize = 40;
-// Release-owned playbooks are projected to both isolated Irisy identities
-// through the shared gate skill surface. (ADR-001 spine §4 v21;
-// ADR-005 irisy §11 v38)
+// Release-owned playbooks are projected as ordinary Markdown and may be pinned
+// as method scope for the sole Irisy session. (ADR-005 irisy §11 v40)
 const CREATE_FEATURE_PACK_SKILL: &str =
     include_str!("../../../ctrl-skills/skills/create-feature-pack/SKILL.md");
 const OFFICE_SKILL: &str = include_str!("../../../ctrl-skills/skills/office/SKILL.md");
+/// Authoring playbook for a local application adapter. Creating one is a Coding
+/// job guided by a governed skill, not a bespoke authoring UI: the accepted
+/// pattern is already an MCP-server pack, so the skill is what makes it
+/// reproducible. (ADR-004 cap § execution v14)
+const CREATE_LOCAL_APP_ADAPTER_SKILL: &str =
+    include_str!("../../../ctrl-skills/skills/create-local-app-adapter/SKILL.md");
 const BUNDLED_CTRL_SKILLS: &[(&str, &str)] = &[
     ("create-feature-pack", CREATE_FEATURE_PACK_SKILL),
+    ("create-local-app-adapter", CREATE_LOCAL_APP_ADAPTER_SKILL),
     ("office", OFFICE_SKILL),
 ];
 
@@ -488,9 +180,8 @@ fn ctrl_skills_root(home: &Path) -> PathBuf {
 
 /// Materialize CTRL-owned skills as ordinary Markdown before discovery. User
 /// skills are scanned first and therefore override an identically named builtin;
-/// release copies are refreshed atomically so Irisy and Coding/OpenCode share
-/// the same governed playbooks offline. (ADR-001 spine §4 v20;
-/// ADR-005 irisy §11 v37)
+/// release copies are refreshed atomically so Irisy and external BYO CLI clients
+/// can consume the same governed local playbooks. (ADR-005 irisy §11 v40)
 fn ensure_bundled_ctrl_skills(root: &Path) -> Result<(), String> {
     static REFRESH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = REFRESH_LOCK
@@ -588,17 +279,66 @@ pub async fn list_local_skills(query: Option<String>) -> Result<Vec<LocalSkill>,
 }
 
 /// Resolve one explicit user pin through the same hot-scanned authority used by
-/// skill_list. A stale id degrades to Auto instead of widening scope.
-/// (ADR-005 irisy §11 v38)
-pub async fn load_local_skill_by_name(skill_id: &str) -> Option<String> {
-    let skills = list_local_skills(Some(skill_id.to_string())).await.ok()?;
-    let skill = skills.into_iter().find(|skill| skill.name == skill_id)?;
-    read_local_skill(skill.path).await.ok()
+/// skill_list. Exact resolution scans the full registry before any discovery
+/// result cap, so a valid pin cannot be misclassified as stale. An unavailable
+/// or unreadable id fails visibly; explicit pinning never degrades to Auto.
+/// (ADR-002 substrate §16 v81; ADR-005 irisy §11 v40)
+pub async fn load_local_skill_by_name(skill_id: &str) -> Result<String, String> {
+    let skill_id = skill_id.to_string();
+    let lookup_id = skill_id.clone();
+    let unavailable = || {
+        format!(
+            "Pinned skill \"{skill_id}\" is unavailable or unreadable. Choose another skill or Auto."
+        )
+    };
+    let skill = tokio::task::spawn_blocking(move || {
+        scan_local_skills_blocking()
+            .map(|skills| skills.into_iter().find(|skill| skill.name == lookup_id))
+    })
+    .await
+    .map_err(|_| unavailable())?
+    .map_err(|_| unavailable())?
+    .ok_or_else(&unavailable)?;
+
+    read_local_skill(skill.path)
+        .await
+        .map_err(|_| unavailable())
 }
 
 fn list_local_skills_blocking(query: Option<String>) -> Result<Vec<LocalSkill>, String> {
-    // The creation playbook is release-pinned local truth, while user skills
-    // retain first-hit precedence. (ADR-002 substrate § 7.4 v34)
+    let mut out = scan_local_skills_blocking()?;
+
+    // Filter by query so Irisy gets only the relevant few, not the whole
+    // catalog. Token-based (match ANY word) — the brain often passes a phrase
+    // like "HTML slide mcp"; a whole-string match would miss "frontend-
+    // slides", but the token "slide" hits it.
+    if let Some(q) = query.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let tokens: Vec<String> = q
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|t| t.len() > 1)
+            .map(str::to_string)
+            .collect();
+        if !tokens.is_empty() {
+            out.retain(|s| {
+                let hay = format!(
+                    "{} {}",
+                    s.name.to_lowercase(),
+                    s.description.as_deref().unwrap_or("").to_lowercase()
+                );
+                tokens.iter().any(|t| hay.contains(t.as_str()))
+            });
+        }
+    }
+    out.truncate(MAX_LOCAL_SKILLS);
+    Ok(out)
+}
+
+/// Build the complete local Skill registry in precedence order before any
+/// discovery filtering or result cap is applied. The FCT catalog consumes this
+/// same live authority rather than maintaining a second Skill index.
+/// (ADR-002 substrate §16 v84)
+pub(crate) fn scan_local_skills_blocking() -> Result<Vec<LocalSkill>, String> {
     let home = PathBuf::from(std::env::var("HOME").map_err(|_| "HOME not set".to_string())?);
     let mut out: Vec<LocalSkill> = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -631,31 +371,9 @@ fn list_local_skills_blocking(query: Option<String>) -> Result<Vec<LocalSkill>, 
         }
     }
 
+    // Preserve deterministic output without changing first-hit source ownership.
+    // (ADR-002 substrate §16 v81)
     out.sort_by(|a, b| a.name.cmp(&b.name));
-
-    // Filter by query so Irisy gets only the relevant few, not the whole
-    // catalog. Token-based (match ANY word) — the brain often passes a phrase
-    // like "HTML slide mcp"; a whole-string match would miss "frontend-
-    // slides", but the token "slide" hits it.
-    if let Some(q) = query.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        let tokens: Vec<String> = q
-            .to_lowercase()
-            .split_whitespace()
-            .filter(|t| t.len() > 1)
-            .map(str::to_string)
-            .collect();
-        if !tokens.is_empty() {
-            out.retain(|s| {
-                let hay = format!(
-                    "{} {}",
-                    s.name.to_lowercase(),
-                    s.description.as_deref().unwrap_or("").to_lowercase()
-                );
-                tokens.iter().any(|t| hay.contains(t.as_str()))
-            });
-        }
-    }
-    out.truncate(MAX_LOCAL_SKILLS);
     Ok(out)
 }
 
@@ -871,6 +589,44 @@ mod tests {
     // The Office playbook is a shared release-owned skill and must preserve
     // the Companion boundary. (ADR-001 spine §4 v20) (ADR-005 irisy §10 v35)
     #[test]
+    /// Creating a local application adapter is a Coding job guided by this
+    /// skill. The skill is the authority, so it must actually carry the accepted
+    /// boundaries and the full evidence list rather than gesturing at them.
+    /// (ADR-004 cap § execution v14; ADR-005 irisy §12 v42 U16)
+    #[test]
+    fn bundled_local_app_adapter_skill_carries_the_accepted_rules() {
+        for required in [
+            // Discovery before bridging, and the private-protocol boundary.
+            "Discover before you bridge",
+            "The native protocol is private",
+            // The rules that make an adapter reachable and honest.
+            "record_source",
+            "source_describe",
+            "Explicit selection only",
+            "Degrade honestly",
+            // All six pieces of verification evidence must be named.
+            "installed public entrypoint",
+            "real-software end-to-end scenario",
+            "agent-only scenario",
+            "Semantic verification",
+            "capability coverage inventory",
+            "labelled truthfully",
+        ] {
+            assert!(
+                CREATE_LOCAL_APP_ADAPTER_SKILL.contains(required),
+                "local-app adapter skill missing {required}"
+            );
+        }
+        // A bundled connector must never auto-seed, and a write path is not
+        // implied by a read one.
+        // Matched on one line: the prose wraps, so a multi-word phrase spanning a
+        // line break would make this assertion depend on formatting.
+        assert!(CREATE_LOCAL_APP_ADAPTER_SKILL.contains("auto-seeded"));
+        assert!(CREATE_LOCAL_APP_ADAPTER_SKILL.contains("explicitly connects it"));
+        assert!(CREATE_LOCAL_APP_ADAPTER_SKILL.contains("Writes are not free"));
+    }
+
+    #[test]
     fn bundled_office_skill_is_read_only_and_hides_private_transport() {
         for required in [
             "source_describe",
@@ -881,7 +637,10 @@ mod tests {
             "Never call `source_produce`",
             "unavailable_message",
         ] {
-            assert!(OFFICE_SKILL.contains(required), "office skill missing {required}");
+            assert!(
+                OFFICE_SKILL.contains(required),
+                "office skill missing {required}"
+            );
         }
         // Private Companion transport never enters the public skill authority.
         // (ADR-005 irisy §10 v35)
@@ -889,7 +648,10 @@ mod tests {
             "CTRL_LIBREOFFICE_BRIDGE_URL",
             "CTRL_LIBREOFFICE_BRIDGE_TOKEN",
         ] {
-            assert!(!OFFICE_SKILL.contains(forbidden), "office skill leaked {forbidden}");
+            assert!(
+                !OFFICE_SKILL.contains(forbidden),
+                "office skill leaked {forbidden}"
+            );
         }
     }
 

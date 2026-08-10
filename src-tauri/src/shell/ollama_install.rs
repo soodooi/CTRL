@@ -96,10 +96,7 @@ fn pull_flag_slot() -> &'static Mutex<bool> {
 
 /// Cheap in-memory snapshot.
 pub fn current_status() -> OllamaInstallStatus {
-    status_slot()
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or_default()
+    status_slot().lock().map(|g| g.clone()).unwrap_or_default()
 }
 
 fn update_status<F: FnOnce(&mut OllamaInstallStatus)>(mutate: F) {
@@ -319,9 +316,8 @@ mod tests {
 
     #[test]
     fn parse_pull_progress_handles_pct_line() {
-        let (pct, line) =
-            parse_pull_progress("pulling 4f6b: 47% ▕████          ▏ 2.2 GB/4.7 GB")
-                .expect("expected progress");
+        let (pct, line) = parse_pull_progress("pulling 4f6b: 47% ▕████          ▏ 2.2 GB/4.7 GB")
+            .expect("expected progress");
         assert_eq!(pct, 47);
         assert!(line.contains("47%"));
     }

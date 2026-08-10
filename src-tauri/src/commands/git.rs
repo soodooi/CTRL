@@ -145,7 +145,10 @@ pub async fn git_status() -> Result<GitStatus, String> {
 pub async fn git_init() -> Result<String, String> {
     let (stdout, stderr, code) = run_git(&["init"]).await?;
     if code != 0 {
-        return Err(format!("git init failed: {}", if stderr.is_empty() { stdout } else { stderr }));
+        return Err(format!(
+            "git init failed: {}",
+            if stderr.is_empty() { stdout } else { stderr }
+        ));
     }
     Ok(stdout.trim().to_string())
 }
@@ -163,11 +166,17 @@ pub async fn git_commit_all(args: GitCommitArgs) -> Result<String, String> {
     }
     let (add_out, add_err, add_code) = run_git(&["add", "-A"]).await?;
     if add_code != 0 {
-        return Err(format!("git add: {}", if add_err.is_empty() { add_out } else { add_err }));
+        return Err(format!(
+            "git add: {}",
+            if add_err.is_empty() { add_out } else { add_err }
+        ));
     }
     let (out, err, code) = run_git(&["commit", "-m", &message]).await?;
     if code != 0 {
-        return Err(format!("git commit: {}", if err.is_empty() { out } else { err }));
+        return Err(format!(
+            "git commit: {}",
+            if err.is_empty() { out } else { err }
+        ));
     }
     Ok(out.trim().to_string())
 }
@@ -176,7 +185,10 @@ pub async fn git_commit_all(args: GitCommitArgs) -> Result<String, String> {
 pub async fn git_push() -> Result<String, String> {
     let (out, err, code) = run_git(&["push"]).await?;
     if code != 0 {
-        return Err(format!("git push: {}", if err.is_empty() { out } else { err }));
+        return Err(format!(
+            "git push: {}",
+            if err.is_empty() { out } else { err }
+        ));
     }
     Ok(out.trim().to_string())
 }
@@ -220,7 +232,10 @@ pub async fn vault_git_sync() -> Result<String, String> {
     } else if format!("{out}{err}").contains("nothing to commit") {
         steps.push("nothing to commit".to_string());
     } else {
-        return Err(format!("git commit: {}", if err.is_empty() { out } else { err }));
+        return Err(format!(
+            "git commit: {}",
+            if err.is_empty() { out } else { err }
+        ));
     }
 
     let (remotes, _e, _c) = run_git(&["remote"]).await?;
@@ -235,9 +250,7 @@ pub async fn vault_git_sync() -> Result<String, String> {
             ));
         }
     } else {
-        steps.push(
-            "committed locally — add an 'origin' remote to sync across devices".to_string(),
-        );
+        steps.push("committed locally — add an 'origin' remote to sync across devices".to_string());
     }
 
     Ok(steps.join("; "))
@@ -270,7 +283,10 @@ pub async fn git_log() -> Result<Vec<GitLogEntry>, String> {
         if stderr.contains("does not have any commits") {
             return Ok(Vec::new());
         }
-        return Err(format!("git log: {}", if stderr.is_empty() { stdout } else { stderr }));
+        return Err(format!(
+            "git log: {}",
+            if stderr.is_empty() { stdout } else { stderr }
+        ));
     }
     let mut out: Vec<GitLogEntry> = Vec::new();
     for line in stdout.lines() {

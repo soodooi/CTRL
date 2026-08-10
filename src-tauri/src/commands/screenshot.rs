@@ -83,14 +83,22 @@ mod macos {
         }
         // Esc during selection writes no file — a clean cancel, not a failure.
         if !path.exists() {
-            return Ok(ScreenshotOcrReply { text: String::new(), char_count: 0, cancelled: true });
+            return Ok(ScreenshotOcrReply {
+                text: String::new(),
+                char_count: 0,
+                cancelled: true,
+            });
         }
 
         let bytes = std::fs::read(&path).map_err(|e| format!("read capture: {e}"))?;
         let _ = std::fs::remove_file(&path);
 
         let text = ocr_png(&bytes)?;
-        Ok(ScreenshotOcrReply { char_count: text.chars().count(), text, cancelled: false })
+        Ok(ScreenshotOcrReply {
+            char_count: text.chars().count(),
+            text,
+            cancelled: false,
+        })
     }
 
     fn ocr_png(bytes: &[u8]) -> Result<String, String> {
@@ -98,8 +106,7 @@ mod macos {
         use objc2::ClassType;
         use objc2_foundation::{NSArray, NSData, NSDictionary, NSString};
         use objc2_vision::{
-            VNImageRequestHandler, VNRecognizeTextRequest, VNRequest,
-            VNRequestTextRecognitionLevel,
+            VNImageRequestHandler, VNRecognizeTextRequest, VNRequest, VNRequestTextRecognitionLevel,
         };
 
         unsafe {
@@ -133,7 +140,9 @@ mod macos {
             let mut lines: Vec<String> = Vec::new();
             if let Some(results) = request.results() {
                 for i in 0..results.len() {
-                    let Some(obs) = results.get_retained(i) else { continue };
+                    let Some(obs) = results.get_retained(i) else {
+                        continue;
+                    };
                     let candidates = obs.topCandidates(1);
                     if let Some(best) = candidates.first() {
                         lines.push(best.string().to_string());

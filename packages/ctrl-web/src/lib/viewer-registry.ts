@@ -23,7 +23,7 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 import { SMART_TABLE_CONTENT_TYPE } from '@/modules/smart-table';
 
-export type ViewerLocation = 'vault' | 'mcp' | 'system';
+export type ViewerLocation = 'vault' | 'mcp' | 'system' | 'local';
 
 export interface ViewerResource {
   location: ViewerLocation;
@@ -104,6 +104,11 @@ const PdfViewer = lazy(() =>
     default: m.PdfViewer,
   })),
 );
+const ProjectViewer = lazy(() =>
+  import('@/components/viewers/ProjectViewer').then((m) => ({
+    default: m.ProjectViewer,
+  })),
+);
 const SmartTableViewer = lazy(() =>
   import('@/components/viewers/SmartTableViewer').then((m) => ({
     default: m.SmartTableViewer,
@@ -134,6 +139,7 @@ const VIEWERS: Record<string, LazyViewer> = {
   // Smart-table — a markdown table with a frontmatter schema (content type +
   // identity declared by the module, src/modules/smart-table.ts). File on disk
   // is still markdown (vim test).
+  'application/vnd.ctrl.project+json': ProjectViewer,
   [SMART_TABLE_CONTENT_TYPE]: SmartTableViewer,
   // Univer spreadsheet — `<name>.sheet.md` (Univer snapshot JSON in the body).
   'application/vnd.ctrl.univer-sheet': UniverSheetViewer,
