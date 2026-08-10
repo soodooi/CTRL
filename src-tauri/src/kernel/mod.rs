@@ -38,6 +38,8 @@ pub mod mcp_host;
 pub mod mcp_server;
 pub mod pack_sandbox;
 pub mod persistence;
+pub mod resource;
+pub mod resource_fs;
 pub mod review_gate;
 // BYO-CLI driver projection (ADR-001 §4 projector / ADR-002 § projection) —
 // materialize the kernel MCP gate into the user's CLI driver native config
@@ -98,6 +100,7 @@ pub mod pack_publish;
 pub mod tasks_source;
 pub mod ui_bridge;
 pub mod vault;
+pub mod vault_write_lock;
 pub mod visibility;
 pub mod vault_doc;
 pub mod vault_git;
