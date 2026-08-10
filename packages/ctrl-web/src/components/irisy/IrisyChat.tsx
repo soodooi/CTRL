@@ -59,8 +59,10 @@ import {
   runReflection,
   type ReflectTurn,
 } from '@/lib/irisy-reflection';
-// ADR-005 irisy § persona v5 (2026-06-09): humanizePiError shared with
-// AmbientHome so both surfaces show the same friendly brain-error line.
+// ADR-005 irisy §8.7 v40: humanizePiError shared with AmbientHome so both
+// surfaces show the same friendly engine-error line. The selectable-persona
+// section this line used to cite was retired in v40; §8.7 owns the one fixed
+// identity that replaced it.
 import { cleanReplyText, humanizePiError } from '@/lib/irisy-render-filter';
 // ADR-002 substrate §1 v19 (2026-06-09): Pi RPC rail controls (sessions /
 // compact / refresh brain / abort) retired with Pi. The rail keeps only
@@ -155,7 +157,7 @@ function importedMarkdown(source: ImportedSource): string {
 // CustomDisplayMessage render path, not into AssistantBubble.
 // AssistantBubble now renders assistant text as straight markdown.
 
-// ADR-005 irisy § persona v5 (2026-06-09): humanizePiError moved to
+// ADR-005 irisy §8.7 v40 (2026-06-09): humanizePiError moved to
 // lib/irisy-render-filter.ts (shared with AmbientHome's homepage composer).
 
 interface AssistantBubbleProps {
@@ -432,6 +434,9 @@ export function IrisyChat(): React.ReactElement {
     });
   }, [activeBrain, queueEngineReset]);
 
+  // The last user turn, so a retry re-sends what was actually asked rather than
+  // whatever happens to be in the composer.
+  // (ADR-005 irisy §8.7 v40)
   const lastUserMessage = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
@@ -584,7 +589,7 @@ export function IrisyChat(): React.ReactElement {
       setSendingStartedAt(Date.now());
       setChatError(null);
       setErrorExpanded(false);
-      // ADR-005 irisy § persona v5 (2026-06-09): random suffix so
+      // ADR-005 irisy §8.7 v40 (2026-06-09): random suffix so
       // same-millisecond sends (interrupt-redirect / ?text= prefill / double
       // Enter) don't collide into one id and misroute deltas / dup React keys.
       const turnSuffix = Math.random().toString(36).slice(2, 8);
@@ -636,7 +641,7 @@ export function IrisyChat(): React.ReactElement {
       // through `transport.stream`. PWA observes one stream, accepts
       // text + custom-message chunks, fires sleep-time reflection.
       try {
-        // ADR-005 irisy § persona v5 (2026-06-09): share the turn's
+        // ADR-005 irisy §8.7 v40 (2026-06-09): share the turn's
         // random suffix so the assistant id can't collide with the user id.
         const assistantId = `a-${Date.now()}-${turnSuffix}`;
         setMessages((prev) => [
@@ -791,7 +796,7 @@ export function IrisyChat(): React.ReactElement {
     // ADR-002 substrate § brain v17 (2026-06-07): currentSkillId removed
     // from session-state along with the retired cap mode; deps shrink.
     [
-      // ADR-005 irisy § persona v5 (2026-06-09): activeBrain feeds
+      // ADR-005 irisy §8.7 v40 (2026-06-09): activeBrain feeds
       // humanizePiError, so it must be a dep or error copy names a stale
       // provider after a brain switch.
       activeBrain,
@@ -1055,7 +1060,7 @@ export function IrisyChat(): React.ReactElement {
               </svg>
             </button>
           )}
-          {/* Stop — abort the in-flight turn (ADR-005 irisy § persona v5
+          {/* Stop — abort the in-flight turn (ADR-005 irisy §8.7 v40
               (2026-06-09); memory feedback-irisy-never-block-input). Only shown
               while streaming. */}
           {sending && (

@@ -300,6 +300,11 @@ pub async fn load_local_skill_by_name(skill_id: &str) -> Result<String, String> 
     .map_err(|_| unavailable())?
     .ok_or_else(&unavailable)?;
 
+    // Every failure to resolve an explicit pin reports the same unavailable
+    // outcome, so a pin never silently degrades to Auto — a missing, unreadable,
+    // and unscannable skill are all "this pin did not resolve" rather than three
+    // shapes the caller has to tell apart.
+    // (ADR-002 substrate §16 v81; ADR-005 irisy §11 v40)
     read_local_skill(skill.path)
         .await
         .map_err(|_| unavailable())

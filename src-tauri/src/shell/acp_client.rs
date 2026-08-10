@@ -911,7 +911,8 @@ impl AcpClient {
 
         // Honor an ACP authentication method when Hermes advertises one. The
         // environment is injected only into the managed Hermes child; secrets
-        // never enter prompts or diagnostics. (ADR-006 cross-cutting §1 v13)
+        // never enter prompts or diagnostics — the user's key stays the user's and
+        // stays out of the hot path. (ADR-006 cross-cutting §1 v8)
         if let Some(methods) = init.get("authMethods").and_then(|m| m.as_array()) {
             let method_id = methods
                 .iter()
@@ -1077,6 +1078,9 @@ impl AcpClient {
             )
             .await
         } else {
+            // No cancellation token: the caller did not opt in, so the prompt runs
+            // to completion rather than being made abortable behind their back.
+            // (ADR-005 irisy §8.3.1 v34)
             self.request(
                 "session/prompt",
                 json!({ "sessionId": sid, "prompt": prompt_blocks }),

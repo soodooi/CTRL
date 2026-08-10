@@ -332,8 +332,10 @@ impl KernelSupervisor {
             }
         });
 
-        // Spawn the WS bridge on the Tauri tokio runtime. The on_op callback
-        // is currently a no-op log; sub-PR d/2 routes it to scheduler::dispatch.
+        // Spawn the WS bridge on the Tauri tokio runtime: one transport seam for
+        // push, rather than each surface polling its own. The on_op callback is
+        // currently a no-op log; routing it to scheduler::dispatch is the next step.
+        // (ADR-002 substrate §3.5 v8)
         let bridge_for_serve = bridge.clone();
         tauri::async_runtime::spawn(async move {
             if let Err(e) = bridge_for_serve

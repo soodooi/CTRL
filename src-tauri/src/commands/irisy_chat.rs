@@ -1,7 +1,9 @@
 // irisy_chat_stream — Irisy persona shell → kernel provider router.
 //
 // ADR-002 substrate §1 v19 (2026-06-09, 3-agent aggregator) + ADR-005
-// irisy § persona-shell v5: Irisy is the PWA persona layer, not a brain.
+// irisy §8.7 v40: Irisy is one fixed identity in front of the engine, not a
+// brain. The selectable-persona shell this file used to cite was retired in v40;
+// §8.7 is where that decision now lives.
 // The Pi MCP hop this command used to make (POST 127.0.0.1:17874, the
 // ctrl-pi-mcp daemon) died with the Pi packages — this rewrite routes
 // the turn through the in-process provider router instead
@@ -654,6 +656,10 @@ async fn forward_to_provider(
         }
     }
 
+    // No system prompt here: the identity and mission are injected upstream, so
+    // this path carries only the turn. A second system message composed at the
+    // transport would be a second place Irisy's identity is defined.
+    // (ADR-005 irisy §8.7 v40)
     let prompt = ChatPrompt {
         system: None,
         messages,
@@ -798,7 +804,7 @@ mod tests {
         assert!(turn_needs_agent(&user("save this to my notes")));
         assert!(turn_needs_agent(&user("generate an image of a cat")));
         assert!(turn_needs_agent(&user("refactor this code")));
-        // ADR-005 irisy § persona v5 §3 — action turns route to the agent.
+        // ADR-005 irisy §8.7 v40 §3 — action turns route to the agent.
         // The Chinese word for "notes" (U+7B14 U+8BB0) is escaped to keep the
         // source all-English.
         assert!(turn_needs_agent(&user("\u{7b14}\u{8bb0}")));
