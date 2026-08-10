@@ -264,6 +264,107 @@ pub struct VaultEntry {
 /// `path_hint` is the relative path the caller suggests (e.g.
 /// `messages/2026-05-22/john.md`). The current implementation honors
 /// the hint verbatim; a future layout policy engine may rewrite it.
+/// Replace a note's bytes atomically: write a flushed temp sibling, then rename
+/// it over the target.
+///
+/// A plain `fs::write` truncates the file first, so a crash, a full disk, or a
+/// killed process between truncate and the final byte leaves the user holding a
+/// half-written note — and a reader that opens it in that window sees a truncated
+/// one. A rename is the only step that is visible, so a reader sees either the
+/// old note or the new one and never something in between. This is what makes the
+/// §15.2 write contract's atomic-commit clause true for every vault writer rather
+/// than only for the ones that reimplement it.
+/// (ADR-002 substrate §15.2 v87 clause 4)
+fn write_atomically(full: &Path, bytes: &[u8]) -> Result<(), VaultError> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let parent = full.parent().ok_or_else(|| {
+        VaultError::Io("a note path must have a parent directory".to_owned())
+    })?;
+    let file_name = full
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| VaultError::Io("a note path must name a file".to_owned()))?;
+    // A UNIQUE dot-prefixed sibling: same directory so the rename is atomic, same
+    // filesystem, hidden and non-`.md` so a vault scan never reads it as a note.
+    // Unique rather than fixed because a fixed name lets two concurrent writers
+    // truncate each other's staging file, and a crash mid-staging would leave a
+    // leftover that blocks every later write to this note.
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    let temporary = parent.join(format!(".{file_name}.{unique}.ctrl-tmp"));
+    // Preserve the note's own permissions across the replace. A rename installs
+    // the staging file's mode, so without this a `chmod 600` note silently widens
+    // to the process umask — the user's restriction, quietly undone.
+    let existing_mode = {
+        use std::os::unix::fs::PermissionsExt;
+        fs::metadata(full).ok().map(|data| data.permissions().mode())
+    };
+    // O_EXCL | O_NOFOLLOW: a symlink or file pre-planted at the staging name must
+    // not redirect this write outside the authorized root, and a colliding writer
+    // must fail rather than share the staging file.
+    // (ADR-002 substrate §15.1 v82 no-follow discipline; §15.2 v87 clause 4)
+    let mut handle = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&temporary)
+        .map_err(|error| VaultError::Io(error.to_string()))?;
+    // Only past a successful create may this call unlink that path: cleaning up
+    // earlier could delete a staging file another writer owns.
+    let staged = (|| -> std::io::Result<()> {
+        handle.write_all(bytes)?;
+        if let Some(mode) = existing_mode {
+            use std::os::unix::fs::PermissionsExt;
+            handle.set_permissions(fs::Permissions::from_mode(mode))?;
+        }
+        // Flush before the rename, or the rename can land while the content is
+        // still only in the page cache.
+        handle.sync_all()?;
+        // rename(2) replaces the final component itself and never follows a
+        // symlink there, so a swapped-in link is overwritten, not escaped.
+        fs::rename(&temporary, full)
+    })();
+    if let Err(error) = staged {
+        let _ = fs::remove_file(&temporary);
+        return Err(VaultError::Io(error.to_string()));
+    }
+    // Durability of the rename itself lives in the directory entry, not the file.
+    if let Ok(directory) = fs::File::open(parent) {
+        let _ = directory.sync_all();
+    }
+    Ok(())
+}
+
+/// A note's exact bytes, as text. Unlike `read`, nothing is parsed or split, so
+/// what comes back is what `restore_raw` can put back verbatim.
+pub fn read_raw(vault_root: &Path, rel_path: &str) -> Result<String, VaultError> {
+    let safe = sanitize_relative_path(rel_path)?;
+    fs::read_to_string(vault_root.join(&safe)).map_err(|e| VaultError::Io(e.to_string()))
+}
+
+/// Put a note back byte for byte.
+///
+/// The other writers re-render the frontmatter block from parsed JSON, which
+/// drops comments and reorders keys — acceptable when the caller meant to rewrite
+/// the note, wrong when it is undoing a failed write. An undo that reformats the
+/// file is not an undo, so this one touches nothing.
+/// (ADR-002 substrate §15.2 v87 clause 6)
+pub fn restore_raw(vault_root: &Path, rel_path: &str, raw: &str) -> Result<(), VaultError> {
+    let safe = sanitize_relative_path(rel_path)?;
+    write_atomically(&vault_root.join(&safe), raw.as_bytes())?;
+    // The search index and embeddings were updated by the write being undone, so
+    // they still describe content that is no longer on disk. Point them back at
+    // the restored bytes, or a rolled-back note stays findable by the text of a
+    // change that was reverted.
+    let rel = safe.to_string_lossy().into_owned();
+    refresh_index_for(vault_root, &rel, raw);
+    Ok(())
+}
+
 pub fn write(
     vault_root: &Path,
     path_hint: &str,
@@ -278,7 +379,9 @@ pub fn write(
 
     let yaml = frontmatter_to_yaml(frontmatter)?;
     let body = format!("---\n{yaml}---\n\n{content}");
-    fs::write(&full, body).map_err(|e| VaultError::Io(e.to_string()))?;
+    // Atomic replace, so a crash never leaves half a note.
+    // (ADR-002 substrate §15.2 v87 clause 4)
+    write_atomically(&full, body.as_bytes())?;
 
     // Best-effort index upsert. Failures are logged but never block the
     // write — vault files on disk remain the source of truth and the
@@ -287,12 +390,7 @@ pub fn write(
     if let Some(idx) = try_global_index() {
         let fm_str = serde_json::to_string(frontmatter).unwrap_or_default();
         let mtime_ms = current_mtime_ms(&full);
-        if let Err(e) = idx.upsert(
-            &safe.to_string_lossy(),
-            content,
-            &fm_str,
-            mtime_ms,
-        ) {
+        if let Err(e) = idx.upsert(&safe.to_string_lossy(), content, &fm_str, mtime_ms) {
             tracing::warn!(path = %safe.display(), error = %e, "vault: index upsert failed");
         }
     }
@@ -328,10 +426,18 @@ pub fn write_body(vault_root: &Path, rel_path: &str, body: &str) -> Result<PathB
         body.to_string()
     } else {
         // Same close-fence/body separation `write` emits, so `read` round-trips
-        // the body exactly (its parser strips the separator newlines).
-        format!("{prefix}\n\n{body}")
+        // the body exactly (its parser strips the separator newlines). The
+        // separator uses the terminator of the FRONTMATTER BLOCK, not of the file:
+        // this call is contracted to leave the frontmatter bytes alone, and one
+        // CRLF line anywhere in the body must not rewrite the closing fence's line
+        // ending. Emitting `\n` into an otherwise-CRLF block has the same fault in
+        // the other direction.
+        let terminator = if prefix.contains("\r\n") { "\r\n" } else { "\n" };
+        format!("{prefix}{terminator}{terminator}{body}")
     };
-    fs::write(&full, &out).map_err(|e| VaultError::Io(e.to_string()))?;
+    // Atomic replace, same as `write`: a body rewrite is no less interruptible.
+    // (ADR-002 substrate §15.2 v87 clause 4)
+    write_atomically(&full, out.as_bytes())?;
 
     // Best-effort index upsert + embedding staleness — same posture as `write`.
     #[cfg(not(test))]
@@ -389,7 +495,10 @@ pub fn patch_frontmatter_key(
         let needle = format!("{key}:");
         let hit = lines.iter().position(|l| {
             l.starts_with(&needle)
-                && l[needle.len()..].chars().next().map_or(true, |c| c == ' ' || c == '\t')
+                && l[needle.len()..]
+                    .chars()
+                    .next()
+                    .map_or(true, |c| c == ' ' || c == '\t')
         });
         // A key's value span: its line + following continuation lines (indented,
         // or zero-indent `- ` sequence items). Zero-indent `#` comments are NOT
@@ -495,7 +604,10 @@ pub fn refresh_index_for(root: &Path, rel: &str, raw: &str) {
 /// a LONGER stem sharing the prefix does not. Returns changed-file count.
 pub fn rewrite_wikilinks(root: &Path, old_path: &str, new_path: &str) -> Result<usize, VaultError> {
     let stem_of = |p: &str| {
-        Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
+        Path::new(p)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default()
     };
     let old_stem = stem_of(old_path);
     let new_stem = stem_of(new_path);
@@ -506,7 +618,9 @@ pub fn rewrite_wikilinks(root: &Path, old_path: &str, new_path: &str) -> Result<
     let head = format!("[[{old_stem}");
     for rel in list(root, None)? {
         let full = root.join(&rel);
-        let Ok(raw) = fs::read_to_string(&full) else { continue };
+        let Ok(raw) = fs::read_to_string(&full) else {
+            continue;
+        };
         if !raw.contains(&head) {
             continue;
         }
@@ -544,18 +658,30 @@ pub fn rewrite_wikilinks(root: &Path, old_path: &str, new_path: &str) -> Result<
 fn raw_frontmatter_prefix(raw: &str) -> &str {
     let lead = raw.len() - raw.trim_start().len();
     let trimmed = &raw[lead..];
-    if !trimmed.starts_with("---\n") && !trimmed.starts_with("---\r\n") {
+    // The opening fence is 5 bytes on a CRLF note and 4 on an LF one. Assuming 4
+    // put every later offset one byte early, so a CRLF note's prefix stopped
+    // inside its closing fence and the leftover `-` became the first body
+    // character — which shifted every line index in the note.
+    // (ADR-002 substrate §15.2 v87 clause 4 — line-addressed writes depend on this
+    // boundary, so an off-by-one here moves every line index in the note.)
+    let opener = if trimmed.starts_with("---\r\n") {
+        5usize
+    } else if trimmed.starts_with("---\n") {
+        4usize
+    } else {
         return "";
-    }
-    let after_open = &trimmed[4..];
+    };
+    let after_open = &trimmed[opener..];
     let body_start = if after_open.starts_with("---") {
         3usize
     } else if let Some(end_idx) = after_open.find("\n---") {
+        // Covers `\n---` and the `\r\n---` of a CRLF note, since the search lands
+        // on the `\n` either way.
         end_idx + 4
     } else {
         return "";
     };
-    &raw[..lead + 4 + body_start]
+    &raw[..lead + opener + body_start]
 }
 
 /// Mark a note's embedding stale so the next embed pass re-embeds it. See the
@@ -563,6 +689,9 @@ fn raw_frontmatter_prefix(raw: &str) -> &str {
 /// markdown notes are tracked (skip `tables/` smart tables and non-`.md` files),
 /// and we drop the cached row only when the content hash actually changed so a
 /// no-op rewrite doesn't churn the index. Never panics, never blocks on network.
+/// (ADR-002 substrate §15.2 v87 clause 4 — derived state follows the committed
+/// bytes, including on a rollback, so search never describes content the note no
+/// longer holds.)
 #[cfg(not(test))]
 fn flag_embedding_stale(safe: &Path, content: &str) {
     let rel = safe.to_string_lossy();
@@ -797,11 +926,7 @@ pub fn delete(vault_root: &Path, rel_path: &str) -> Result<(), VaultError> {
 
 // ── Internal helpers ─────────────────────────────────────────────────────
 
-fn walk_markdown(
-    dir: &Path,
-    vault_root: &Path,
-    out: &mut Vec<String>,
-) -> Result<(), VaultError> {
+fn walk_markdown(dir: &Path, vault_root: &Path, out: &mut Vec<String>) -> Result<(), VaultError> {
     let entries = fs::read_dir(dir).map_err(|e| VaultError::Io(e.to_string()))?;
     for entry in entries.flatten() {
         let path = entry.path();
@@ -907,7 +1032,13 @@ fn split_frontmatter(raw: &str) -> (serde_json::Value, String) {
     if !trimmed.starts_with("---\n") && !trimmed.starts_with("---\r\n") {
         return (serde_json::Value::Null, raw.to_string());
     }
-    let after_open = &trimmed[4..];
+    // 5 bytes on a CRLF note, 4 on an LF one. Assuming 4 shifted every later
+    // offset by one, so a CRLF note's frontmatter text began with a stray newline
+    // and its body began inside the closing fence.
+    // (ADR-002 substrate §15.2 v87 clause 4 — body line indices are what task and
+    // doc writes address.)
+    let opener = if trimmed.starts_with("---\r\n") { 5usize } else { 4usize };
+    let after_open = &trimmed[opener..];
     // An EMPTY frontmatter block (`---\n---`) — the closing fence sits at the
     // very start of `after_open` with no `\n` before it, so the `\n---` finder
     // below would miss it and hand the caller back the raw file (fences and
@@ -921,9 +1052,13 @@ fn split_frontmatter(raw: &str) -> (serde_json::Value, String) {
         return (serde_json::Value::Null, raw.to_string());
     };
     let after_close = &after_open[body_start..];
+    // Strip the separator between the closing fence and the body.
+    // (ADR-002 substrate §15.2 v87 clause 4.) Doing this as
+    // `trim_start_matches('\n')` then `trim_start_matches('\r')` left a CRLF note
+    // holding `\n\r\n`, which read back as extra leading blank lines and shifted
+    // every line index in the body.
     let body = after_close
-        .trim_start_matches('\n')
-        .trim_start_matches('\r')
+        .trim_start_matches(|character| character == '\n' || character == '\r')
         .to_string();
     let fm_json = parse_yaml_to_json(fm_text);
     (fm_json, body)
@@ -966,6 +1101,189 @@ mod tests {
         p
     }
 
+    /// A note write must be a rename, not a truncate-then-fill: a crash mid-write
+    /// would otherwise leave the user holding half a note. The observable
+    /// consequences are that the temp sibling never survives the call and never
+    /// appears as a note. (ADR-002 substrate §15.2 v87 clause 4)
+    #[test]
+    fn a_write_leaves_no_temporary_sibling_and_never_lists_one() {
+        let root = fresh_tmp("atomic");
+        let fm = serde_json::json!({ "title": "Budget" });
+        write(&root, "notes/budget.md", "First.\n", &fm).expect("write ok");
+        // Overwriting takes the same path, which is the case a truncate would
+        // corrupt.
+        write(&root, "notes/budget.md", "Second.\n", &fm).expect("rewrite ok");
+
+        let siblings: Vec<String> = fs::read_dir(root.join("notes"))
+            .expect("dir")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(siblings, vec!["budget.md".to_owned()], "got {siblings:?}");
+        assert_eq!(
+            read(&root, "notes/budget.md").expect("read").content.trim(),
+            "Second."
+        );
+        let listed = list(&root, None).unwrap_or_default();
+        assert!(
+            listed.iter().all(|path| !path.contains("ctrl-tmp")),
+            "a temp sibling must never be listed as a note: {listed:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A symlink planted at the staging name must not capture the write. Without
+    /// `O_NOFOLLOW` the note's bytes go THROUGH the link to a path outside the
+    /// vault, and the rename then installs the link itself as the note, so every
+    /// later write escapes too.
+    /// (ADR-002 substrate §15.1 v82 no-follow discipline; §15.2 v87 clause 4)
+    #[test]
+    fn a_planted_link_at_the_staging_name_cannot_capture_the_write() {
+        use std::os::unix::fs::symlink;
+
+        let root = fresh_tmp("nofollow");
+        let outside = fresh_tmp("attacker");
+        fs::create_dir_all(root.join("notes")).expect("dir");
+        fs::create_dir_all(&outside).expect("attacker dir");
+        let escape = outside.join("escaped.md");
+        let rel = "notes/budget.md";
+        write(&root, rel, "before\n", &serde_json::json!({ "title": "B" })).expect("seed");
+
+        // The staging name the old fixed-name scheme used, and the shape an
+        // attacker can guess from the note path.
+        symlink(&escape, root.join("notes/.budget.md.ctrl-tmp")).expect("plant link");
+
+        write(&root, rel, "after\n", &serde_json::json!({ "title": "B" })).expect("write ok");
+
+        assert!(!escape.exists(), "nothing may be written outside the root");
+        let committed = root.join(rel);
+        assert!(
+            !fs::symlink_metadata(&committed)
+                .expect("note metadata")
+                .file_type()
+                .is_symlink(),
+            "the note must not become a symlink"
+        );
+        assert_eq!(read(&root, rel).expect("read").content.trim(), "after");
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&outside);
+    }
+
+    /// A rename installs the staging file's mode, so a restricted note would
+    /// silently widen to the process umask — the user's own restriction undone.
+    #[test]
+    fn a_replace_preserves_the_notes_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = fresh_tmp("mode");
+        let rel = "notes/secret.md";
+        let fm = serde_json::json!({ "title": "S" });
+        write(&root, rel, "first\n", &fm).expect("seed");
+        fs::set_permissions(root.join(rel), fs::Permissions::from_mode(0o600)).expect("chmod");
+
+        write(&root, rel, "second\n", &fm).expect("rewrite");
+
+        let mode = fs::metadata(root.join(rel)).expect("metadata").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "got {:o}", mode & 0o777);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// `write_body` is contracted to leave the frontmatter bytes alone, so one CRLF
+    /// line in the body must not rewrite the closing fence's line ending.
+    #[test]
+    fn a_body_rewrite_takes_its_separator_from_the_frontmatter_not_the_body() {
+        let root = fresh_tmp("sep");
+        let rel = "notes/mixed.md";
+        fs::create_dir_all(root.join("notes")).expect("dir");
+        fs::write(root.join(rel), "---\ntitle: LF\n---\n\nold body\n").expect("seed");
+
+        // A body that contains a CRLF line, written into an LF-frontmatter note.
+        write_body(&root, rel, "new body\r\nsecond line\n").expect("body write");
+
+        let raw = fs::read_to_string(root.join(rel)).expect("raw");
+        assert!(
+            raw.starts_with("---\ntitle: LF\n---\n\n"),
+            "the frontmatter block and its separator stay LF: {raw:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A note opening with `---` but never closing it has no frontmatter block, so
+    /// both halves must treat the whole file as body — otherwise a read/modify/write
+    /// round trip would silently drop the fence-like text.
+    #[test]
+    fn a_note_with_no_closing_fence_round_trips_as_all_body() {
+        let root = fresh_tmp("unclosed");
+        let rel = "notes/unclosed.md";
+        fs::create_dir_all(root.join("notes")).expect("dir");
+        let raw = "---\nthis never closes\nstill body\n";
+        fs::write(root.join(rel), raw).expect("seed");
+
+        // The reader hands back the whole file as body...
+        let entry = read(&root, rel).expect("read");
+        assert!(entry.frontmatter.is_null());
+        assert_eq!(entry.content, raw);
+        // ...so writing that same body back must reproduce the file, not drop the
+        // `---` line.
+        write_body(&root, rel, &entry.content).expect("body write");
+        assert_eq!(fs::read_to_string(root.join(rel)).expect("raw"), raw);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A CRLF note's frontmatter fence is 5 bytes, not 4. Getting that wrong shifted
+    /// the prefix boundary into the closing fence, so a body rewrite left a stray
+    /// `-` at the start of the body and moved every line index in the note.
+    #[test]
+    fn a_crlf_note_keeps_its_frontmatter_across_a_body_rewrite() {
+        let root = fresh_tmp("crlf-fm");
+        let rel = "notes/crlf.md";
+        fs::create_dir_all(root.join("notes")).expect("dir");
+        fs::write(
+            root.join(rel),
+            "---\r\ntitle: CRLF  # keep me\r\n---\r\n\r\nOld body.\r\n",
+        )
+        .expect("seed");
+
+        write_body(&root, rel, "New body.\r\n").expect("body write ok");
+
+        let raw = fs::read_to_string(root.join(rel)).expect("raw");
+        assert!(raw.starts_with("---\r\ntitle: CRLF  # keep me\r\n---"), "got {raw:?}");
+        let entry = read(&root, rel).expect("read");
+        assert_eq!(entry.frontmatter["title"], "CRLF");
+        assert_eq!(entry.content.trim(), "New body.");
+        assert!(
+            !entry.content.starts_with('-'),
+            "the closing fence must not leak into the body: {:?}",
+            entry.content
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// `write_body` preserves frontmatter bytes, and it must be just as atomic.
+    #[test]
+    fn a_body_rewrite_leaves_no_temporary_sibling() {
+        let root = fresh_tmp("atomic-body");
+        write(
+            &root,
+            "notes/plan.md",
+            "Old body.\n",
+            &serde_json::json!({ "title": "Plan" }),
+        )
+        .expect("write ok");
+        write_body(&root, "notes/plan.md", "New body.\n").expect("body write ok");
+
+        let siblings: Vec<String> = fs::read_dir(root.join("notes"))
+            .expect("dir")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(siblings, vec!["plan.md".to_owned()], "got {siblings:?}");
+        let entry = read(&root, "notes/plan.md").expect("read");
+        assert_eq!(entry.content.trim(), "New body.");
+        assert_eq!(entry.frontmatter["title"], "Plan");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn write_then_read_roundtrip() {
         let root = fresh_tmp("rt");
@@ -974,8 +1292,8 @@ mod tests {
             "type": "note",
             "tags": ["draft", "ctrl"]
         });
-        let path = write(&root, "notes/2026-05-22/hello.md", "Body line.\n", &fm)
-            .expect("write ok");
+        let path =
+            write(&root, "notes/2026-05-22/hello.md", "Body line.\n", &fm).expect("write ok");
         assert!(path.exists());
 
         let entry = read(&root, "notes/2026-05-22/hello.md").expect("read ok");
@@ -1024,8 +1342,20 @@ mod tests {
         // SOUL.md is single-file persistent memory — curator updates must
         // replace, not append. ADR-005 irisy v2 § soul-md-compat §4.3.
         let root = fresh_tmp("soul-ow");
-        write(&root, "irisy/SOUL.md", "v1 body", &serde_json::json!({"rev": 1})).unwrap();
-        write(&root, "irisy/SOUL.md", "v2 body", &serde_json::json!({"rev": 2})).unwrap();
+        write(
+            &root,
+            "irisy/SOUL.md",
+            "v1 body",
+            &serde_json::json!({"rev": 1}),
+        )
+        .unwrap();
+        write(
+            &root,
+            "irisy/SOUL.md",
+            "v2 body",
+            &serde_json::json!({"rev": 2}),
+        )
+        .unwrap();
 
         let entry = read(&root, "irisy/SOUL.md").unwrap();
         assert_eq!(entry.content.trim(), "v2 body");
@@ -1069,6 +1399,28 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// A CRLF note's opening fence is 5 bytes, and the separator after the closing
+    /// fence is `\r\n\r\n`. Both were handled as if the file used LF, so the
+    /// frontmatter text carried a stray newline and the body carried extra leading
+    /// blank lines that shifted every line index in it.
+    #[test]
+    fn split_frontmatter_reads_a_crlf_note_without_shifting_its_body() {
+        let (fm, body) = split_frontmatter(
+            "---\r\ntitle: CRLF\r\ncount: 2\r\n---\r\n\r\nfirst line\r\nsecond line\r\n",
+        );
+        assert_eq!(fm["title"], "CRLF");
+        assert_eq!(fm["count"], 2);
+        assert!(
+            body.starts_with("first line"),
+            "the body must begin at the first real line: {body:?}"
+        );
+        // Line indices are what task and doc writes address, so an extra leading
+        // line is a silent off-by-one for every one of them.
+        // (ADR-002 substrate §15.2 v87 clause 4)
+        assert_eq!(body.lines().next(), Some("first line"));
+        assert_eq!(body.lines().count(), 2);
+    }
+
     #[test]
     fn split_frontmatter_handles_absent_block() {
         let (fm, body) = split_frontmatter("no frontmatter here\nsecond line");
@@ -1100,13 +1452,18 @@ mod tests {
         use serde_json::json;
         // LLM passed a YAML STRING instead of an object → parse into a real map.
         let yaml = frontmatter_to_yaml(&json!("title: My Note\ntags: [a, b]")).unwrap();
-        assert!(yaml.contains("title: My Note"), "YAML-string frontmatter parsed: {yaml}");
+        assert!(
+            yaml.contains("title: My Note"),
+            "YAML-string frontmatter parsed: {yaml}"
+        );
         assert!(yaml.contains("- a"));
         // LLM passed a JSON-object STRING → also parsed (YAML is a JSON superset).
         let j = frontmatter_to_yaml(&json!("{\"title\":\"X\"}")).unwrap();
         assert!(j.contains("title: X"));
         // A normal object still works.
-        assert!(frontmatter_to_yaml(&json!({"title": "Z"})).unwrap().contains("title: Z"));
+        assert!(frontmatter_to_yaml(&json!({"title": "Z"}))
+            .unwrap()
+            .contains("title: Z"));
         // Degrade-not-fail: a scalar string, an array, a number → no block, no error.
         assert_eq!(frontmatter_to_yaml(&json!("just a title")).unwrap(), "");
         assert_eq!(frontmatter_to_yaml(&json!(["a", "b"])).unwrap(), "");
@@ -1126,8 +1483,10 @@ mod tests {
 
         write_body(&root, "doc.md", "new body").unwrap();
         let out = fs::read_to_string(&full).unwrap();
-        assert!(out.starts_with("---\n# hand comment\nz_last: \"quoted\"\na_first: 1\n---\n"),
-            "raw fm bytes verbatim (comment + order + quoting), got: {out}");
+        assert!(
+            out.starts_with("---\n# hand comment\nz_last: \"quoted\"\na_first: 1\n---\n"),
+            "raw fm bytes verbatim (comment + order + quoting), got: {out}"
+        );
         assert!(out.ends_with("\n\nnew body"));
         // And read() hands back exactly the new body.
         let entry = read(&root, "doc.md").unwrap();
@@ -1171,7 +1530,11 @@ mod tests {
         let out = fs::read_to_string(root.join("n.md")).unwrap();
         // Untouched keys byte-identical: comment, quoting, order, nested list.
         assert!(out.contains("# comment describing z\nz_last: \"quoted\"\ntags:\n  - a\n  - b\n"));
-        assert!(out.contains("a_first: '2'") || out.contains("a_first: 2") || out.contains("a_first: \"2\""));
+        assert!(
+            out.contains("a_first: '2'")
+                || out.contains("a_first: 2")
+                || out.contains("a_first: \"2\"")
+        );
         assert!(out.ends_with("body text\n"), "body untouched");
         // And it still parses.
         let entry = read(&root, "n.md").unwrap();
@@ -1258,7 +1621,10 @@ mod tests {
         fs::write(root.join("n.md"), raw).unwrap();
         patch_frontmatter_key(&root, "n.md", "title", Some("y")).unwrap();
         let out = fs::read_to_string(root.join("n.md")).unwrap();
-        assert!(out.contains("keep: one\r\n"), "untouched CRLF line stays CRLF: {out:?}");
+        assert!(
+            out.contains("keep: one\r\n"),
+            "untouched CRLF line stays CRLF: {out:?}"
+        );
         assert!(out.contains("body"), "body untouched");
     }
 
@@ -1283,7 +1649,13 @@ mod tests {
         assert_eq!(body, "# Head\n- [ ] task\ntail");
         // Round-trip through write→read on disk.
         let root = fresh_tmp("empty-fm");
-        write(&root, "n.md", "# Head\n- [ ] task\ntail", &serde_json::json!({})).unwrap();
+        write(
+            &root,
+            "n.md",
+            "# Head\n- [ ] task\ntail",
+            &serde_json::json!({}),
+        )
+        .unwrap();
         let entry = read(&root, "n.md").unwrap();
         assert_eq!(entry.content, "# Head\n- [ ] task\ntail");
         let _ = fs::remove_dir_all(&root);

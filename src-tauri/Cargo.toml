@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.1075"
+version = "0.1.1076"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
@@ -34,6 +34,9 @@ tauri-plugin-dialog = "2"
 flate2 = "=1.1.9"
 tar = "=0.4.45"
 libc = "=0.2.186"
+# Canonical ResourceRef identity normalizes decoded Unicode before encoding.
+# (ADR-002 substrate §15 v82)
+unicode-normalization = "=0.1.25"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
