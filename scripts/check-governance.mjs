@@ -226,7 +226,7 @@ const ARCHITECTURE_PATHS = [
   /^src-tauri\/src\/kernel\/.*\.rs$/,
   /^src-tauri\/src\/commands\/(?:provider|irisy|kernel|vault|agents|image|skills)[^/]*\.rs$/,
   /^src-tauri\/src\/shell\/(?:kernel_supervisor|acp_client|agent_installer|agent_launcher)\.rs$/,
-  /^packages\/ctrl-web\/src\/routes\/(?:irisy|workbench)\.tsx$/,
+  /^packages\/ctrl-web\/src\/routes\/irisy\.tsx$/,
   /^packages\/ctrl-web\/src\/components\/irisy\/.*\.(?:ts|tsx)$/,
   /^packages\/ctrl-web\/src\/lib\/(?:kernel|irisy[^/]*)\.ts$/,
   /^packages\/ctrl-mcp-sdk\/src\/.*\.ts$/,
@@ -470,10 +470,79 @@ try {
 citationFiles = normalizedCitation.files;
 const changedFiles = new Set([...secretFiles.keys(), ...citationFiles.keys()]);
 
+// -- Retirement authority for whole-file deletions --------------------------
+// A deleted file has no surviving window to carry a citation, so requiring one
+// made uncited legacy code permanently undeletable: the codebase could only
+// accumulate. The ADR corpus is the sole architectural authority, so it is what
+// authorizes a removal, not a comment inside a file that no longer exists.
+//
+// The authority is specific, not a blanket pass: this change must itself be the
+// retirement amendment, meaning a changed ADR whose current `version: N` carries
+// a matching `retired-vN` entry in its `sections` block, exactly as
+// vault/ctrl/adrs/PROCESS.md already requires. Every deletion it authorizes is
+// reported, so the removal stays auditable rather than silent.
+// (bao 2026-08-05: ADR is the single truth)
+function retirementAuthority(files) {
+  for (const candidate of files) {
+    if (!/^vault\/ctrl\/adrs\/\d{3}-[a-z-]+\.md$/.test(candidate)) continue;
+    let text;
+    try {
+      text = readFileSync(candidate, 'utf8');
+    } catch {
+      continue;
+    }
+    const version = text.match(/^version:\s*(\d+)\s*$/m)?.[1];
+    if (!version) continue;
+    // The record must be the STRUCTURED one PROCESS.md specifies: a `sections`
+    // entry in the frontmatter. Scanning the whole document would also match
+    // historical prose describing an old retirement, which authorizes nothing.
+    const frontmatter = text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+    const sectionsBlock = frontmatter.match(/^sections:\n([\s\S]*?)(?=^\S|$)/m)?.[1] ?? '';
+    // The record must name THIS amendment, so an older retirement cannot
+    // authorize a later unrelated deletion.
+    if (!new RegExp(`retired-v${version}\\b`).test(sectionsBlock)) continue;
+    // And this change must BE that amendment: an ADR merely touched for another
+    // reason, whose retirement record predates this work, authorizes nothing.
+    // Without this the rule was satisfiable by any changed ADR that had ever
+    // retired something at its current version.
+    const baseVersion = sourceAtRevision(citationBase, candidate).match(
+      /^version:\s*(\d+)\s*$/m,
+    )?.[1];
+    if (baseVersion === version) continue;
+    const id = candidate.match(/(\d{3})-[a-z-]+\.md$/)?.[1];
+    return { adr: `ADR-${id}`, version };
+  }
+  return null;
+}
+const retirement = retirementAuthority(changedFiles);
+const authorizedDeletions = [];
+
 for (const [file, lines] of citationFiles) {
   if (LOCKFILE.test(file)) continue;
   if (!SOURCE_EXTENSIONS.has(extname(file))) continue;
   if (!ARCHITECTURE_PATHS.some((pattern) => pattern.test(file))) continue;
+  // A whole-file deletion: nothing survives, and every changed line is a removal.
+  if (!existsSync(file) && lines.length > 0 && lines.every(({ kind }) => kind === 'removed')) {
+    if (retirement) {
+      authorizedDeletions.push(file);
+      continue;
+    }
+    adrFindings.push({
+      file,
+      changedLines: substantive(lines).length,
+      missingHunks: [
+        {
+          hunk: 1,
+          firstLine: 0,
+          lastLine: 0,
+          reasons: [
+            'whole-file deletion with no retirement record; add a `retired-v<version>` sections entry to the owning ADR in this change',
+          ],
+        },
+      ],
+    });
+    continue;
+  }
 
   const byHunk = new Map();
   for (const changedLine of lines) {
@@ -527,6 +596,18 @@ for (const [file, lines] of citationFiles) {
 }
 
 reportSecretFindings();
+if (authorizedDeletions.length) {
+  // Reported, never silent: a reviewer can see exactly what the retirement
+  // amendment removed.
+  console.log(
+    `[NOTE] ${authorizedDeletions.length} whole-file deletion(s) authorized by the ` +
+      `${retirement.adr} v${retirement.version} retirement record:`,
+  );
+  for (const file of authorizedDeletions.slice(0, 60)) console.log(`  ${file}`);
+  if (authorizedDeletions.length > 60) {
+    console.log(`  … ${authorizedDeletions.length - 60} more`);
+  }
+}
 if (adrFindings.length) {
   console.error(`[BLOCKED] ${adrFindings.length} architecture-critical file(s) have substantive hunks without a nearby, resolvable ADR citation:`);
   for (const finding of adrFindings) {

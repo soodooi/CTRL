@@ -2,6 +2,11 @@
 # the Kiro dev-loop because they are change-specific, not safe generic hooks.
 node scripts/pre-push-check.js
 node scripts/check-governance.mjs
-# SC5 dual-surface ratchet (ADR-010 § diagnosis P1): blocks NEW capabilities
-# added as both an MCP tool and a Tauri command. Lower the baseline as you migrate.
-node scripts/ratchet-dual-surface.mjs
+# Deterministic implementation-complexity inventory and monotonic ceilings.
+# The generated JSON is the sole metric authority; lower ceilings as debt retires.
+node scripts/gen-implementation-inventory.mjs --check
+# Per-intent and per-domain pipeline conformance. Fails on a stale artifact, on a
+# capability domain that exists in code but not in ADR-002 §17.1, and on a
+# declared pipeline naming an unknown intent, domain, or missing artifact.
+# (ADR-002 substrate §17.6 v86; ADR-005 irisy §12.3 v43)
+node scripts/gen-pipeline-conformance.mjs --check

@@ -1,0 +1,899 @@
+<!doctype html>
+<!--
+  Interactive UX proposal, not implementation evidence.
+  Governing decisions: (ADR-003 frontend §8.5 v41),
+  (ADR-005 irisy §10/§11 v41), and
+  (ADR-002 substrate §15.4/§16 v84).
+-->
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CTRL · Local App to FCT UX</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ctrl-blue: #5a8aef;
+      --ctrl-blue-strong: #1e3fb0;
+      --ctrl-blue-soft: rgb(90 138 239 / 0.14);
+      --keycap-jade: #1fa570;
+      --status-warning: #e59f2b;
+      --status-danger: #d6383a;
+      --paper: #fafafa;
+      --ink: #1b1b1b;
+      --ink-soft: #5c5c5c;
+      --ink-faint: #a0a0a0;
+      --graphite: #131517;
+      --graphite-soft: #1e2024;
+      --graphite-soft-2: #2b2d33;
+      --surface: #191b1f;
+      --surface-raised: #22252a;
+      --surface-pressed: #17191c;
+      --line: rgb(255 255 255 / 0.09);
+      --line-strong: rgb(255 255 255 / 0.16);
+      --text: #fafafa;
+      --text-soft: #b7bac1;
+      --text-faint: #797d86;
+      --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.22);
+      --shadow-md: 0 8px 28px rgb(0 0 0 / 0.24);
+      --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.4);
+      --shadow-keycap: inset 0 1px 0 rgb(255 255 255 / 0.1), inset 0 -1px 0 rgb(0 0 0 / 0.55), 0 4px 14px rgb(0 0 0 / 0.32);
+      --font-sans: "Inter", "SF Pro Text", system-ui, -apple-system, sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+      --radius-xs: 2px;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+      --radius-pill: 999px;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    [data-theme="light"] {
+      color-scheme: light;
+      --ctrl-blue: #1e3fb0;
+      --ctrl-blue-strong: #16267d;
+      --ctrl-blue-soft: rgb(30 63 176 / 0.09);
+      --surface: #f0f0f0;
+      --surface-raised: #fafafa;
+      --surface-pressed: #e7e8ea;
+      --line: rgb(0 0 0 / 0.08);
+      --line-strong: rgb(0 0 0 / 0.15);
+      --text: #1b1b1b;
+      --text-soft: #5c5c5c;
+      --text-faint: #8a8d94;
+      --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.06);
+      --shadow-md: 0 8px 28px rgb(0 0 0 / 0.1);
+      --shadow-lg: 0 24px 64px rgb(0 0 0 / 0.16);
+      --shadow-keycap: inset 0 1px 0 rgb(255 255 255 / 0.95), inset 0 -1px 0 rgb(0 0 0 / 0.08), 0 4px 14px rgb(0 0 0 / 0.1);
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% 0%, rgb(90 138 239 / 0.09), transparent 30rem),
+        var(--graphite);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.45;
+      transition: background 220ms var(--ease), color 220ms var(--ease);
+    }
+    [data-theme="light"] body { background: #f0f0f0; }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--ctrl-blue);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 5px rgb(90 138 239 / 0.18);
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 56px;
+    }
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+    .eyebrow, .mono {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .eyebrow { color: var(--ctrl-blue); }
+    h1 {
+      margin: 6px 0 4px;
+      font-size: clamp(22px, 4vw, 34px);
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+    }
+    .lede { margin: 0; color: var(--text-soft); max-width: 680px; }
+    .head-actions { display: flex; gap: 8px; }
+    .quiet-button {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 8px 10px;
+      background: var(--surface-raised);
+      box-shadow: var(--shadow-keycap);
+      cursor: pointer;
+      transition: transform 150ms var(--ease), border-color 150ms var(--ease);
+    }
+    .quiet-button:hover { transform: translateY(-1px); border-color: var(--line-strong); }
+    .quiet-button:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.2); }
+
+    .prototype-note {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--text-soft);
+      padding: 10px 12px;
+      margin-bottom: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
+    }
+    .note-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--status-warning); flex: none; }
+
+    .stage-strip {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .stage-button {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 9px 8px;
+      background: var(--surface);
+      color: var(--text-faint);
+      text-align: left;
+      cursor: pointer;
+      transition: background 150ms var(--ease), border-color 150ms var(--ease), transform 150ms var(--ease);
+    }
+    .stage-button:hover { transform: translateY(-1px); color: var(--text-soft); }
+    .stage-button.active { background: var(--ctrl-blue-soft); border-color: rgb(90 138 239 / 0.45); color: var(--text); }
+    .stage-number { display: block; color: var(--ctrl-blue); margin-bottom: 2px; }
+    .stage-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 310px;
+      gap: 18px;
+      align-items: start;
+    }
+    .ctrl-window {
+      min-height: 680px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      background: var(--surface-raised);
+      box-shadow: var(--shadow-lg);
+    }
+    .titlebar {
+      height: 44px;
+      display: grid;
+      grid-template-columns: 120px 1fr 120px;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
+    }
+    .traffic { display: flex; gap: 7px; }
+    .traffic span { width: 10px; height: 10px; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface-pressed); }
+    .window-title { text-align: center; font-weight: 600; font-size: 12px; }
+    .context-status { justify-self: end; display: flex; align-items: center; gap: 6px; color: var(--text-faint); font-size: 11px; }
+    .context-status span { width: 6px; height: 6px; border-radius: 50%; background: var(--keycap-jade); }
+
+    .shell {
+      min-height: 636px;
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+    }
+    .nav {
+      padding: 14px 10px;
+      border-right: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .logo-key {
+      width: 42px;
+      height: 42px;
+      margin: 0 auto 22px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, var(--surface-raised), var(--surface-pressed));
+      box-shadow: var(--shadow-keycap);
+      color: var(--ctrl-blue);
+      font: 700 12px/1 var(--font-mono);
+    }
+    .nav-button {
+      width: 100%;
+      border: 0;
+      border-radius: var(--radius-md);
+      padding: 9px 4px;
+      margin-bottom: 4px;
+      background: transparent;
+      color: var(--text-faint);
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .nav-button.active { color: var(--text); background: var(--ctrl-blue-soft); }
+    .nav-icon { display: block; width: 18px; height: 18px; margin: 0 auto 4px; }
+
+    .main {
+      min-width: 0;
+      min-height: 636px;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-raised);
+    }
+    .main-head {
+      min-height: 54px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+    }
+    .main-title { font-weight: 650; letter-spacing: -0.01em; }
+    .resource-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 240px;
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-pill);
+      color: var(--text-soft);
+      font-size: 11px;
+    }
+    .resource-pill svg { flex: none; }
+    .resource-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .conversation {
+      flex: 1;
+      min-height: 0;
+      padding: 18px;
+      overflow: auto;
+    }
+    .intro { max-width: 520px; margin-bottom: 20px; }
+    .intro h2 { margin: 0 0 5px; font-size: 18px; letter-spacing: -0.02em; }
+    .intro p { margin: 0; color: var(--text-soft); }
+    .message { display: flex; margin: 12px 0; }
+    .message.user { justify-content: flex-end; }
+    .bubble {
+      max-width: 76%;
+      padding: 10px 12px;
+      border-radius: 12px 12px 4px 12px;
+      background: var(--ctrl-blue);
+      color: white;
+      box-shadow: var(--shadow-sm);
+    }
+    .assistant-row { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0; }
+    .assistant-mark {
+      width: 27px;
+      height: 27px;
+      flex: none;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      color: var(--ctrl-blue);
+      font: 700 10px/1 var(--font-mono);
+    }
+    .assistant-copy { color: var(--text-soft); padding-top: 3px; }
+    .activity {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 13px 0 13px 37px;
+      color: var(--text-faint);
+      font-size: 12px;
+    }
+    .spinner { width: 11px; height: 11px; border: 1.5px solid var(--line-strong); border-top-color: var(--ctrl-blue); border-radius: 50%; animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .action-card {
+      margin: 14px 0 14px 37px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+      animation: appear 220ms var(--ease);
+    }
+    @keyframes appear { from { opacity: 0; transform: translateY(5px); } }
+    .card-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 14px 10px; }
+    .card-icon {
+      width: 30px;
+      height: 30px;
+      flex: none;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius-md);
+      background: var(--ctrl-blue-soft);
+      color: var(--ctrl-blue);
+    }
+    .card-icon.warning { color: var(--status-warning); background: rgb(229 159 43 / 0.11); }
+    .card-icon.success { color: var(--keycap-jade); background: rgb(31 165 112 / 0.11); }
+    .card-title { font-weight: 650; margin-bottom: 2px; }
+    .card-subtitle { color: var(--text-soft); font-size: 12px; }
+    .card-body { padding: 0 14px 14px; }
+    .boundary-list { display: grid; gap: 7px; color: var(--text-soft); font-size: 12px; }
+    .boundary-item { display: flex; gap: 8px; align-items: flex-start; }
+    .check { color: var(--keycap-jade); font-weight: 700; }
+    .card-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+    .button {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      padding: 8px 12px;
+      background: var(--surface-raised);
+      box-shadow: var(--shadow-keycap);
+      cursor: pointer;
+      transition: transform 120ms var(--ease), border-color 120ms var(--ease), opacity 120ms var(--ease);
+    }
+    .button:hover { transform: translateY(-1px); border-color: rgb(90 138 239 / 0.55); }
+    .button:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.25); }
+    .button.primary { background: var(--ctrl-blue-strong); border-color: var(--ctrl-blue); color: white; }
+    .button.success { background: #166f50; border-color: var(--keycap-jade); color: white; }
+    .button.ghost { box-shadow: none; background: transparent; border-color: transparent; color: var(--text-soft); }
+    .button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .diff {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .diff-pane { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-pressed); }
+    .diff-label { color: var(--text-faint); margin-bottom: 6px; }
+    .diff-value { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+    .diff-pane.after { border-color: rgb(31 165 112 / 0.36); background: rgb(31 165 112 / 0.06); }
+    details { margin-top: 10px; }
+    summary { color: var(--text-soft); font-size: 12px; cursor: pointer; }
+    .detail-grid { margin-top: 8px; display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; color: var(--text-faint); font: 11px/1.5 var(--font-mono); }
+    .detail-grid strong { color: var(--text-soft); font-weight: 500; }
+
+    .composer-wrap { position: relative; padding: 12px; border-top: 1px solid var(--line); background: var(--surface); }
+    .composer {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+      padding: 7px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: var(--surface-raised);
+      box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+    }
+    .fct-button, .send-button {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      cursor: pointer;
+    }
+    .fct-button { padding: 0 10px; color: var(--text-soft); font: 11px/1 var(--font-mono); }
+    .fct-button:hover { color: var(--text); border-color: var(--line-strong); }
+    .composer input { min-width: 0; height: 36px; border: 0; outline: 0; color: var(--text); background: transparent; }
+    .composer input::placeholder { color: var(--text-faint); }
+    .send-button { width: 36px; display: grid; place-items: center; color: white; background: var(--ctrl-blue-strong); border-color: var(--ctrl-blue); }
+    .send-button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .fct-menu {
+      position: absolute;
+      left: 12px;
+      bottom: 66px;
+      width: 270px;
+      padding: 6px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: var(--surface-raised);
+      box-shadow: var(--shadow-lg);
+      z-index: 5;
+    }
+    .fct-menu[hidden] { display: none; }
+    .menu-title { padding: 7px 8px; color: var(--text-faint); }
+    .menu-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border: 0;
+      border-radius: var(--radius-md);
+      padding: 9px 8px;
+      text-align: left;
+      background: transparent;
+      cursor: pointer;
+    }
+    .menu-item:hover { background: var(--ctrl-blue-soft); }
+    .menu-item.active::before { content: "✓"; color: var(--ctrl-blue); }
+    .menu-item:not(.active)::before { content: ""; width: 10px; }
+    .menu-copy { min-width: 0; }
+    .menu-copy strong, .menu-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .menu-copy strong { font-size: 12px; }
+    .menu-copy span { color: var(--text-faint); font-size: 11px; margin-top: 1px; }
+    .menu-separator { height: 1px; margin: 5px 0; background: var(--line); }
+    .manage-link { color: var(--ctrl-blue); }
+
+    .library-view { padding: 18px; flex: 1; }
+    .library-tabs { display: flex; gap: 4px; margin-bottom: 18px; }
+    .library-tab { padding: 7px 10px; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-faint); }
+    .library-tab.active { background: var(--ctrl-blue-soft); color: var(--text); }
+    .draft-card { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+    .draft-head { padding: 14px; border-bottom: 1px solid var(--line); }
+    .draft-head h3 { margin: 0 0 3px; font-size: 15px; }
+    .draft-head p { margin: 0; color: var(--text-soft); font-size: 12px; }
+    .form-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+    .form-label { color: var(--text-faint); font-size: 12px; }
+    .form-value { color: var(--text-soft); }
+    .form-value strong { color: var(--text); }
+    .installed-card { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid rgb(31 165 112 / 0.38); border-radius: var(--radius-lg); background: rgb(31 165 112 / 0.06); }
+    .installed-copy { flex: 1; min-width: 0; }
+    .installed-copy strong, .installed-copy span { display: block; }
+    .installed-copy span { color: var(--text-soft); font-size: 12px; margin-top: 2px; }
+
+    .side-panel { display: grid; gap: 12px; }
+    .side-card { border: 1px solid var(--line); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--surface-raised) 92%, transparent); padding: 14px; }
+    .side-card h3 { margin: 0 0 8px; font-size: 13px; }
+    .side-card p { margin: 0; color: var(--text-soft); font-size: 12px; }
+    .journey { display: grid; gap: 0; }
+    .journey-row { display: grid; grid-template-columns: 20px 1fr; gap: 8px; min-height: 42px; }
+    .journey-track { display: flex; flex-direction: column; align-items: center; }
+    .journey-dot { width: 9px; height: 9px; margin-top: 3px; border: 2px solid var(--text-faint); border-radius: 50%; background: var(--surface-raised); }
+    .journey-line { width: 1px; flex: 1; background: var(--line-strong); }
+    .journey-row.current .journey-dot { border-color: var(--ctrl-blue); background: var(--ctrl-blue); box-shadow: 0 0 0 4px var(--ctrl-blue-soft); }
+    .journey-row.done .journey-dot { border-color: var(--keycap-jade); background: var(--keycap-jade); }
+    .journey-copy strong { display: block; font-size: 12px; }
+    .journey-copy span { display: block; color: var(--text-faint); font-size: 11px; margin-top: 2px; }
+    .rule-list { display: grid; gap: 8px; }
+    .rule { display: flex; gap: 7px; color: var(--text-soft); font-size: 12px; }
+    .rule::before { content: "—"; color: var(--ctrl-blue); }
+
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: 1fr; }
+      .side-panel { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 680px) {
+      .page { width: min(100% - 16px, 1180px); padding-top: 12px; }
+      .page-head { flex-direction: column; }
+      .stage-strip { grid-template-columns: repeat(3, 1fr); }
+      .ctrl-window { min-height: 620px; }
+      .shell { grid-template-columns: 1fr; }
+      .nav { display: none; }
+      .titlebar { grid-template-columns: 80px 1fr 80px; }
+      .resource-pill { max-width: 160px; }
+      .diff { grid-template-columns: 1fr; }
+      .side-panel { grid-template-columns: 1fr; }
+      .composer { grid-template-columns: auto 1fr auto; }
+      .fct-button { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="page-head">
+      <div>
+        <div class="eyebrow">Interactive UX proposal · local app × FCT</div>
+        <h1>One request. One approval. Reuse only when wanted.</h1>
+        <p class="lede">The user asks for an outcome. CTRL resolves the local app connection and capabilities behind the scenes. FCT stays optional until the completed behavior is worth saving.</p>
+      </div>
+      <div class="head-actions">
+        <button class="quiet-button" id="themeToggle" type="button" aria-label="Toggle color theme">Light</button>
+        <button class="quiet-button" id="resetButton" type="button">Reset</button>
+      </div>
+    </header>
+
+    <div class="prototype-note">
+      <span class="note-dot" aria-hidden="true"></span>
+      <span>Prototype only. The write sequence demonstrates the intended interaction contract; it does not claim shipped local-app write support.</span>
+    </div>
+
+    <nav class="stage-strip" aria-label="Prototype states">
+      <button class="stage-button active" data-stage="prompt"><span class="stage-number mono">01</span><span class="stage-label">Ask</span></button>
+      <button class="stage-button" data-stage="connect"><span class="stage-number mono">02</span><span class="stage-label">Connect</span></button>
+      <button class="stage-button" data-stage="review"><span class="stage-number mono">03</span><span class="stage-label">Review</span></button>
+      <button class="stage-button" data-stage="applying" disabled><span class="stage-number mono">04</span><span class="stage-label">Applying</span></button>
+      <button class="stage-button" data-stage="success" disabled><span class="stage-number mono">05</span><span class="stage-label">Verified</span></button>
+      <button class="stage-button" data-stage="save" disabled><span class="stage-number mono">06</span><span class="stage-label">Save</span></button>
+      <button class="stage-button" data-stage="reuse"><span class="stage-number mono">07</span><span class="stage-label">Reuse</span></button>
+    </nav>
+
+    <div class="workspace">
+      <section class="ctrl-window" aria-label="CTRL interaction prototype">
+        <div class="titlebar">
+          <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="window-title">CTRL</div>
+          <div class="context-status"><span></span>Local</div>
+        </div>
+
+        <div class="shell">
+          <nav class="nav" aria-label="Primary navigation">
+            <div class="logo-key">CTL</div>
+            <button class="nav-button active" type="button" data-view="work">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M8 8h8M8 12h5"/></svg>
+              Work
+            </button>
+            <button class="nav-button" type="button" data-view="library">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h5v16H5zM14 4h5v7h-5zM14 15h5v5h-5z"/></svg>
+              Library
+            </button>
+            <button class="nav-button" type="button" data-view="settings">
+              <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.08-1l2-1.55-2-3.46-2.47 1A7 7 0 0 0 14.7 6L14.3 3h-4.6L9.3 6a7 7 0 0 0-1.75 1L5.08 6 3.08 9.45 5.08 11A7 7 0 0 0 5 12c0 .34.03.67.08 1l-2 1.55 2 3.46 2.47-1a7 7 0 0 0 1.75 1l.4 3h4.6l.4-3a7 7 0 0 0 1.75-1l2.47 1 2-3.46-2-1.55c.05-.33.08-.66.08-1Z"/></svg>
+              Settings
+            </button>
+          </nav>
+
+          <div class="main" id="mainSurface"></div>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <section class="side-card">
+          <h3>User effort</h3>
+          <p id="effortCopy">Type one request. No setup, FCT selection, or tool choice.</p>
+        </section>
+        <section class="side-card">
+          <h3>Journey</h3>
+          <div class="journey" id="journey"></div>
+        </section>
+        <section class="side-card">
+          <h3>What remains hidden</h3>
+          <div class="rule-list">
+            <div class="rule">MCP server and native adapter</div>
+            <div class="rule">ResourceRef and capability scope</div>
+            <div class="rule">Credentials and connection details</div>
+            <div class="rule">Skill and policy projection</div>
+          </div>
+        </section>
+        <section class="side-card">
+          <h3>Product boundary</h3>
+          <p>Connect grants access. Review grants one mutation. Save creates a Library draft. None of these actions silently implies another.</p>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <template id="workTemplate">
+    <header class="main-head">
+      <div class="main-title">Irisy</div>
+      <div class="resource-pill" title="Explicit current app selection">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h6"/></svg>
+        <span>Selected range · Budget.ods</span>
+      </div>
+    </header>
+    <div class="conversation" id="conversation"></div>
+    <div class="composer-wrap">
+      <div class="fct-menu" id="fctMenu" hidden>
+        <div class="menu-title mono">Use an FCT</div>
+        <button class="menu-item active" type="button" data-fct="Auto"><span class="menu-copy"><strong>Auto</strong><span>Choose the smallest useful capability set</span></span></button>
+        <button class="menu-item" type="button" data-fct="Polish selected writing"><span class="menu-copy"><strong>Polish selected writing</strong><span>Saved from a verified task</span></span></button>
+        <div class="menu-separator"></div>
+        <button class="menu-item manage-link" type="button" data-manage><span class="menu-copy"><strong>Manage FCTs in Library</strong><span>Find, create, disable, or remove</span></span></button>
+      </div>
+      <form class="composer" id="composerForm">
+        <button class="fct-button" id="fctButton" type="button" aria-haspopup="menu" aria-expanded="false">FCT · Auto</button>
+        <input id="promptInput" aria-label="Message Irisy" autocomplete="off" value="Add a total row to this selected range" />
+        <button class="send-button" id="sendButton" type="submit" aria-label="Send message">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 7-7 7 7M12 5v14"/></svg>
+        </button>
+      </form>
+    </div>
+  </template>
+
+  <script>
+    const stages = ["prompt", "connect", "review", "applying", "success", "save", "reuse"];
+    const stageLabels = {
+      prompt: ["Ask", "Type one request. No setup, FCT selection, or tool choice."],
+      connect: ["Connect", "One Connect action because this app has not been authorized yet."],
+      review: ["Review", "One approval for the exact staged mutation."],
+      applying: ["Applying", "CTRL rechecks the target before writing, then reads it back."],
+      success: ["Verified", "No extra work. Success appears only after the app is reread."],
+      save: ["Save", "Optional handoff to a prefilled Library draft."],
+      reuse: ["Reuse", "Usually automatic; manual FCT choice remains an override."]
+    };
+
+    let state = {
+      stage: "prompt",
+      view: "work",
+      selectedFct: "Auto",
+      installed: false,
+      applying: false,
+      conflict: false,
+      conflictArmed: false,
+      verified: false
+    };
+
+    const mainSurface = document.getElementById("mainSurface");
+    const workTemplate = document.getElementById("workTemplate");
+
+    function icon(kind) {
+      const paths = {
+        plug: '<path d="M8 12h8M9 7v5m6-5v5M7 12v2a5 5 0 0 0 10 0v-2M12 19v2"/>',
+        review: '<path d="M5 4h14v16H5zM8 8h8M8 12h5"/>',
+        check: '<path d="m5 12 4 4L19 6"/>',
+        save: '<path d="M5 4h12l2 2v14H5zM8 4v6h8V4M8 16h8"/>'
+      };
+      return `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">${paths[kind]}</svg>`;
+    }
+
+    function renderJourney() {
+      const root = document.getElementById("journey");
+      const current = stages.indexOf(state.stage);
+      root.innerHTML = stages.map((stage, index) => {
+        const status = index < current ? "done" : index === current ? "current" : "";
+        return `<div class="journey-row ${status}">
+          <div class="journey-track"><span class="journey-dot"></span>${index < stages.length - 1 ? '<span class="journey-line"></span>' : ''}</div>
+          <div class="journey-copy"><strong>${stageLabels[stage][0]}</strong><span>${journeyHint(stage)}</span></div>
+        </div>`;
+      }).join("");
+      document.getElementById("effortCopy").textContent = stageLabels[state.stage][1];
+    }
+
+    function journeyHint(stage) {
+      return {
+        prompt: "One natural-language request",
+        connect: "Only when the app is unavailable",
+        review: "Exact target and before/after",
+        applying: "Recheck, write, and native reread",
+        success: "Post-write reread proved it",
+        save: "Optional Library handoff",
+        reuse: "Auto or explicit override"
+      }[stage];
+    }
+
+    function setStage(stage, systemTransition = false) {
+      if (!stages.includes(stage)) return;
+      if (!systemTransition && (stage === "applying" || stage === "success")) return;
+      if (!systemTransition && stage === "save" && !state.verified) return;
+      state.stage = stage;
+      state.view = stage === "save" ? "library" : "work";
+      state.applying = stage === "applying";
+      state.conflict = false;
+      if (stage === "prompt") {
+        state.conflictArmed = false;
+        state.verified = false;
+      }
+      if (stage === "reuse") state.installed = true;
+      render();
+    }
+
+    function updateStageButtons() {
+      document.querySelectorAll(".stage-button").forEach(button => {
+        const stage = button.dataset.stage;
+        button.classList.toggle("active", stage === state.stage);
+        button.disabled = stage === "applying" || ((stage === "success" || stage === "save") && !state.verified);
+      });
+    }
+
+    function render() {
+      updateStageButtons();
+      document.querySelectorAll(".nav-button").forEach(button => button.classList.toggle("active", button.dataset.view === state.view));
+      if (state.view === "library") renderLibrary();
+      else if (state.view === "settings") renderSettings();
+      else renderWork();
+      renderJourney();
+    }
+
+    function renderWork() {
+      mainSurface.replaceChildren(workTemplate.content.cloneNode(true));
+      const conversation = document.getElementById("conversation");
+      const promptInput = document.getElementById("promptInput");
+      const sendButton = document.getElementById("sendButton");
+      const fctButton = document.getElementById("fctButton");
+      const fctMenu = document.getElementById("fctMenu");
+      fctButton.textContent = `FCT · ${state.selectedFct}`;
+
+      const registryFcts = [
+        { name: "Auto", summary: "Choose the smallest useful capability set" },
+        { name: "Polish selected writing", summary: "Saved from a verified task" },
+        ...(state.installed
+          ? [{ name: "Add a verified total row", summary: "Available from the local registry" }]
+          : [])
+      ];
+      const separator = fctMenu.querySelector(".menu-separator");
+      fctMenu.querySelectorAll("[data-fct]").forEach(item => item.remove());
+      registryFcts.forEach(item => {
+        const button = document.createElement("button");
+        button.className = `menu-item${state.selectedFct === item.name ? " active" : ""}`;
+        button.type = "button";
+        button.dataset.fct = item.name;
+        const copy = document.createElement("span");
+        copy.className = "menu-copy";
+        const name = document.createElement("strong");
+        name.textContent = item.name;
+        const summary = document.createElement("span");
+        summary.textContent = item.summary;
+        copy.append(name, summary);
+        button.append(copy);
+        fctMenu.insertBefore(button, separator);
+      });
+
+      const stageIndex = stages.indexOf(state.stage);
+      let html = '<div class="intro"><h2>What should happen in the selected range?</h2><p>CTRL uses only the explicit range shown above. Auto resolves the connection and capabilities when you send.</p></div>';
+
+      if (stageIndex >= 1) {
+        html += '<div class="message user"><div class="bubble">Add a total row to this selected range</div></div>';
+      }
+      if (state.stage === "connect") {
+        html += `<div class="assistant-row"><div class="assistant-mark">IR</div><div class="assistant-copy">The selected spreadsheet is available, but CTRL is not connected to the app yet.</div></div>
+          <section class="action-card">
+            <div class="card-head"><div class="card-icon">${icon("plug")}</div><div><div class="card-title">Connect to the spreadsheet app</div><div class="card-subtitle">Allow access to this active document and its explicit selection.</div></div></div>
+            <div class="card-body"><div class="boundary-list">
+              <div class="boundary-item"><span class="check">✓</span><span>Access is limited to the active document and selected range.</span></div>
+              <div class="boundary-item"><span class="check">✓</span><span>Credentials remain in the app or OS keychain.</span></div>
+              <div class="boundary-item"><span class="check">✓</span><span>Connecting does not approve a write.</span></div>
+            </div></div>
+            <div class="card-actions"><button class="button ghost" type="button" data-action="cancel">Cancel</button><button class="button primary" type="button" data-action="connect">Connect</button></div>
+          </section>`;
+      }
+      if (state.stage === "review") {
+        if (state.conflict) {
+          html += `<div class="assistant-row"><div class="assistant-mark">IR</div><div class="assistant-copy">The selected range changed after approval, so CTRL stopped without writing.</div></div>
+            <section class="action-card">
+              <div class="card-head"><div class="card-icon warning">${icon("review")}</div><div><div class="card-title">Selection changed</div><div class="card-subtitle">Nothing was written. Review the current range before trying again.</div></div></div>
+              <div class="card-body"><div class="detail-grid"><strong>Expected</strong><span>rev-0182 · 54ae…8f21</span><strong>Current</strong><span>rev-0183 · 971c…43d0</span><strong>Outcome</strong><span>stale precondition rejected</span></div></div>
+              <div class="card-actions"><button class="button" type="button" data-action="review-again">Review current range</button></div>
+            </section>`;
+        } else {
+          html += `<div class="assistant-row"><div class="assistant-mark">IR</div><div class="assistant-copy">Connected. I calculated the total and staged one change.</div></div>
+            <section class="action-card">
+              <div class="card-head"><div class="card-icon warning">${icon("review")}</div><div><div class="card-title">Review change</div><div class="card-subtitle">Budget.ods · Sheet1 · A2:D18</div></div></div>
+              <div class="card-body">
+                <div class="diff"><div class="diff-pane"><div class="diff-label mono">Before</div><div class="diff-value">Rows 2–18 · no total</div></div><div class="diff-pane after"><div class="diff-label mono">After</div><div class="diff-value">Row 19 · TOTAL · 42,680</div></div></div>
+                <details><summary>View verification details</summary><div class="detail-grid"><strong>Target</strong><span>Sheet1!A19:D19</span><strong>Revision</strong><span>rev-0182</span><strong>Range hash</strong><span>54ae…8f21</span><strong>Operation</strong><span>append-total-row</span></div></details>
+              </div>
+              <div class="card-actions"><button class="button ghost" type="button" data-action="cancel">Cancel</button><button class="button ghost" type="button" data-action="arm-conflict">${state.conflictArmed ? "App change armed" : "Simulate app change"}</button><button class="button primary" type="button" data-action="approve">Approve</button></div>
+            </section>`;
+        }
+      }
+      if (state.stage === "applying") {
+        html += '<div class="activity"><span class="spinner"></span><span>Rechecking the target, applying the change, and reading it back…</span></div>';
+      }
+      if (state.stage === "success") {
+        if (state.applying) {
+          html += '<div class="activity"><span class="spinner"></span><span>Rechecking the range, applying the change, and reading it back…</span></div>';
+        } else {
+          html += `<div class="assistant-row"><div class="assistant-mark">IR</div><div class="assistant-copy">Done. The app reports the new total row exactly as staged.</div></div>
+            <section class="action-card">
+              <div class="card-head"><div class="card-icon success">${icon("check")}</div><div><div class="card-title">Updated selected range</div><div class="card-subtitle">Verified by rereading Sheet1!A19:D19.</div></div></div>
+              <div class="card-body"><details><summary>View result and provenance</summary><div class="detail-grid"><strong>Result</strong><span>TOTAL · 42,680</span><strong>Before rev</strong><span>rev-0182</span><strong>After rev</strong><span>rev-0183</span><strong>Verified</strong><span>native reread matched</span></div></details></div>
+              <div class="card-actions"><button class="button" type="button" data-action="save">Save as FCT</button></div>
+            </section>`;
+        }
+      }
+      if (state.stage === "reuse") {
+        html += `<div class="assistant-row"><div class="assistant-mark">IR</div><div class="assistant-copy">“Add a verified total row” is available. Auto can reuse it when the task matches, or you can pin it for this session.</div></div>
+          <section class="action-card">
+            <div class="card-head"><div class="card-icon success">${icon("save")}</div><div><div class="card-title">FCT available</div><div class="card-subtitle">Saved in Library. This session remains on ${state.selectedFct === "Auto" ? "Auto" : `FCT · ${state.selectedFct}`}.</div></div></div>
+            <div class="card-actions"><button class="button" type="button" data-action="open-fct">Choose FCT</button></div>
+          </section>`;
+      }
+
+      conversation.innerHTML = html;
+      promptInput.disabled = state.stage !== "prompt";
+      sendButton.disabled = state.stage !== "prompt";
+
+      document.getElementById("composerForm").addEventListener("submit", event => {
+        event.preventDefault();
+        if (promptInput.value.trim()) setStage("connect");
+      });
+      fctButton.addEventListener("click", () => {
+        fctMenu.hidden = !fctMenu.hidden;
+        fctButton.setAttribute("aria-expanded", String(!fctMenu.hidden));
+      });
+      fctMenu.querySelectorAll("[data-fct]").forEach(item => item.addEventListener("click", () => {
+        state.selectedFct = item.dataset.fct;
+        fctMenu.hidden = true;
+        renderWork();
+      }));
+      const manage = fctMenu.querySelector("[data-manage]");
+      manage.addEventListener("click", () => { state.view = "library"; render(); });
+
+      mainSurface.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => handleAction(button.dataset.action)));
+    }
+
+    function handleAction(action) {
+      if (action === "connect") setStage("review");
+      if (action === "approve") {
+        const willConflict = state.conflictArmed;
+        state.verified = false;
+        setStage("applying", true);
+        window.setTimeout(() => {
+          if (willConflict) {
+            state.stage = "review";
+            state.applying = false;
+            state.conflict = true;
+            state.conflictArmed = false;
+            render();
+          } else {
+            state.verified = true;
+            state.conflictArmed = false;
+            setStage("success", true);
+          }
+        }, 900);
+      }
+      if (action === "arm-conflict") {
+        state.conflictArmed = !state.conflictArmed;
+        render();
+      }
+      if (action === "review-again") {
+        state.conflict = false;
+        render();
+      }
+      if (action === "save") setStage("save");
+      if (action === "cancel") setStage("prompt");
+      if (action === "open-fct") {
+        const menu = document.getElementById("fctMenu");
+        menu.hidden = false;
+        document.getElementById("fctButton").setAttribute("aria-expanded", "true");
+      }
+    }
+
+    function renderLibrary() {
+      mainSurface.innerHTML = `<header class="main-head"><div class="main-title">Library</div><div class="mono" style="color:var(--text-faint)">Local registry</div></header>
+        <div class="library-view">
+          <div class="library-tabs"><button class="library-tab" type="button">Find</button><button class="library-tab ${state.installed ? "active" : ""}" type="button">Installed</button><button class="library-tab ${state.installed ? "" : "active"}" type="button">Create FCT</button></div>
+          ${state.installed ? installedMarkup() : draftMarkup()}
+        </div>`;
+      mainSurface.querySelectorAll("[data-action]").forEach(button => button.addEventListener("click", () => {
+        if (button.dataset.action === "install") { state.installed = true; renderLibrary(); }
+        if (button.dataset.action === "use") { state.selectedFct = "Add a verified total row"; setStage("reuse"); }
+        if (button.dataset.action === "back") { setStage("success"); }
+      }));
+    }
+
+    function draftMarkup() {
+      return `<section class="draft-card">
+        <div class="draft-head"><div class="eyebrow">Draft from verified task</div><h3>Add a verified total row</h3><p>Review the reusable outcome. CTRL keeps the connection and implementation details internal.</p></div>
+        <div class="form-row"><div class="form-label">When to use</div><div class="form-value"><strong>A selected record range</strong> needs a computed total row.</div></div>
+        <div class="form-row"><div class="form-label">Needs</div><div class="form-value">Read explicit selection · compute totals · reviewed write · post-write verification</div></div>
+        <div class="form-row"><div class="form-label">Works with</div><div class="form-value">Any connected spreadsheet Resource advertising the required operations</div></div>
+        <div class="form-row"><div class="form-label">Policy</div><div class="form-value">Never write without preview and approval</div></div>
+        <div class="card-actions"><button class="button ghost" type="button" data-action="back">Back</button><button class="button primary" type="button" data-action="install">Save FCT</button></div>
+      </section>`;
+    }
+
+    function installedMarkup() {
+      return `<div class="installed-card">
+        <div class="card-icon success">${icon("check")}</div>
+        <div class="installed-copy"><strong>Add a verified total row</strong><span>Available in Auto. Not active in the current session.</span></div>
+        <button class="button" type="button" data-action="use">Use FCT</button>
+      </div>`;
+    }
+
+    function renderSettings() {
+      mainSurface.innerHTML = '<header class="main-head"><div class="main-title">Settings</div></header><div class="library-view"><section class="draft-card"><div class="draft-head"><h3>No setup required for this demo</h3><p>App connections and FCT lifecycle are managed in context and Library, not as a prerequisite settings wizard.</p></div></section></div>';
+    }
+
+    document.querySelectorAll(".stage-button").forEach(button => button.addEventListener("click", () => setStage(button.dataset.stage)));
+    document.querySelectorAll(".nav-button").forEach(button => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
+    document.getElementById("themeToggle").addEventListener("click", event => {
+      const root = document.documentElement;
+      const next = root.dataset.theme === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      event.currentTarget.textContent = next === "dark" ? "Light" : "Dark";
+    });
+    document.getElementById("resetButton").addEventListener("click", () => {
+      state = { stage: "prompt", view: "work", selectedFct: "Auto", installed: false, applying: false, conflict: false, conflictArmed: false, verified: false };
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

@@ -24,6 +24,12 @@ jobs:
         run: node scripts/check-governance.mjs --base "$BASE_SHA" --head "$GITHUB_SHA"
       - name: report accepted-ADR acceptance debt
         run: bash scripts/check-adr-acceptance.sh --soft
+      # Monotonic complexity ceilings for the minimal CTRL migration.
+      # (ADR-001 spine §4 v22; ADR-010 communication § endpoint-spec v14)
+      - name: verify implementation inventory and ratchets
+        run: node scripts/gen-implementation-inventory.mjs --check
+      - name: verify generated endpoint catalog
+        run: node scripts/gen-endpoint-catalog.mjs --check
 
   # --- deterministic per-push gate: unit tests + typecheck (no kernel/network) ---
   rust:
@@ -41,6 +47,8 @@ jobs:
           workspaces: src-tauri
       - name: cargo test --lib
         run: cargo test --lib --manifest-path src-tauri/Cargo.toml
+      - name: verify generated MCP schema against runtime router
+        run: cargo run --manifest-path src-tauri/Cargo.toml --bin dump_mcp_schema -- --check
 
   web:
     runs-on: ubuntu-latest

@@ -1,0 +1,409 @@
+<!doctype html>
+<!--
+  Interactive UX proposal for the governed note write. Not implementation evidence.
+  Governing decisions: (ADR-003 frontend §8.5 v44), (ADR-002 substrate §15.2/§15.5 v87),
+  (ADR-005 irisy §12 v43 — serves U6, U10, U11, U12).
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CTRL · Note write approval</title>
+<style>
+:root{
+  color-scheme: dark;
+  --blue:#5a8aef; --blue-strong:#1e3fb0; --blue-soft:rgb(90 138 239/.14);
+  --jade:#1fa570; --amber:#e59f2b; --danger:#d6383a;
+  --bg:#131517; --l0:#191b1f; --l1:#22252a; --sunken:#17191c;
+  --line:rgb(255 255 255/.09); --line-2:rgb(255 255 255/.16);
+  --text:#fafafa; --soft:#b7bac1; --faint:#797d86;
+  --mono:"JetBrains Mono","SF Mono",Consolas,monospace;
+  --sans:"Inter","SF Pro Text",system-ui,-apple-system,sans-serif;
+  --r:8px; --r-lg:12px; --ease:cubic-bezier(.16,1,.3,1);
+}
+[data-theme="light"]{
+  color-scheme: light;
+  --blue:#1e3fb0; --blue-soft:rgb(30 63 176/.09);
+  --bg:#f0f0f0; --l0:#f5f5f7; --l1:#fafafa; --sunken:#eceef0;
+  --line:rgb(0 0 0/.09); --line-2:rgb(0 0 0/.16);
+  --text:#1b1b1b; --soft:#5c5c5c; --faint:#8a8d94;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 var(--sans)}
+button{font:inherit;color:inherit}
+button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.page{width:min(1240px,calc(100% - 32px));margin:0 auto;padding:22px 0 56px}
+.head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:16px}
+h1{margin:6px 0 4px;font-size:clamp(20px,3.4vw,30px);letter-spacing:-.03em;line-height:1.1}
+.eyebrow{font:11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--blue)}
+.lede{margin:0;color:var(--soft);max-width:70ch}
+.btn{border:1px solid var(--line-2);border-radius:var(--r);padding:7px 11px;background:var(--l1);cursor:pointer}
+.btn:hover{border-color:var(--blue)}
+.btn.primary{background:var(--blue-strong);border-color:var(--blue);color:#fff}
+.btn.danger{background:#8f2427;border-color:var(--danger);color:#fff}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--soft)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:5px 9px;font-size:12px}
+.note{display:flex;gap:9px;align-items:center;color:var(--soft);border:1px solid var(--line);
+  border-radius:var(--r);padding:9px 12px;margin-bottom:16px;background:color-mix(in srgb,var(--l1) 70%,transparent)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--amber);flex:none}
+.states{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:14px}
+.state{min-width:0;border:1px solid var(--line);border-radius:var(--r);padding:8px;background:var(--l0);
+  color:var(--faint);text-align:left;cursor:pointer}
+.state.on{background:var(--blue-soft);border-color:rgb(90 138 239/.45);color:var(--text)}
+.state b{display:block;font:10px/1 var(--mono);color:var(--blue);margin-bottom:3px}
+.state span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+
+/* ── the existing Ambient shell: [content | L1 rail | Irisy] ───────────── */
+.window{border:1px solid var(--line-2);border-radius:14px;overflow:hidden;background:var(--l1);
+  box-shadow:0 24px 64px rgb(0 0 0/.38)}
+.statusbar{height:40px;display:grid;grid-template-columns:1fr auto;align-items:center;
+  padding:0 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--l1) 86%,transparent)}
+.wordmark{font:700 12px/1 var(--mono);letter-spacing:-.02em}
+.wordmark i{color:var(--blue);font-style:normal;font-weight:500;margin-left:8px}
+.wordmark s{color:var(--faint);text-decoration:none;margin-left:10px;font-weight:500}
+.shell{display:grid;grid-template-columns:minmax(0,1fr) 56px 440px;min-height:560px}
+.rail{border-left:1px solid var(--line);border-right:1px solid var(--line);background:var(--l0);padding:12px 8px}
+.rail button{width:100%;border:0;border-radius:var(--r);padding:9px 2px;margin-bottom:4px;
+  background:transparent;color:var(--faint);font-size:10px;cursor:pointer}
+.rail button.on{background:var(--blue-soft);color:var(--text)}
+.rail svg{display:block;width:17px;height:17px;margin:0 auto 3px}
+
+/* content area */
+.content{min-width:0;display:flex;flex-direction:column;background:var(--l1)}
+.chead{min-height:46px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--line);gap:12px}
+.ctitle{font-weight:650}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;
+  border:1px solid var(--line);color:var(--soft);font:11px/1 var(--mono)}
+.badge.amber{border-color:rgb(229 159 43/.5);color:var(--amber)}
+.badge.jade{border-color:rgb(31 165 112/.5);color:var(--jade)}
+.badge.danger{border-color:rgb(214 56 58/.5);color:var(--danger)}
+.cbody{flex:1;min-height:0;overflow:auto;padding:16px}
+.doc{font:13px/1.65 var(--mono);white-space:pre-wrap;color:var(--soft)}
+.doc h3{margin:0 0 8px;font:650 15px/1.3 var(--sans);color:var(--text)}
+
+/* proposed-change state of the SAME viewer: only the touched section is diffed,
+   with surrounding context kept as plain document. */
+.ctx{opacity:.5}
+.diff{display:grid;gap:8px;margin:10px 0;border-left:3px solid var(--amber);padding-left:12px}
+.side{border:1px solid var(--line);border-radius:var(--r);background:var(--sunken);padding:10px}
+.side.after{border-color:rgb(31 165 112/.42);background:rgb(31 165 112/.06)}
+.side .k{font:10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.side .v{font:13px/1.6 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.del{color:var(--danger);text-decoration:line-through;text-decoration-color:rgb(214 56 58/.5)}
+.ins{color:var(--jade)}
+@media(min-width:900px){.diff{grid-template-columns:1fr 1fr}}
+
+/* Irisy column */
+.irisy{min-width:0;display:flex;flex-direction:column;background:var(--l1);border-left:1px solid var(--line)}
+.tabs{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);align-items:center}
+.tab{padding:5px 9px;border-radius:6px;border:1px solid transparent;font-size:12px;color:var(--soft)}
+.tab.on{border-color:var(--line-2);color:var(--text);background:var(--l0)}
+.stream{flex:1;min-height:0;overflow:auto;padding:14px}
+.msg{display:flex;margin:10px 0}
+.msg.me{justify-content:flex-end}
+.bubble{max-width:82%;padding:9px 11px;border-radius:12px 12px 4px 12px;background:var(--blue);color:#fff}
+.ai{display:flex;gap:9px;margin:12px 0}
+.mark{width:26px;height:26px;flex:none;display:grid;place-items:center;border:1px solid var(--line);
+  border-radius:6px;background:var(--l0);color:var(--blue);font:700 10px/1 var(--mono)}
+.ai p{margin:2px 0 0;color:var(--soft)}
+.composer{padding:10px;border-top:1px solid var(--line);background:var(--l0)}
+.cin{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:7px;
+  border:1px solid var(--line-2);border-radius:var(--r-lg);background:var(--l1)}
+.cin input{min-width:0;height:34px;border:0;background:transparent;color:var(--text);outline:0}
+.fct{height:34px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--l0);
+  color:var(--soft);font:11px/1 var(--mono)}
+.send{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--blue);
+  border-radius:var(--r);background:var(--blue-strong);color:#fff}
+
+/* inline decision card — never a modal, so it cannot cover the change */
+.card{margin:12px 0;border:1px solid var(--line-2);border-left-width:3px;border-radius:var(--r-lg);
+  background:var(--l0);padding:12px;display:grid;gap:9px;animation:in .2s var(--ease)}
+@keyframes in{from{opacity:0;transform:translateY(4px)}}
+.card.amber{border-left-color:var(--amber)}
+.card.jade{border-left-color:var(--jade)}
+.card.danger{border-left-color:var(--danger)}
+.card.blue{border-left-color:var(--blue)}
+.card h4{margin:0;font-size:13px}
+.card .why{color:var(--soft);font-size:13px}
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px;font:11px/1.5 var(--mono);color:var(--faint)}
+.facts b{font-weight:500;color:var(--soft)}
+.facts span{overflow-wrap:anywhere}
+details summary{font-size:12px;color:var(--soft);cursor:pointer}
+details[open] summary{margin-bottom:6px}
+.acts{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.bar{height:3px;border-radius:999px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;width:40%;background:var(--blue);animation:slide 1.1s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+.aside{display:grid;gap:10px;margin-top:14px;grid-template-columns:repeat(3,1fr)}
+.acard{border:1px solid var(--line);border-radius:var(--r-lg);padding:12px;background:color-mix(in srgb,var(--l1) 88%,transparent)}
+.acard h5{margin:0 0 6px;font-size:12px}
+.acard p{margin:0;color:var(--soft);font-size:12px}
+@media(max-width:1000px){
+  .shell{grid-template-columns:1fr}
+  .rail{display:none}
+  .irisy{border-left:0;border-top:1px solid var(--line)}
+  .states{grid-template-columns:repeat(4,1fr)}
+  .aside{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="head">
+    <div>
+      <div class="eyebrow">Interactive UX proposal · governed note write</div>
+      <h1>See the change before it touches your file.</h1>
+      <p class="lede">The existing shell, unchanged: content on the left, the L1 rail, Irisy resident on the right.
+        Two additions only — the content viewer gains a proposed-change state, and the approval decision renders inline
+        beside it instead of covering it.</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="theme" type="button">Light</button>
+      <button class="btn" id="reset" type="button">Reset</button>
+    </div>
+  </header>
+
+  <div class="note"><span class="dot"></span>
+    <span>Prototype only. The kernel write contract is implemented and tested; no frontend calls it yet, so U6/U10/U11 remain <code>partial</code>.</span>
+  </div>
+
+  <nav class="states" id="states" aria-label="States"></nav>
+  <div id="app"></div>
+</main>
+<script>
+const STATES = [
+  ['idle','Idle'],
+  ['proposed','Proposed'],
+  ['awaiting','Awaiting'],
+  ['applying','Applying'],
+  ['verified','Verified'],
+  ['conflict','Conflict'],
+  ['rolled_back','Rolled back'],
+];
+
+// Every fact below is one the kernel actually returns: staged before/after,
+// the revision precondition, and how the commit was verified.
+const NOTE = 'Budget.md';
+const BEFORE = 'This note tracks the quarterly budget. It was started in June and has been\nupdated a few times since, mostly by adding rows to the table below as new\ninvoices arrived.';
+const AFTER  = 'Quarterly budget tracker. Updated as invoices arrive.';
+const TAIL = '\n## Table\n\n| Item | Amount |\n| --- | --- |\n| Hosting | 1,200 |\n| Design | 3,400 |';
+// What someone else saved while the approval was waiting. The conflict state must
+// show THIS, not the original — claiming the file is unchanged would contradict
+// the revision facts on the card.
+const CHANGED = 'This note tracks the quarterly budget. Reviewed with Finance on Tuesday;\nhosting is now billed annually.';
+const REV_BEFORE = 'rev-0182';
+const REV_AFTER = 'rev-0183';
+const HASH = '54ae…8f21';
+
+let state = 'idle';
+let applyTimer = null;
+let conflictArmed = false;
+
+const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+const icon = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">${d}</svg>`;
+const ICON = {
+  work: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M8 8h8M8 12h5"/>',
+  lib: '<path d="M5 4h5v16H5zM14 4h5v7h-5zM14 15h5v5h-5z"/>',
+  set: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.08-1l2-1.55-2-3.46-2.47 1A7 7 0 0 0 14.7 6L14.3 3h-4.6L9.3 6a7 7 0 0 0-1.75 1L5.08 6l-2 3.45L5.08 11A7 7 0 0 0 5 12c0 .34.03.67.08 1l-2 1.55 2 3.46 2.47-1a7 7 0 0 0 1.75 1l.4 3h4.6l.4-3a7 7 0 0 0 1.75-1l2.47 1 2-3.46-2-1.55c.05-.33.08-.66.08-1Z"/>',
+};
+
+/** Content-pane header badge: the viewer states what it is showing. */
+function contentBadge() {
+  if (state === 'proposed' || state === 'awaiting')
+    return '<span class="badge amber">Proposed change · not saved</span>';
+  if (state === 'applying') return '<span class="badge amber">Applying…</span>';
+  if (state === 'verified') return `<span class="badge jade">Saved · ${REV_AFTER}</span>`;
+  if (state === 'conflict') return '<span class="badge danger">Changed elsewhere · not saved</span>';
+  if (state === 'rolled_back') return '<span class="badge danger">Restored · not saved</span>';
+  return `<span class="badge">${REV_BEFORE}</span>`;
+}
+
+/** The SAME markdown viewer, with a proposed-change state. Only the touched
+ *  section is diffed; surrounding content stays readable as context. */
+function contentBody() {
+  const showDiff = ['proposed', 'awaiting', 'applying'].includes(state);
+  const saved = state === 'verified';
+  const head = '<h3>Quarterly budget</h3>';
+  if (showDiff) {
+    return `<div class="doc">${head}<div class="diff">
+      <div class="side"><div class="k">Current</div><div class="v del">${BEFORE}</div></div>
+      <div class="side after"><div class="k">Proposed</div><div class="v ins">${AFTER}</div></div>
+    </div><div class="ctx">${TAIL}</div></div>`;
+  }
+  // Conflict shows the version that actually exists now; rolled_back shows the
+  // restored original. Either way the content matches the badge and the facts.
+  const body = state === 'verified' ? AFTER : state === 'conflict' ? CHANGED : BEFORE;
+  return `<div class="doc">${head}${body}<span class="ctx">${TAIL}</span></div>`;
+}
+
+/** The decision, rendered inline in the Irisy column. It carries the facts a
+ *  person needs to decide; the change itself is shown by the viewer on the left. */
+function decisionCard() {
+  const facts = (rows) => `<div class="facts">${rows.map(([k, v]) => `<b>${k}</b><span>${v}</span>`).join('')}</div>`;
+  switch (state) {
+    case 'awaiting':
+      return `<section class="card amber" data-kind="approval">
+        <h4>Review change</h4>
+        <div class="why">Rewrite the opening of <b>${NOTE}</b> as one sentence.</div>
+        ${facts([['Target', `${NOTE} · opening paragraph`], ['Based on', `${REV_BEFORE} · ${HASH}`]])}
+        <details><summary>What happens on approve</summary>
+          ${facts([['1', 'Recheck the note has not changed'], ['2', 'Save the new content'], ['3', 'Read it back to confirm']])}
+        </details>
+        <div class="acts">
+          <button class="btn sm ghost" data-act="cancel">Cancel</button>
+          <button class="btn sm" data-act="arm">${conflictArmed ? 'Edit armed ✓' : 'Simulate outside edit'}</button>
+          <button class="btn sm danger" data-act="approve" data-primary>Approve</button>
+        </div>
+      </section>`;
+    case 'applying':
+      return `<section class="card blue" data-kind="progress">
+        <h4>Applying</h4>
+        <div class="why">Rechecking, saving, then reading it back.</div>
+        <div class="bar"><i></i></div>
+      </section>`;
+    case 'verified':
+      return `<section class="card jade" data-kind="verified">
+        <h4>Saved</h4>
+        <div class="why">The opening of <b>${NOTE}</b> was replaced, and CTRL read the file back to confirm.</div>
+        <details><summary>View details</summary>
+          ${facts([['Before', REV_BEFORE], ['After', REV_AFTER], ['Verified', 'reread matched the expected revision'], ['Source', NOTE]])}
+        </details>
+        <!-- No Undo here on purpose: reverting is ANOTHER governed write with its
+             own precondition and approval, and the kernel has no undo operation.
+             Offering it would promise a capability that does not exist. -->
+        <div class="acts"><button class="btn sm ghost" data-act="cancel">Done</button></div>
+      </section>`;
+    case 'conflict':
+      return `<section class="card danger" data-kind="conflict">
+        <h4>Changed elsewhere</h4>
+        <div class="why">${NOTE} was edited while this was waiting, so nothing was saved.</div>
+        ${facts([['Expected', REV_BEFORE], ['Now', REV_AFTER], ['Outcome', 'nothing written'], ['On the left', 'the version that exists now']])}
+        <div class="acts"><button class="btn sm ghost" data-act="cancel">Dismiss</button>
+          <button class="btn sm primary" data-act="restage">Review the current version</button></div>
+      </section>`;
+    case 'rolled_back':
+      return `<section class="card danger" data-kind="rolled_back">
+        <h4>Restored the previous content</h4>
+        <div class="why">The save did not verify, so CTRL put ${NOTE} back the way it was.</div>
+        ${facts([['Expected', REV_AFTER], ['Found', 'did not match'], ['Recovery', 'previous content restored']])}
+        <div class="acts"><button class="btn sm ghost" data-act="cancel">Dismiss</button>
+          <button class="btn sm primary" data-act="restage">Try again</button></div>
+      </section>`;
+    default:
+      return '';
+  }
+}
+
+function transcript() {
+  if (state === 'idle') {
+    return `<div class="ai"><div class="mark">IR</div><div><p>Budget.md is open on the left. Ask me to change it and you will see the
+      exact edit before anything is saved.</p></div></div>`;
+  }
+  let html = '<div class="msg me"><div class="bubble">Make the opening one sentence</div></div>';
+  html += `<div class="ai"><div class="mark">IR</div><div><p>${
+    state === 'proposed'
+      ? 'Here is the edit I would make. Nothing is saved yet — the change is shown on the left.'
+      : 'I prepared the edit shown on the left.'
+  }</p></div></div>`;
+  if (state === 'proposed') {
+    html += `<div class="acts" style="margin-top:10px"><button class="btn sm primary" data-act="ask">Review it</button></div>`;
+  }
+  html += decisionCard();
+  return html;
+}
+
+function render() {
+  document.querySelectorAll('.state').forEach((b) => b.classList.toggle('on', b.dataset.state === state));
+  document.getElementById('app').innerHTML = `
+    <div class="window">
+      <div class="statusbar">
+        <span class="wordmark">CTRL<i>0.1.1075</i><s>WORK</s></span>
+        <span class="badge">Local</span>
+      </div>
+      <div class="shell">
+        <section class="content" aria-label="Work content">
+          <header class="chead"><span class="ctitle">${NOTE}</span>${contentBadge()}</header>
+          <div class="cbody">${contentBody()}</div>
+        </section>
+        <nav class="rail" aria-label="Primary navigation">
+          <button class="on" type="button">${icon(ICON.work)}Work</button>
+          <button type="button">${icon(ICON.lib)}Library</button>
+          <button type="button">${icon(ICON.set)}Settings</button>
+        </nav>
+        <section class="irisy" aria-label="Irisy">
+          <div class="tabs"><span class="tab on">Budget</span><span class="tab">+</span></div>
+          <div class="stream">${transcript()}</div>
+          <div class="composer"><form class="cin" id="form">
+            <button class="fct" type="button">FCT · Auto</button>
+            <input id="prompt" aria-label="Message Irisy" value="Make the opening one sentence"
+              ${state === 'idle' ? '' : 'disabled'} />
+            <button class="send" type="submit" aria-label="Send" ${state === 'idle' ? '' : 'disabled'}>↑</button>
+          </form></div>
+        </section>
+      </div>
+    </div>
+    <div class="aside">
+      <div class="acard"><h5>What the user does</h5><p id="effort"></p></div>
+      <div class="acard"><h5>Kernel facts on screen</h5><p>Target, before/after, the revision it is based on, and how the
+        save was verified — all supplied by the note owner, never invented by the UI.</p></div>
+      <div class="acard"><h5>Unchanged shell</h5><p>Content left, L1 rail, Irisy resident right. No new region, route,
+        or L1 entry; the viewer gains a proposed-change state and the decision renders inline.</p></div>
+    </div>`;
+
+  const effort = {
+    idle: 'Type one request. Nothing else.',
+    proposed: 'Read the change on the left. No decision forced yet.',
+    awaiting: 'One decision: Approve or Cancel.',
+    applying: 'Nothing — CTRL rechecks, saves, and reads it back.',
+    verified: 'Nothing. The file on disk already matches what was shown.',
+    conflict: 'One action: review the current version.',
+    rolled_back: 'One action: try again. The file is already back to normal.',
+  }[state];
+  document.getElementById('effort').textContent = effort;
+
+  const form = document.getElementById('form');
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); go('proposed'); });
+  document.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => act(b.dataset.act)));
+}
+
+function go(next) {
+  if (applyTimer) { clearTimeout(applyTimer); applyTimer = null; }
+  state = next;
+  if (next === 'idle') conflictArmed = false;
+  render();
+}
+
+function act(a) {
+  if (a === 'ask') go('awaiting');
+  if (a === 'arm') { conflictArmed = !conflictArmed; render(); }
+  if (a === 'cancel') go('idle');
+  if (a === 'restage') { conflictArmed = false; go('awaiting'); }
+  if (a === 'approve') {
+    const willConflict = conflictArmed;
+    state = 'applying';
+    render();
+    // Verified is only reachable from a completed apply-and-reread.
+    applyTimer = setTimeout(() => { conflictArmed = false; go(willConflict ? 'conflict' : 'verified'); }, 950);
+  }
+}
+
+const nav = document.getElementById('states');
+STATES.forEach(([id, label], i) => {
+  const b = el(`<button class="state" data-state="${id}"><b>${String(i + 1).padStart(2, '0')}</b><span>${label}</span></button>`);
+  b.addEventListener('click', () => go(id));
+  nav.appendChild(b);
+});
+document.getElementById('theme').addEventListener('click', (e) => {
+  const root = document.documentElement;
+  const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  root.dataset.theme = next;
+  e.currentTarget.textContent = next === 'dark' ? 'Light' : 'Dark';
+});
+document.getElementById('reset').addEventListener('click', () => go('idle'));
+render();
+</script>
+</body>
+</html>

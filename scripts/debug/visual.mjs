@@ -16,7 +16,6 @@ await pg.addInitScript(()=>{
         return [];
       }
       if(cmd&&cmd.startsWith('plugin:event')) return 0;
-      if(cmd==='list_byo_drivers') return [];
       return null;
     },
   };

@@ -1,53 +1,56 @@
----
-title: CTRL product brief
-kind: product-intent
-status: living
-last_updated: 2026-08-02
-owner: bao
-architecture_authority: vault/ctrl/adrs/INDEX.md
----
+# CTRL Product Intent
 
-# CTRL — Product Brief
+**Updated:** 2026-08-05
 
-> 本文只定义稳定的产品意图，不定义架构、运行机制、技术栈或开发进度。架构唯一真相是 [`vault/ctrl/adrs/INDEX.md`](vault/ctrl/adrs/INDEX.md) 所列的 owning module ADR；当前开发范围以 [`vault/ctrl/GOAL.md`](vault/ctrl/GOAL.md) 为准。发生冲突时，先修正文档权威关系，再实施。
+> Product intent only, not architecture authority. The accepted module ADRs indexed at [`vault/ctrl/adrs/INDEX.md`](vault/ctrl/adrs/INDEX.md) govern identity, resources, shell, discovery, communication, security, and implementation boundaries; if this summary conflicts, the owning ADR wins.
 
-## 产品定位
+CTRL is an AI-native ambient workbench and creator substrate. It helps a person work across local content, applications, and reusable capabilities without turning chat, a coding agent, or a workflow canvas into the product shell.
 
-CTRL 是面向一人公司经营者、独立开发者和专业创作者的本地优先 AI 工作台。用户按下 `Ctrl` 进入工作区，由一个 App AI 助手 Irisy 调用本机能力、用户自有模型和既有应用，把任务完成为可检查、可继续编辑的结果。
+## Product model
 
-核心价值：
+CTRL has **one fixed user-visible AI identity: Irisy**. Irisy completes tasks by combining six explicit context facts:
 
-- **本地是真相，云是镜像**：用户内容保持为可由普通工具读取的 Markdown、YAML、TOML、JSON 或原生文件。
-- **能力而非模型**：CTRL 提供工具、能力包、治理和呈现；用户自带模型与凭据。
-- **环境中的工作台**：Ctrl 键是主要入口；内容按类型呈现，不按来源平台分割。
-- **可追溯的行动**：能力调用经过 `:17873` gate；写入、外发、消费和删除遵循审查边界；原始输入、转换过程和结果可下钻。
-- **可扩展但不堆连接器**：MCP、API 和 Skills 是互补能力面；可分享能力包复用通用机制。
+`session_id + explicit Resources + optional pinned Skill + capability scope + policy + task`
 
-## 产品角色
+There is no separate Coding agent product role, Assistant/Coding identity switch, or user-facing engine/persona registry. Project coding is a **Project Resource + Skill/capability scope** used by the same Irisy identity.
 
-角色定义只有一个权威来源：[`ADR-005 §11`](vault/ctrl/adrs/005-irisy.md#11-app-ai-assistant-role-boundary-v36)。
+The product exposes one user-facing reusable-capability unit:
 
-- **Irisy** 是 CTRL App 内面向用户的 AI 助手，操作用户文档、应用、业务数据和已安装能力。
-- **Coding agent** 是左侧工作区中的独立 OpenCode agent，负责所选工作区的代码和功能包创作，不是 Irisy。
-- **CTRL development agent**（例如 Kiro）在产品之外开发 CTRL 仓库，受 GOAL 和 owning ADR 约束，不是 Irisy，也不执行 App 用户任务。
+- **FCT** — CTRL's sole product noun for a reusable unit that can be created, found, installed, removed, selected, and used. FCT is intentionally not expanded in UI copy. Create/Manage and Use are separate interactions: Library authors and manages availability; the Irisy composer selects an available FCT for one canonical session. A selected FCT resolves live into preserved Work Resources plus appended dependencies, an optional internal Skill, enforced least-privilege gate scope, policy facts, and an existing package/install reference.
 
-## 体验原则
+Resource, Skill, capability, manifest, package, and MCP remain precise architecture or transparency terms, not competing product shelf names. A Resource still owns typed content; a Skill remains a plain-text `SKILL.md` method; capabilities and package descriptors retain their existing owners. FCT is only their normalized product projection and never owns a session, transcript, Resource, Skill, capability, operation, or ReviewGate decision.
 
-1. 一个 Irisy 品牌，不复制助手窗口或产品专属聊天壳。
-2. Workspace、Companion、Artifact 是能力接入的三种形态；定义见 [`ADR-005 §10`](vault/ctrl/adrs/005-irisy.md#10-irisy-capability-integration-contract-v35)。
-3. AI 是管道，不是侧边栏产品；结果进入所属 workspace 或原生 artifact。
-4. 一个 MCP 是一个原子动作，不建设工作流编辑器。
-5. 外部应用继续拥有其协作、权限和格式规则；CTRL 不伪造成功，也不建立第二份数据真相。
+Resources are operated through the canonical surface `describe(ref)`, `query(ref, request)`, and `produce(ref, operation)`. Reads, writes, and long-running operations remain typed, governed, inspectable, and routed through the `:17873` gate where they cross a trust boundary.
 
-## 产品边界
+## One Ambient shell
 
-CTRL 不是工作流编辑器、硬件项目、长尾连接器集合、Quicker 克隆、ChatGPT GPT 集成、多租户 SaaS、模型销售商，也不是替代用户现有编辑器和业务应用的封闭套件。
+CTRL has one Ambient production shell. Its L1 navigation is exactly:
 
-## 文档导航
+1. **Work** — current tasks and explicitly opened Resources.
+2. **Library** — the sole FCT lifecycle surface. Find/Installed manages discovery, install, removal, and availability; Create FCT is a separate authoring mode that returns to Installed and never auto-activates its result.
+3. **Settings** — providers, policy, integrations, and product configuration.
 
-- 当前目标：[`vault/ctrl/GOAL.md`](vault/ctrl/GOAL.md)
-- 架构索引：[`vault/ctrl/adrs/INDEX.md`](vault/ctrl/adrs/INDEX.md)
-- 不可变脊柱：[`ADR-001`](vault/ctrl/adrs/001-spine.md)
-- Irisy 与角色边界：[`ADR-005`](vault/ctrl/adrs/005-irisy.md)
-- 产品跨域原则：[`ADR-006`](vault/ctrl/adrs/006-cross-cutting.md)
-- 品牌视觉：[`brand/brand-tokens.md`](brand/brand-tokens.md)
+Using an FCT is intentionally separate from creating one: the Irisy composer selects Auto or one available FCT for the current session. An explicit Library `Use FCT` action may set that session selection and return focus to the composer; no creation UI appears in the composer.
+
+Irisy is resident in the shell; Irisy is not an L1 destination. Content is rendered by descriptor and content type through the viewer registry, not by source brand, business scene, or per-pack UI branch. A newly installed type becomes useful by registering its descriptor/viewer contract, not by adding another shell route.
+
+Legacy routes may exist only as thin, version-windowed redirects into Work, Library, or Settings. They are not parallel product surfaces.
+
+## Two brain paths, one gate
+
+Irisy uses CTRL's managed engine path. A user may also choose a **BYO CLI**, but that CLI is an external `:17873` gate client: CTRL projects scoped Resources, Skills, and capabilities into the CLI's native configuration and does not duplicate, own, or supervise the CLI's agent loop. BYO CLI is not a second CTRL identity or a Coding product role.
+
+Both paths see only their authorized capability scope. FCT selection uses the same canonical registry and resolver in either path; it projects exact Resources, optional internal Skill, capability scope, and policy rather than transferring a session or inventing another catalogue. Mutations use ReviewGate and remain attributable. Credentials stay in the OS keychain or their owning application boundary and never enter prompts or portable manifests.
+
+## Local-first product contract
+
+- Local readable files are truth; cloud services are optional mirrors or search augmentation.
+- User content stays recoverable as Markdown, YAML, TOML, JSON, or another declared portable format.
+- Library is the only product surface that creates, finds, installs, or removes FCTs. Active per-session selection belongs to the composer; Library `Use FCT` is only a handoff to that control. Public install still remains local and anonymous; cloud unavailability does not disable the local registry or installed FCTs.
+- CTRL renders content by type, not source platform.
+- One MCP operation is atomic; CTRL is not a workflow editor.
+- Transparency is available by drill-down from result to descriptor, operation state, provenance, and raw local source.
+
+## Product boundaries
+
+CTRL is not an IDE, a separate coding-agent product, a workflow/canvas editor, a model reseller, a hardcoded collection of business scenes, a long-tail connector catalogue, a multi-tenant SaaS data plane, or a replacement for the user's existing specialist applications. CTRL sells the governed local substrate, tools, and capability ecosystem—not an additional agent identity.

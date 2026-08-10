@@ -1,168 +1,147 @@
 #!/usr/bin/env node
-// Endpoint catalog generator — derives a module x endpoint inventory from the
-// kernel source so the catalog never goes stale (vault-is-truth philosophy).
-//
-// Reads:
-//   - vault/ctrl/mcp-schema.json           -> the authoritative endpoint spec
-//       (the MCP tools/list JSON Schema, exported by `cargo run --bin
-//        dump_mcp_schema`; ADR-010 communication § endpoint-spec v11). The catalog is
-//        derived FROM the spec, NOT by scraping Rust source.
-//   - src-tauri/src/commands/mod.rs        -> the Tauri command surface (dual-surface)
-// Emits: vault/ctrl/generated/endpoint-catalog.md
-//   Regenerate: cargo run --manifest-path src-tauri/Cargo.toml --bin dump_mcp_schema
-//               && node scripts/gen-endpoint-catalog.mjs
-//
-// Classification is heuristic + a curated set for the section-14 contract face.
-// It is NOT a substitute for ADR-002 section 14 (the spec) — it is the inventory.
+// Human-readable endpoint view derived from the protocol schema and the single
+// executable implementation inventory. This file owns no counts or ceilings.
+// (ADR-010 communication § endpoint-spec v14)
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CHECK = process.argv.includes('--check');
 const SCHEMA = join(ROOT, 'vault/ctrl/mcp-schema.json');
-const CMDS = join(ROOT, 'src-tauri/src/commands/mod.rs');
+const INVENTORY = join(ROOT, 'vault/ctrl/generated/implementation-inventory.json');
 const OUT = join(ROOT, 'vault/ctrl/generated/endpoint-catalog.md');
 
-// Module classification (mirrors kernel/visibility.rs tool_domain).
+const spec = JSON.parse(readFileSync(SCHEMA, 'utf8'));
+const inventory = JSON.parse(readFileSync(INVENTORY, 'utf8'));
+const metrics = inventory.metrics;
+const gateMetric = metrics.registeredGateTools;
+const commandMetric = metrics.productTauriCommands;
+const dualMetric = metrics.exactMcpTauriDualSurfaces;
+const semanticDualMetric = metrics.semanticMcpTauriDualSurfaces;
+if (!Array.isArray(spec.tools) || spec.tools.length !== gateMetric.count) {
+  throw new Error('MCP schema and implementation inventory disagree; regenerate the inventory first');
+}
+const schemaNames = spec.tools.map((tool) => tool.name).sort();
+if (JSON.stringify(schemaNames) !== JSON.stringify(gateMetric.identities)) {
+  throw new Error('MCP schema identities and implementation inventory disagree');
+}
+
 function moduleOf(tool) {
   if (tool === 'kernel_status' || tool === 'vault_root_path') return 'system';
-  const table = [
+  const prefixes = [
     ['smart_table_', 'smart-table'],
+    ['calendar_', 'calendar'],
+    ['source_', 'sources'],
+    ['task_', 'tasks'],
+    ['doc_', 'notes'],
+    ['note_', 'notes'],
+    ['notes_', 'notes'],
     ['irisy_soul_', 'memory'],
-    ['vault_', 'vault/notes'],
-    ['notes_', 'notes(s14)'],
-    ['providers_', 'providers(s14)'],
-    ['registry_', 'registry(s14)'],
+    ['vault_', 'vault'],
+    ['providers_', 'providers'],
+    ['registry_', 'registry'],
+    ['discover_', 'discovery'],
+    ['skill_', 'skills'],
+    ['market_', 'market'],
+    ['http_', 'network'],
+    ['mcp_', 'mcp-bus'],
     ['kv_', 'kv'],
     ['llm_', 'llm'],
-    ['http_', 'net'],
-    ['mcp_', 'mcp-bus'],
   ];
-  for (const [p, m] of table) if (tool.startsWith(p)) return m;
-  return 'other';
+  return prefixes.find(([prefix]) => tool.startsWith(prefix))?.[1] ?? 'other';
 }
 
-// Read vs write (produce) by name heuristic.
-const WRITE_RE = /(write|append|update|create|rename|move|delete|set|embed|reembed|rebuild|run|cancel|import|star|folder|patch|post|publish|produce)/;
-function rw(tool) {
-  if (/^(.*_)?(describe|query|get|list|search|read|status|graph|tags|backlinks|orphans|mentions|aliases|broken|root|count|snapshot|suggest)/.test(tool))
-    return 'read';
-  return WRITE_RE.test(tool) ? 'WRITE' : 'read';
+const WRITE_RE = /(write|append|update|create|rename|move|delete|set|embed|reembed|rebuild|run|cancel|install|uninstall|provision|produce|post|publish)/;
+function probableAccess(tool) {
+  return WRITE_RE.test(tool) ? 'probable write' : 'probable read';
+}
+function cell(value) {
+  return String(value ?? '—').replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
 }
 
-// Curated section-14 three-verb contract face (the rest are bespoke tools).
-const SC14 = new Set([
-  'smart_table_describe', 'smart_table_query', 'smart_table_append_row',
-  'smart_table_update_cell', 'smart_table_add_view',
-  'smart_table_run_ai_column', 'smart_table_run_ai_column_start',
-  'smart_table_run_ai_column_status', 'smart_table_run_ai_column_cancel',
-  'notes_describe', 'notes_query',
-  'vault_text_describe', 'vault_text_query',
-  'providers_describe', 'providers_query',
-  'registry_describe', 'registry_query',
-]);
-
-// Load gate tools from the authoritative endpoint spec (mcp-schema.json).
-// The spec is the rmcp-macro-generated tools/list shape; each entry already
-// carries its JSON Schema, so the catalog reflects the protocol's own
-// self-description rather than a scraped approximation.
-function loadTools() {
-  const spec = JSON.parse(readFileSync(SCHEMA, 'utf8'));
-  return (spec.tools || []).map((t) => {
-    const props = t.inputSchema && t.inputSchema.properties ? Object.keys(t.inputSchema.properties).length : 0;
-    const desc = (t.description || '').replace(/\s+/g, ' ').trim();
-    return { name: t.name, desc, params: props, module: moduleOf(t.name), rw: rw(t.name), sc14: SC14.has(t.name) };
-  });
+const dual = new Set(dualMetric.identities);
+const tools = spec.tools.map((tool) => ({
+  name: tool.name,
+  description: cell(tool.description),
+  params: Object.keys(tool.inputSchema?.properties ?? {}).length,
+  module: moduleOf(tool.name),
+  access: probableAccess(tool.name),
+}));
+const byModule = new Map();
+for (const tool of tools) {
+  if (!byModule.has(tool.module)) byModule.set(tool.module, []);
+  byModule.get(tool.module).push(tool);
 }
 
-// Count Tauri commands per source module (crate::commands::<mod>::<cmd>).
-// Grouping by real module path is robust and exposes the dual surface.
-function extractCommandGroups(src) {
-  const counts = {};
-  const cmds = [];
-  for (const m of src.matchAll(/::(\w+)::(\w+),/g)) {
-    counts[m[1]] = (counts[m[1]] || 0) + 1;
-    cmds.push(m[2]);
-  }
-  const groups = Object.entries(counts)
-    .map(([label, n]) => ({ label, n }))
-    .sort((a, b) => b.n - a.n);
-  return { groups, cmdNames: new Set(cmds) };
+const commandGroups = new Map();
+for (const identity of commandMetric.identities) {
+  const [module] = identity.split('::');
+  commandGroups.set(module, (commandGroups.get(module) ?? 0) + 1);
 }
 
-const tools = loadTools();
-const { groups: cmdGroups, cmdNames } = extractCommandGroups(readFileSync(CMDS, 'utf8'));
-const totalCmds = cmdNames.size;
-const overlap = tools.filter((t) => cmdNames.has(t.name)).map((t) => t.name);
-
-const byModule = {};
-for (const t of tools) (byModule[t.module] ??= []).push(t);
-const moduleOrder = ['smart-table', 'notes(s14)', 'providers(s14)', 'registry(s14)',
-  'vault/notes', 'memory', 'kv', 'llm', 'net', 'mcp-bus', 'system', 'other'];
-const modules = Object.keys(byModule).sort(
-  (a, b) => (moduleOrder.indexOf(a) + 1 || 99) - (moduleOrder.indexOf(b) + 1 || 99));
-
-const sc14Count = tools.filter((t) => t.sc14).length;
-const writeCount = tools.filter((t) => t.rw === 'WRITE').length;
-
-let md = `---
+let markdown = `---
 title: CTRL endpoint catalog (auto-generated)
-kind: generated-inventory
+kind: generated-view
 generated_by: scripts/gen-endpoint-catalog.mjs
-regenerate: node scripts/gen-endpoint-catalog.mjs
-note: DO NOT hand-edit the tables. Architecture authority remains the owning module ADR.
+regenerate: node scripts/gen-implementation-inventory.mjs --check && node scripts/gen-endpoint-catalog.mjs
+note: Human-readable view only. Metrics and ceilings live in implementation-inventory.json; architecture authority remains the owning ADR.
 related:
   - "[[002-substrate]]"
   - "[[010-communication]]"
   - "[[mcp-schema.json]]"
+  - "[[generated/implementation-inventory.json]]"
 ---
 
 # CTRL endpoint catalog (auto-generated)
 
-Generated from the machine-readable MCP schema at \`vault/ctrl/mcp-schema.json\`
-and the registered Tauri command surface. The schema is exported by
-\`cargo run --bin dump_mcp_schema\`; this catalog is a human-readable inventory,
-not a second endpoint or architecture specification (ADR-010 communication § endpoint-spec v11).
+This navigation view combines endpoint descriptions from \`vault/ctrl/mcp-schema.json\`
+with identities and counts from \`vault/ctrl/generated/implementation-inventory.json\`.
+It defines no metric, baseline, contract face, or architectural status
+(ADR-010 communication § endpoint-spec v14).
 
 ## Overview
 
-- **${tools.length}** MCP tools registered on the \`:17873\` gate
-- **${sc14Count}** tools recognized by this generator's curated §14 face list
-- **${writeCount}** probable writes / **${tools.length - writeCount}** probable reads, classified by endpoint-name heuristic
-- **${totalCmds}** registered Tauri commands
-- **${overlap.length}** exact-name overlaps between MCP tools and Tauri commands
+- **${gateMetric.count}** registered static MCP tools (ceiling ${gateMetric.ceiling}, target ${gateMetric.target})
+- **${commandMetric.count}** registered Tauri commands (ceiling ${commandMetric.ceiling})
+- **${dualMetric.count}** exact-name MCP/Tauri overlaps (ceiling ${dualMetric.ceiling}, target ${dualMetric.target})
+- **${semanticDualMetric.count}** exact-or-explicit semantic MCP/Tauri overlaps (ceiling ${semanticDualMetric.ceiling}, target ${semanticDualMetric.target})
 
-These counts describe the generated surfaces only. The owning module ADR defines
-whether a surface is intended, migrated, retired, or governed correctly.
-
-## Endpoints by module (MCP gate tools)
-
-Legend: **s14** = member of the generator's curated §14 face list · bespoke = other registered tool · **WRITE** = name-classified probable write · read = name-classified probable read
+Semantic equivalents with different names enter the inventory only through explicit
+\`ctrl-inventory: semantic-dual=<gate-tool>\` annotations; no name heuristic invents them.
+The read/write labels below are navigation heuristics and are not governance decisions.
 `;
 
-for (const mod of modules) {
-  const ts = byModule[mod].sort((a, b) => a.name.localeCompare(b.name));
-  const sc14n = ts.filter((t) => t.sc14).length;
-  md += `\n### ${mod} (${ts.length} endpoints${sc14n ? `, ${sc14n} s14` : ', all bespoke'})\n\n`;
-  md += `| endpoint | params | r/w | face | description | dual? |\n|---|---|---|---|---|---|\n`;
-  for (const t of ts) {
-    const dual = cmdNames.has(t.name) ? 'cmd too' : '';
-    md += `| \`${t.name}\` | ${t.params} | ${t.rw === 'WRITE' ? '**WRITE**' : 'read'} | ${t.sc14 ? 's14' : 'bespoke'} | ${t.desc || '—'} | ${dual} |\n`;
+for (const moduleName of [...byModule.keys()].sort()) {
+  const moduleTools = byModule.get(moduleName).sort((a, b) => a.name.localeCompare(b.name));
+  markdown += `\n## ${moduleName} (${moduleTools.length})\n\n`;
+  markdown += '| endpoint | params | access heuristic | description | exact dual? |\n|---|---:|---|---|---|\n';
+  for (const tool of moduleTools) {
+    markdown += `| \`${tool.name}\` | ${tool.params} | ${tool.access} | ${tool.description || '—'} | ${dual.has(tool.name) ? 'yes' : ''} |\n`;
   }
 }
 
-md += `\n## Tauri command registration by module (${totalCmds} total)\n\n`;
-md += `This table is generated from \`src-tauri/src/commands/mod.rs\`. Exact-name overlap with an MCP tool is an inventory signal only; architectural interpretation belongs to the owning ADR.\n\n`;
-md += `| commands module | count |\n|---|---|\n`;
-for (const g of cmdGroups) md += `| \`commands/${g.label}.rs\` | ${g.n} |\n`;
+markdown += `\n## Tauri command registration by module (${commandMetric.count})\n\n`;
+markdown += '| commands module | count |\n|---|---:|\n';
+for (const [moduleName, count] of [...commandGroups.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+  markdown += `| \`commands/${moduleName}.rs\` | ${count} |\n`;
+}
 
-md += `\n## Generation boundaries\n
-- MCP names, descriptions, and input schemas come from \`vault/ctrl/mcp-schema.json\`.
-- Tauri command counts come from the registration list in \`src-tauri/src/commands/mod.rs\`.
-- Module, read/write, and §14-face labels are generator heuristics for navigation; they are not contracts.
-- Accepted decisions and migration status live only in ADR-002, ADR-010, and the relevant owning module ADR.
+markdown += `\n## Generation boundaries\n
+- Endpoint names, descriptions, and input schemas come from \`vault/ctrl/mcp-schema.json\`.
+- Counts, registered command identities, exact overlaps, ceilings, and targets come only from \`vault/ctrl/generated/implementation-inventory.json\`.
+- Module and probable-access labels are view-only heuristics.
+- Accepted decisions and migration status live only in the owning ADRs.
 `;
 
-writeFileSync(OUT, md);
-console.log(`endpoint-catalog: ${tools.length} tools, ${sc14Count} s14, ${totalCmds} cmds, ${overlap.length} dual -> ${OUT}`);
+if (CHECK) {
+  const current = readFileSync(OUT, 'utf8');
+  if (current !== markdown) {
+    throw new Error('endpoint-catalog.md is stale; run node scripts/gen-endpoint-catalog.mjs');
+  }
+  console.log(`endpoint-catalog: PASS (${gateMetric.count} tools, ${commandMetric.count} commands)`);
+} else {
+  writeFileSync(OUT, markdown);
+  console.log(`endpoint-catalog: wrote ${gateMetric.count} tools, ${commandMetric.count} commands, ${dualMetric.count} exact / ${semanticDualMetric.count} semantic dual`);
+}
