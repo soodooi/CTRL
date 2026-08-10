@@ -1983,7 +1983,7 @@
     },
     {
       "name": "produce",
-      "description": "Mutate or act on one canonical CTRL ResourceRef. Call describe first; operation must match an advertised schema. Every supported call passes through ReviewGate.",
+      "description": "Mutate or act on one canonical CTRL ResourceRef. Call describe first; operation must match an advertised schema. A call from an autonomous caller passes through ReviewGate; direct user-surface actions are governed by the existing gate policy instead.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "CanonicalProduceArgs",
