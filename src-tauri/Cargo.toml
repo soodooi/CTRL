@@ -1,6 +1,6 @@
 [package]
 name = "ctrl"
-version = "0.1.1105"
+version = "0.1.1106"
 edition = "2021"
 rust-version = "1.77"
 default-run = "ctrl"
