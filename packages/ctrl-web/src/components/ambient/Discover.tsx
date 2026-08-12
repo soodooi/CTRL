@@ -6,7 +6,7 @@
 // scales, a featured banner, and a "create one" CTA (flexible, not a fixed
 // catalog). Listings come from the MCP Registry; no dev-hardcoded seed set.
 
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import {
   installPack,
   uninstallPack,
@@ -58,6 +58,7 @@ export function Discover({
   const [uninstallingId, setUninstallingId] = useState<string | null>(null);
   const [togglingRef, setTogglingRef] = useState<string | null>(null);
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [importText, setImportText] = useState('');
@@ -79,13 +80,21 @@ export function Discover({
     return () => window.removeEventListener(PACKS_CHANGED_EVENT, refresh);
   }, []);
 
-  // Pull the registry data source (kernel-side fetch). Degrades to an empty
-  // list when offline / on an older binary (ADR-002 § composition §7.4).
-  useEffect(() => {
-    void loadDiscoverListings()
-      .then(setListings)
-      .catch(() => {});
+  // Pull the existing registry owner again instead of creating a second search
+  // or catalogue path. (ADR-002 substrate §7.4 v90; ADR-003 frontend §8.5 v45)
+  const refreshListings = useCallback(async (): Promise<void> => {
+    setRefreshing(true);
+    setMsg(null);
+    try {
+      setListings(await loadDiscoverListings());
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void refreshListings();
+  }, [refreshListings]);
 
   const categories = useMemo(
     () => [
@@ -242,6 +251,14 @@ export function Discover({
         <div className={styles.titleRow}>
           <span className={styles.title}>FCT Library</span>
           <span className={styles.titleSub}>Find, install, manage, or create reusable FCTs</span>
+          <button
+            type="button"
+            className={styles.refreshBtn}
+            disabled={refreshing}
+            onClick={() => void refreshListings()}
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
         </div>
         <div className={styles.chips} role="tablist" aria-label="FCT Library mode">
           {(['find', 'installed', 'create'] as const).map((nextMode) => (

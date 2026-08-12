@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CTRL · Ambient shell · Three-pane Work</title>
+<style>
+/* tokens: docs/design/tokens.json (light) */
+:root{
+  --bg:#F5F5F7; --bgElev:#FFFFFF; --card:#FFFFFF;
+  --border:rgba(0,0,0,.08); --borderStrong:rgba(0,0,0,.14);
+  --text:#1D1D1F; --mut:#6E6E73; --subtle:#98989D;
+  --primary:#3B5BDB; --primarySoft:rgba(59,91,219,.10); --primaryRing:rgba(59,91,219,.18);
+  --warm:#F59F00; --cool:#0CA678; --dest:#E03131; --destSoft:rgba(224,49,49,.08);
+  --teal:#0D9488;
+  --r-sm:6px; --r-md:8px; --r-lg:10px; --r-win:14px;
+  --key:0 1px 0 rgba(255,255,255,.7) inset,0 1px 2px rgba(0,0,0,.04),0 2px 6px rgba(0,0,0,.06);
+  --win:0 0 0 1px rgba(0,0,0,.04),0 18px 56px rgba(0,0,0,.16),0 4px 12px rgba(0,0,0,.06);
+  --fast:120ms cubic-bezier(.4,0,.2,1);
+  --sans:-apple-system,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E8E8EC;font-family:var(--sans);color:var(--text);font-size:14px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;padding:28px}
+.wrap{max-width:1560px;margin:0 auto}
+
+/* ---------- doc chrome ---------- */
+.doc-head{margin-bottom:20px}
+.eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--primary);font-weight:640}
+h1{font-size:26px;font-weight:660;letter-spacing:-.02em;margin:.24em 0 .3em}
+.lede{color:var(--mut);max-width:80ch;font-size:14.5px}
+.lede b{color:var(--text);font-weight:620}
+.ref{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.ref span{font-size:11.5px;color:var(--mut);background:var(--bgElev);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:3px 8px}
+.ref span b{color:var(--text)}
+
+/* ---------- app window ---------- */
+.app{background:var(--bg);border-radius:var(--r-win);box-shadow:var(--win);overflow:hidden;
+  display:grid;grid-template-rows:auto 1fr;height:820px}
+.title{height:38px;display:flex;align-items:center;gap:10px;padding:0 12px;
+  background:linear-gradient(#fbfbfd,#f2f2f5);border-bottom:1px solid var(--border)}
+.dots{display:flex;gap:6px}.dots i{width:11px;height:11px;border-radius:50%;display:block}
+.dots i:nth-child(1){background:#FF5F57}.dots i:nth-child(2){background:#FEBC2E}.dots i:nth-child(3){background:#28C840}
+.title .id{font-size:12px;font-weight:620;letter-spacing:.06em;color:var(--mut)}
+.title .task{font-size:12px;color:var(--text);font-weight:560}
+.title .dir{font-family:var(--mono);font-size:11px;color:var(--subtle)}
+.title .sp{flex:1}
+.tbtn{font-size:11.5px;color:var(--mut);background:var(--bgElev);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:2.5px 8px;cursor:pointer}
+
+/* ---------- 3 panes ---------- */
+.panes{display:grid;grid-template-columns:60px 236px minmax(0,1fr) 400px;min-height:0}
+.pane{border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.pane:last-child{border-right:0}
+.conv{grid-column:4;grid-row:1;border-right:0;border-left:1px solid var(--border)}
+.res{grid-column:3;grid-row:1}
+.ph{height:34px;display:flex;align-items:center;gap:7px;padding:0 12px;flex:0 0 auto;
+  border-bottom:1px solid var(--border);background:rgba(255,255,255,.6)}
+.ph h3{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--subtle);font-weight:660}
+.ph .sp{flex:1}
+.ph button{font-size:11px;color:var(--primary);background:none;border:0;cursor:pointer;font-weight:600}
+.body{overflow:auto;padding:10px;flex:1;min-height:0}
+
+/* rail */
+.rail{background:rgba(0,0,0,.015);align-items:center;padding-top:10px;gap:3px}
+.rail a{width:40px;height:40px;border-radius:var(--r-md);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;text-decoration:none;color:var(--mut);
+  font-size:9px;font-weight:600;transition:background var(--fast)}
+.rail a svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.7}
+.rail a.on{background:var(--primarySoft);color:var(--primary)}
+.rail a:hover:not(.on){background:rgba(0,0,0,.04)}
+.rail .gap{flex:1}
+
+/* task list */
+.newtask{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+  background:var(--primary);color:#fff;border:0;border-radius:var(--r-md);padding:7px;
+  font-size:12.5px;font-weight:620;cursor:pointer;margin-bottom:9px;box-shadow:var(--key)}
+.srch{width:100%;background:var(--bgElev);border:1px solid var(--border);border-radius:var(--r-md);
+  padding:5.5px 9px;font-size:12px;color:var(--text);margin-bottom:11px;font-family:inherit}
+.grp{font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--subtle);
+  font-weight:660;margin:12px 0 5px;padding-left:3px}
+.grp:first-child{margin-top:0}
+.task-i{padding:7px 9px;border-radius:var(--r-md);cursor:pointer;margin-bottom:2px;
+  border:1px solid transparent;transition:background var(--fast)}
+.task-i:hover{background:rgba(0,0,0,.03)}
+.task-i.on{background:var(--bgElev);border-color:var(--borderStrong);box-shadow:var(--key)}
+.task-i .t{font-size:12.5px;font-weight:570;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-i .m{font-family:var(--mono);font-size:10.5px;color:var(--subtle);display:block;margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-i.on .m{color:var(--mut)}
+
+/* conversation */
+.conv{background:var(--bg)}
+.turn{margin-bottom:15px}
+.who{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--subtle);
+  font-weight:660;margin-bottom:4px}
+.said{background:var(--bgElev);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:9px 12px;font-size:13.5px}
+.turn.me .said{background:var(--primarySoft);border-color:var(--primaryRing)}
+.said code{font-family:var(--mono);font-size:12px;background:rgba(0,0,0,.05);padding:1px 4px;border-radius:3px}
+
+/* plan */
+.plan{background:var(--bgElev);border:1px solid var(--border);border-left:2.5px solid var(--warm);
+  border-radius:var(--r-lg);padding:10px 12px;margin-bottom:15px}
+.plan .h{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--warm);
+  font-weight:680;margin-bottom:6px}
+.plan ol{margin:0;padding-left:18px;font-size:13px;color:var(--text)}
+.plan li{margin-bottom:2.5px}
+.plan li.done{color:var(--mut);text-decoration:line-through}
+
+/* step trace */
+.step{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--mut);
+  padding:5px 10px;background:var(--bgElev);border:1px solid var(--border);
+  border-radius:var(--r-md);margin-bottom:5px}
+.step .ic{flex:0 0 auto;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:9px;color:#fff;margin-top:1px}
+.step .ic.ok{background:var(--cool)}.step .ic.run{background:var(--primary)}
+.step b{color:var(--text);font-weight:600}
+.step .mono{font-family:var(--mono);font-size:11.5px}
+.step .why{margin-left:auto;font-size:11px;color:var(--primary);cursor:pointer;flex:0 0 auto}
+
+/* inline decision */
+.dec{background:var(--bgElev);border:1px solid var(--warm);border-radius:var(--r-lg);
+  padding:11px 13px;margin-bottom:15px;box-shadow:var(--key)}
+.dec .sub{font-size:13.5px;font-weight:600;margin-bottom:3px}
+.dec .det{font-size:12.5px;color:var(--mut);margin-bottom:9px}
+.dec .acts{display:flex;gap:7px;align-items:center}
+.btn{font-size:12.5px;font-weight:600;border-radius:var(--r-md);padding:5px 12px;cursor:pointer;
+  border:1px solid var(--border);background:var(--bgElev);color:var(--text);box-shadow:var(--key)}
+.btn.pri{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.gho{background:none;box-shadow:none;border-color:transparent;color:var(--mut)}
+.dec .lnk{margin-left:auto;font-size:11.5px;color:var(--primary);cursor:pointer}
+
+/* session bar: sessions live inside a task */
+.sessbar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:6px 10px;
+  border-bottom:1px solid var(--border);background:rgba(255,255,255,.45)}
+.stabs{display:flex;gap:3px;align-items:center;min-width:0}
+.stab{font-size:11.5px;font-weight:560;color:var(--mut);background:none;border:1px solid transparent;
+  border-radius:var(--r-sm);padding:3px 8px;cursor:pointer;white-space:nowrap;
+  max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.stab:hover{background:rgba(0,0,0,.04)}
+.stab.on{background:var(--bgElev);border-color:var(--borderStrong);color:var(--text);
+  font-weight:620;box-shadow:var(--key)}
+.stab .sc{font-family:var(--mono);font-size:9.5px;color:var(--subtle);margin-left:3px}
+.stab.nw{color:var(--primary);font-weight:660;padding:3px 7px}
+.sact{font-size:11px;color:var(--mut);background:none;border:0;cursor:pointer;padding:2px 5px;
+  border-radius:var(--r-sm)}
+.sact:hover{background:rgba(0,0,0,.05);color:var(--text)}
+.sact.dg:hover{background:var(--destSoft);color:var(--dest)}
+.daymark{font-size:10.5px;color:var(--subtle);text-align:center;margin:0 0 11px;
+  display:flex;align-items:center;gap:8px}
+.daymark::before,.daymark::after{content:'';flex:1;height:1px;background:var(--border)}
+.tacts{display:flex;gap:9px;margin-top:4px;opacity:0;transition:opacity var(--fast)}
+.turn:hover .tacts{opacity:1}
+.ta2{font-size:10.5px;color:var(--mut);cursor:pointer}
+.ta2:hover{color:var(--primary)}
+
+/* composer */
+.comp{flex:0 0 auto;border-top:1px solid var(--border);background:var(--bgElev);padding:9px 11px}
+.context-line{display:flex;align-items:center;gap:7px}.context-name{font-size:11px;font-weight:750;color:var(--text)}.context-scope{padding:3px 7px;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--mut);font-size:10.5px}
+.ta{width:100%;border:1px solid var(--border);border-radius:var(--r-md);padding:8px 10px;
+  font-size:13.5px;font-family:inherit;resize:none;min-height:52px;color:var(--text)}
+.ta:focus{outline:2px solid var(--primaryRing);outline-offset:-1px;border-color:var(--primary)}
+.crow{display:flex;align-items:center;gap:8px;margin-top:7px}
+.crow .hint{font-size:11.5px;color:var(--subtle)}
+.crow .hint kbd{font-family:var(--mono);font-size:10.5px;background:rgba(0,0,0,.05);
+  border:1px solid var(--border);border-radius:3px;padding:.5px 3.5px;color:var(--mut)}
+.crow .sp{flex:1}
+.ind{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--mut);cursor:pointer;
+  padding:3px 7px;border-radius:var(--r-sm);border:1px solid transparent}
+.ind:hover{background:rgba(0,0,0,.04);border-color:var(--border)}
+.ind .dot{width:5px;height:5px;border-radius:50%;background:var(--cool)}
+.ind .kbc{font-family:var(--mono);font-size:9.5px;color:var(--teal);background:rgba(13,148,136,.10);
+  padding:.5px 4px;border-radius:3px;margin-left:2px}
+.send{width:29px;height:29px;border-radius:var(--r-md);background:var(--primary);color:#fff;
+  border:0;cursor:pointer;font-size:14px;box-shadow:var(--key)}
+.attach{width:29px;height:29px;border-radius:var(--r-md);background:var(--bgElev);color:var(--mut);
+  border:1px solid var(--border);cursor:pointer;font-size:15px;line-height:1;box-shadow:var(--key)}
+.attach:hover{border-color:var(--borderStrong);color:var(--text)}
+
+/* result pane */
+.res{background:rgba(255,255,255,.45)}
+.tabs{display:flex;gap:1px;padding:7px 10px 0;flex:0 0 auto}
+.tabs button{font-size:11.5px;font-weight:600;color:var(--mut);background:none;border:0;
+  padding:5px 10px;border-radius:var(--r-sm) var(--r-sm) 0 0;cursor:pointer}
+.tabs button.on{background:var(--bgElev);color:var(--text);border:1px solid var(--border);border-bottom-color:var(--bgElev)}
+.tabs .n{font-family:var(--mono);font-size:9.5px;color:var(--subtle);margin-left:3px}
+
+.art{background:var(--bgElev);border:1px solid var(--border);border-radius:var(--r-lg);
+  overflow:hidden;margin-bottom:10px}
+.art .ah{display:flex;align-items:center;gap:7px;padding:7px 10px;border-bottom:1px solid var(--border);
+  background:rgba(0,0,0,.015)}
+.art .ah .nm{font-family:var(--mono);font-size:11.5px;font-weight:600;flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{font-size:9.5px;font-weight:680;letter-spacing:.05em;text-transform:uppercase;
+  padding:1.5px 5px;border-radius:4px}
+.tag.new{background:rgba(12,166,120,.12);color:var(--cool)}
+.tag.chg{background:rgba(245,159,0,.14);color:#B87A00}
+.tag.ver{background:var(--primarySoft);color:var(--primary)}
+
+/* smart table as live UI */
+.stv{padding:0}
+.stv .vt{display:flex;gap:2px;padding:6px 8px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.012)}
+.stv .vt button{font-size:10.5px;font-weight:600;color:var(--mut);background:none;border:0;
+  padding:2.5px 7px;border-radius:4px;cursor:pointer}
+.stv .vt button.on{background:var(--teal);color:#fff}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+th{text-align:left;font-weight:660;color:var(--mut);font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;padding:5px 8px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.012)}
+td{padding:5px 8px;border-bottom:1px solid rgba(0,0,0,.045);font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:0}
+td.e{background:rgba(245,159,0,.10);position:relative}
+td.e::after{content:'';position:absolute;inset:0;border:1.5px solid var(--warm);border-radius:3px;pointer-events:none}
+.pill{font-size:9.5px;font-weight:660;padding:1px 6px;border-radius:99px;
+  background:rgba(12,166,120,.12);color:var(--cool)}
+.pill.w{background:rgba(245,159,0,.14);color:#B87A00}
+
+/* diff */
+.diff{font-family:var(--mono);font-size:11px;line-height:1.6}
+.diff div{padding:1.5px 10px;white-space:pre-wrap}
+.diff .del{background:var(--destSoft);color:#A32424}
+.diff .add{background:rgba(12,166,120,.10);color:#0B7A5A}
+.diff .ctx{color:var(--subtle)}
+
+/* knowledge base bound to a pack */
+.tag.kbt{background:rgba(13,148,136,.12);color:var(--teal)}
+.art.kb{border-left:2.5px solid var(--teal)}
+.art.kb .auto{font-size:9.5px;font-weight:660;letter-spacing:.05em;color:var(--teal);
+  background:rgba(13,148,136,.10);padding:1.5px 5px;border-radius:4px}
+.kbb{padding:9px 10px}
+.kbn{font-size:11.5px;color:var(--mut);margin-bottom:8px;line-height:1.5}
+.kbn .mono{font-family:var(--mono);font-size:10.5px;color:var(--teal);background:rgba(13,148,136,.08);
+  padding:.5px 4px;border-radius:3px}
+.cited .c{display:flex;align-items:center;gap:7px;padding:3.5px 0;font-size:11.5px;
+  border-bottom:1px solid rgba(0,0,0,.04)}
+.cited .c:last-child{border-bottom:0}
+.cited .c .mono{font-family:var(--mono);font-size:11px;flex:1;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.cited .hit{font-size:10px;color:var(--teal);font-weight:600;flex:0 0 auto}
+.cited .c.dim .mono{color:var(--subtle)}
+.cited .c.dim .hit{color:var(--subtle);font-weight:500}
+.kbf{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.kbf .btn{font-size:11.5px;padding:3.5px 9px}
+
+.prov{padding:7px 10px;font-size:11px;color:var(--mut);border-top:1px solid var(--border);
+  background:rgba(0,0,0,.012);display:flex;align-items:center;gap:6px}
+.prov .mono{font-family:var(--mono);font-size:10.5px}
+.prov .ok{color:var(--cool);font-weight:660}
+
+/* annotations */
+.notes{margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px}
+.note{background:var(--bgElev);border:1px solid var(--border);border-radius:var(--r-lg);padding:13px 15px}
+.note h4{font-size:13px;font-weight:660;margin-bottom:5px;display:flex;align-items:center;gap:6px}
+.note h4 .n{font-family:var(--mono);font-size:10px;background:var(--primarySoft);color:var(--primary);
+  width:17px;height:17px;border-radius:4px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.note p{font-size:12.5px;color:var(--mut);margin-bottom:5px}
+.note p:last-child{margin-bottom:0}
+.note b{color:var(--text);font-weight:620}
+.note .was{color:var(--dest)}
+.note .src{font-size:11px;color:var(--subtle);font-style:italic}
+.open{border-left:2.5px solid var(--warm)}
+.open h4 .n{background:rgba(245,159,0,.14);color:#B87A00}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="doc-head">
+  <div class="eyebrow">Design · Ambient shell</div>
+  <h1>CTRL three-pane Work shell</h1>
+  <p class="lede">The center keeps the active Resource, artifacts, staged changes, and provenance visible while one resident Irisy transcript stays anchored in the resident right column. Projects are explicit Work Resources, <b>New Project</b> creates one, and eligible projects can be opened in the external OpenCode CLI without creating a second CTRL identity or transcript authority.</p>
+  <div class="ref">
+    <span>Shell <b>Work / Library / Settings</b></span>
+    <span>Identity <b>one visible Irisy</b></span>
+    <span>Context <b>explicit Resources + optional Skill + scope + policy + task</b></span>
+    <span>External coding <b>OpenCode through :17873</b></span>
+    <span>Design data <b>illustrative only · not runtime evidence</b></span>
+  </div>
+</div>
+
+<div class="app">
+  <div class="title">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <span class="id">CTRL</span>
+    <span class="task">Q3 customer feedback</span>
+    <span class="dir">Project Resource · ~/Documents/CTRL/q3-feedback</span>
+    <span class="sp"></span>
+    <button class="tbtn">Export</button>
+    <button class="tbtn">Share</button>
+  </div>
+
+  <div class="panes">
+
+    <!-- L1 -->
+    <nav class="pane rail">
+      <a href="#" class="on">
+        <svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h10"/></svg>
+        Work
+      </a>
+      <a href="#">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M8 5v14M4 9h4"/></svg>
+        Library
+      </a>
+      <div class="gap"></div>
+      <a href="#">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        Settings
+      </a>
+    </nav>
+
+    <!-- tasks -->
+    <aside class="pane">
+      <div class="ph"><h3>Tasks</h3><span class="sp"></span><button>⌘K</button></div>
+      <div class="body">
+        <button class="newtask">＋ New Project</button>
+        <input class="srch" placeholder="Search tasks…">
+        <div class="grp">Projects</div>
+        <div class="task-i">
+          <span class="t">ctrl-ghostfolio</span>
+          <span class="m">Project Resource · local</span>
+        </div>
+        <div class="grp">Sessions</div>
+        <div class="task-i on">
+          <span class="t">Q3 customer feedback</span>
+          <span class="m">Project Resource · q3-feedback</span>
+        </div>
+        <div class="task-i">
+          <span class="t">Weekly roundup</span>
+          <span class="m">Note Resource · weekly-roundup.md</span>
+        </div>
+        <div class="grp">Recent</div>
+        <div class="task-i">
+          <span class="t">Invoice filing</span>
+          <span class="m">Note Resource · invoices.md</span>
+        </div>
+        <div class="task-i">
+          <span class="t">Competitor research</span>
+          <span class="m">Note Resource · competitor-research.md</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- resident Irisy -->
+    <main class="pane conv">
+      <div class="ph">
+        <h3>Irisy</h3><span class="sp"></span>
+        <button>History</button>
+      </div>
+
+      <!-- canonical sessions: switch / new / fork; transcript history is append-only -->
+      <div class="sessbar">
+        <div class="stabs">
+          <button class="stab on">Dedupe pass <span class="sc">12</span></button>
+          <button class="stab">First attempt <span class="sc">4</span></button>
+          <button class="stab nw">＋</button>
+        </div>
+        <span class="sp"></span>
+        <button class="sact">Fork</button>
+      </div>
+
+      <div class="body">
+        <div class="daymark">Today · 14:02</div>
+
+        <div class="turn me">
+          <div class="who">You</div>
+          <div class="said">Turn the problems in <code>@Customer feedback.md</code> into a table, sorted by severity, and merge the duplicates.</div>
+          <div class="tacts"><span class="ta2">Fork with edits</span><span class="ta2">Re-run</span><span class="ta2">Fork from here</span></div>
+        </div>
+
+        <div class="plan">
+          <div class="h">Plan (Irisy&rsquo;s internal process)</div>
+          <ol>
+            <li class="done">Read Customer feedback.md, pull out every problem</li>
+            <li class="done">Merge the ones that say the same thing, keep each source</li>
+            <li class="done">Build q3-feedback.md, sorted by severity</li>
+            <li>Wait for your review before writing back to the note</li>
+          </ol>
+        </div>
+
+        <div class="step">
+          <span class="ic ok">✓</span>
+          <span>Read <b>Customer feedback.md</b> · pulled <span class="mono">31</span></span>
+          <span class="why">Why</span>
+        </div>
+        <div class="step">
+          <span class="ic ok">✓</span>
+          <span>Merged duplicates <span class="mono">31 → 18</span> · kept every source</span>
+          <span class="why">Why</span>
+        </div>
+        <div class="step">
+          <span class="ic ok">✓</span>
+          <span>Built <b>q3-feedback.md</b> · design example <span class="mono">rev 8f3c1a</span></span>
+          <span class="why">Why</span>
+        </div>
+
+        <div class="turn">
+          <div class="who">Irisy</div>
+          <div class="said">The 18 deduped problems are in the table in the center. Three of them I could not rank — they describe a symptom without an impact, so I marked those <b>Needs a call</b> and put them on top.</div>
+          <div class="tacts"><span class="ta2">Copy</span><span class="ta2">Save to a note</span><span class="ta2">Re-run</span></div>
+        </div>
+
+        <div class="dec">
+          <div class="sub">Write the summary back into Customer feedback.md?</div>
+          <div class="det"><b>Target:</b> <code>Customer feedback.md</code><br><b>Staged change:</b> append a <b>Q3 problem summary</b> section linking to the new table; nothing existing is touched.<br><b>Precondition:</b> current revision <code>2b91f0</code> must still match.<br><b>Recovery:</b> preserve the pre-write revision; on conflict, stop and restage. The operation is retryable from this session.</div>
+          <div class="acts">
+            <button class="btn">Not now</button>
+            <button class="btn pri">Write it</button>
+            <span class="lnk">See the change →</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="comp">
+        <div class="crow" style="margin:0 0 7px">
+          <div class="context-line">
+            <span class="context-name">Irisy</span>
+            <span class="context-scope" title="Current Irisy context: explicit Resources, optional Skill, capability scope, policy, and task.">Project Resource · q3-feedback</span>
+          </div>
+          <span class="sp"></span>
+          <span class="ind" title="FCT: ctrl-ghostfolio · bound knowledge: 12 notes"><span class="dot"></span>Ghostfolio</span>
+        </div>
+        <textarea class="ta" title="Type @ to reference notes, tables, or a selection. Use ↑ for earlier messages." placeholder="Say what you want…"></textarea>
+        <div class="crow">
+          <button class="attach" title="Add a local file">＋</button>
+          <span class="sp"></span>
+          <button class="send">↑</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- active Resource and results -->
+    <section class="pane res">
+      <div class="ph"><h3>Results</h3><span class="sp"></span><button>Reveal in Finder</button></div>
+      <div class="tabs">
+        <button class="on">Artifacts<span class="n">2</span></button>
+        <button>Changes<span class="n">3</span></button>
+        <button>Knowledge<span class="n">12</span></button>
+        <button>Files<span class="n">7</span></button>
+      </div>
+      <div class="body">
+
+        <div class="art">
+          <div class="ah">
+            <span class="tag new">New</span>
+            <span class="nm">q3-feedback.md</span>
+            <span class="tag ver">Design example</span>
+          </div>
+          <div class="stv">
+            <div class="vt">
+              <button class="on">Table</button>
+              <button>Board</button>
+              <button>Chart</button>
+              <button>Form</button>
+            </div>
+            <table>
+              <thead><tr><th>Problem</th><th>Severity</th><th>Reports</th></tr></thead>
+              <tbody>
+                <tr><td>Formatting breaks after export</td><td><span class="pill w">Needs a call</span></td><td>4</td></tr>
+                <tr><td>Login times out sometimes</td><td><span class="pill w">Needs a call</span></td><td>3</td></tr>
+                <tr><td>Bulk import drops rows</td><td><span class="pill">High</span></td><td>6</td></tr>
+                <tr><td class="e">Search misses results</td><td><span class="pill">High</span></td><td>5</td></tr>
+                <tr><td>Mobile text too small</td><td><span class="pill">Low</span></td><td>2</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="prov">
+            <span class="ok">Illustrative outcome</span>
+            <span class="mono">rev 8f3c1a</span>
+            <span>· would require a post-write re-read match</span>
+          </div>
+        </div>
+
+        <div class="art">
+          <div class="ah">
+            <span class="tag chg">Needs approval</span>
+            <span class="nm">Customer feedback.md</span>
+          </div>
+          <div class="diff">
+            <div class="ctx">  ## Other</div>
+            <div class="ctx">  Nothing yet.</div>
+            <div class="ctx"> </div>
+            <div class="add">+ ## Q3 problem summary</div>
+            <div class="add">+ </div>
+            <div class="add">+ The 18 deduped problems are in [[q3-feedback]].</div>
+            <div class="add">+ Three of them still need a severity call.</div>
+          </div>
+          <div class="prov">
+            <span>+4 lines · nothing existing touched · at</span>
+            <span class="mono">rev 2b91f0</span>
+          </div>
+        </div>
+
+        <div class="art kb">
+          <div class="ah">
+            <span class="tag kbt">Knowledge</span>
+            <span class="nm">ctrl-ghostfolio · 12 notes</span>
+            <span class="auto">automatic</span>
+          </div>
+          <div class="kbb">
+            <p class="kbn">This capability&rsquo;s own knowledge. <span class="mono">notes/ghostfolio/*</span>  — notes you put there join automatically, nothing to wire up. Answers draw from here first, and every note it drew from is listed below.</p>
+            <div class="cited">
+              <div class="c"><span class="mono">Field definitions.md</span><span class="hit">cited twice</span></div>
+              <div class="c"><span class="mono">Position sizing rules.md</span><span class="hit">cited once</span></div>
+              <div class="c dim"><span class="mono">Review 07-31.md</span><span class="hit">not used</span></div>
+            </div>
+            <div class="kbf">
+              <button class="btn gho">＋ Add a note</button>
+              <button class="btn gho">See all 12</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h4><span class="n">1</span>Results stay visible</h4>
+    <p>Artifacts, staged changes, and provenance remain in the center Resource pane instead of disappearing after a modal closes.</p>
+  </div>
+  <div class="note">
+    <h4><span class="n">2</span>One visible Irisy</h4>
+    <p>The fixed resident composer shows the Irisy identity and its current Resource context. Planning and mutation safety are internal execution policy, not user-selected identities or modes.</p>
+  </div>
+  <div class="note">
+    <h4><span class="n">3</span>Projects are Work Resources</h4>
+    <p><b>New Project</b> creates a Project Resource. The displayed path is descriptive context; it does not invent a task-directory authorization model.</p>
+  </div>
+  <div class="note">
+    <h4><span class="n">4</span>Transcript authority stays singular</h4>
+    <p>Session history is projected from the canonical append-only Markdown transcript. Re-run and Fork remain available without exposing unsupported destructive history controls.</p>
+  </div>
+  <div class="note">
+    <h4><span class="n">5</span>Review before mutation</h4>
+    <p>A consequential write must show the exact target, staged change, revision precondition, recovery point, and provenance before approval.</p>
+  </div>
+  <div class="note">
+    <h4><span class="n">6</span>Design evidence is declared</h4>
+    <p>Names, revisions, counts, and outcomes in this static mockup are illustrative. Runtime verification requires executable pipeline evidence.</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
